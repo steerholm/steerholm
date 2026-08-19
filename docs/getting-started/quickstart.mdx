@@ -31,7 +31,7 @@ This allows `my-agent` to use any tool on the `filesystem` server, but only for 
 
 ## 4. Connect your agent
 
-Configure your MCP client (Claude Code, VS Code, Cursor, OpenCode) with the
+Configure your tool (Claude Code, VS Code, Cursor, OpenCode) with the
 agent's access key as the Bearer token:
 
 ```json
@@ -47,13 +47,30 @@ agent's access key as the Bearer token:
 }
 ```
 
-The agent sees only the servers and tools its policy allows.
+The agent sees only the servers and tools its policy allows. For the exact setup
+in each tool, see [Connect an agent](/guides/connect-an-agent).
+
+<Note>
+  Configuring the tool with the key is the current manual step of adding an
+  agent — Harbour will set this connection up for you in a future release.
+</Note>
+
+## 5. Verify it works
+
+Confirm the server is running and see the tools it exposes:
+
+```bash
+harbour show server filesystem
+```
+
+Your tool should now list the tools the agent's policy allows. If none appear,
+see [Troubleshooting](/guides/troubleshooting).
 
 ## What happens at runtime
 
 ```
 Agent sends: call_tool("read_text_file", {"path": "/home/user/projects/main.py"})
-  → MCP client sends Streamable HTTP request to http://127.0.0.1:4767/mcp
+  → the tool sends a Streamable HTTP request to http://127.0.0.1:4767/mcp
   → daemon resolves the agent from the Bearer token
   → daemon checks policy: filesystem allowed, read_text_file matches *, path matches /home/user/projects/**
   → forwards to filesystem MCP server

@@ -1,0 +1,163 @@
+---
+title: Connect an agent
+description: Connect an MCP-capable agent — Claude Code, VS Code, Cursor, or OpenCode — to Harbour.
+---
+
+Agents reach the action plane over MCP. The daemon's endpoint —
+`http://127.0.0.1:4767/mcp` — is the gateway they dock into, and anything that
+can open an MCP connection docks there as an agent: Claude Code, VS Code, Cursor,
+OpenCode.
+
+You've already registered the agent with `harbour add agent` — it has an access
+key and a policy. Connecting it is the other half: point one of these MCP-capable
+tools at the gateway with the agent's access key. They all send the same two
+things — the URL `http://127.0.0.1:4767/mcp` and the header
+`Authorization: Bearer harbour_sk_...` — so the only differences below are
+*where* each keeps its config and *what* it names the entry. From then on it
+operates in the action plane as that agent: Harbour resolves the agent from the
+key on every request and checks it against the policy before forwarding.
+
+<Note>
+  Get the access key from `harbour add agent <name>` — it's printed once, when
+  the agent is created. `harbour show agent <name>` shows only the key *prefix*,
+  not the full key. Lost it? Issue a new one with `harbour rotate agent <name>`
+  (the old key stops working immediately).
+</Note>
+
+<Note>
+  Copying the key into your tool is the current **manual** step of adding an
+  agent. A future release will have Harbour set up this connection for you (and
+  launch agent sessions directly) — the model stays the same, the copy-paste
+  goes away.
+</Note>
+
+## Configure the connection
+
+<Tabs>
+  <Tab title="Claude Code">
+    Add the server with the CLI. Run this from your project — it writes to the
+    project's local scope by default; add `--scope user` to make it available in
+    every project:
+
+    ```bash
+    claude mcp add --transport http harbour http://127.0.0.1:4767/mcp \
+      --header "Authorization: Bearer harbour_sk_..."
+    ```
+
+    To share the server with a team, commit an `.mcp.json` at your project root
+    instead:
+
+    ```json
+    {
+      "mcpServers": {
+        "harbour": {
+          "type": "http",
+          "url": "http://127.0.0.1:4767/mcp",
+          "headers": {
+            "Authorization": "Bearer harbour_sk_..."
+          }
+        }
+      }
+    }
+    ```
+
+    <Warning>
+      The `"type": "http"` field is required. Claude Code reads a `url` entry
+      with no `type` as a stdio server and skips it.
+    </Warning>
+  </Tab>
+
+  <Tab title="VS Code (Copilot)">
+    Put the config in `.vscode/mcp.json` in your workspace (or your user profile
+    via the **MCP: Open User Configuration** command). The top-level key is
+    `servers`:
+
+    ```json
+    {
+      "servers": {
+        "harbour": {
+          "type": "http",
+          "url": "http://127.0.0.1:4767/mcp",
+          "headers": {
+            "Authorization": "Bearer harbour_sk_..."
+          }
+        }
+      }
+    }
+    ```
+
+    MCP tools are available in Copilot Chat's **Agent** mode. To avoid committing
+    the key, replace the header value with an input reference such as
+    `Bearer ${input:harbour-key}` and let VS Code prompt for it once. See the
+    [VS Code MCP docs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers)
+    for the input-prompt syntax.
+  </Tab>
+
+  <Tab title="Cursor">
+    Put the config in `~/.cursor/mcp.json` (global, every project) or
+    `.cursor/mcp.json` at your project root. The top-level key is `mcpServers`:
+
+    ```json
+    {
+      "mcpServers": {
+        "harbour": {
+          "url": "http://127.0.0.1:4767/mcp",
+          "headers": {
+            "Authorization": "Bearer harbour_sk_..."
+          }
+        }
+      }
+    }
+    ```
+
+    Cursor resolves `${env:VAR}` inside `headers`, so you can keep the key out of
+    the file with `"Authorization": "Bearer ${env:HARBOUR_KEY}"`. See the
+    [Cursor MCP docs](https://cursor.com/docs/mcp).
+  </Tab>
+
+  <Tab title="OpenCode">
+    Put the config in `opencode.json` at your project root (or the global
+    `~/.config/opencode/opencode.json`). Remote servers live under the `mcp` key
+    with `"type": "remote"`:
+
+    ```json
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "harbour": {
+          "type": "remote",
+          "url": "http://127.0.0.1:4767/mcp",
+          "enabled": true,
+          "headers": {
+            "Authorization": "Bearer harbour_sk_..."
+          }
+        }
+      }
+    }
+    ```
+
+    OpenCode supports `{env:VAR}` substitution in `headers`, so you can write
+    `"Authorization": "Bearer {env:HARBOUR_KEY}"`. See the
+    [OpenCode MCP docs](https://opencode.ai/docs/mcp-servers/).
+  </Tab>
+</Tabs>
+
+<Note>
+  Harbour binds to loopback over plain HTTP. Use the host and port from
+  `harbour serve` if you changed the defaults.
+</Note>
+
+## Verify it worked
+
+Once connected, the agent lists only the tools its policy allows. If it has no
+grants yet, it sees nothing — add access with `harbour grant <agent> <server>`.
+
+From Harbour's side, confirm the server is up and reachable:
+
+```bash
+harbour show server <name>
+```
+
+You should see the server `running` with the tools it provides. If your tool
+shows no tools even though the server is `running`, head to
+[Troubleshooting](/guides/troubleshooting).

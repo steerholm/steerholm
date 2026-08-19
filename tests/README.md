@@ -32,7 +32,7 @@ pytest tests/e2e        # needs npx
 - Edge cases: empty policy, empty tool list
 - Multiple permissions: two patterns on same server, first-match-wins
 - Regex: start-anchored only, full match with `$`
-- GPARS errors: correct code (-31001), data payload, message content
+- Errors: correct code (-31001), data payload, message content
 
 **[test_errors.py](unit/test_errors.py)** — Error factories
 

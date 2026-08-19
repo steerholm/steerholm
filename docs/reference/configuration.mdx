@@ -3,7 +3,7 @@ title: Configuration
 description: Config files, directory layout, and platform support.
 ---
 
-## Directory Layout
+## Directory layout
 
 <CodeGroup>
 
@@ -26,6 +26,13 @@ description: Config files, directory layout, and platform support.
 </CodeGroup>
 
 Access-key hashes are stored in the system keyring, not in config files.
+
+Set `MCP_HARBOUR_CONFIG_DIR` to override the config directory (both the CLI and
+the daemon read it) — useful for isolated setups or testing:
+
+```bash
+MCP_HARBOUR_CONFIG_DIR=/tmp/harbour-test harbour list servers
+```
 
 ## config.json
 
@@ -58,17 +65,22 @@ Access-key hashes are stored in the system keyring, not in config files.
   save.
 </Note>
 
-### Server Fields
+### Server fields
 
 | Field | Type | Description |
 |---|---|---|
 | `name` | `string` | Unique identifier |
 | `command` | `string` | Full launch command (stdio servers) |
 | `url` | `string` | Server URL (HTTP servers) |
-| `env` | `object` | Extra environment variables |
+| `env` | `object` | Extra environment variables passed to a stdio server |
 | `server_type` | `"stdio"` or `"http"` | Transport type (inferred from `--command` or `--url`) |
 
-### Agent Fields
+<Note>
+  `env` has no CLI flag yet — set it by editing `config.json` directly, then run
+  `harbour add`/`remove` (or restart the daemon) so it re-reads the config.
+</Note>
+
+### Agent fields
 
 | Field | Type | Description |
 |---|---|---|

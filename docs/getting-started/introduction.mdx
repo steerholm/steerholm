@@ -3,11 +3,9 @@ title: Introduction
 description: What MCP Harbour is and why it exists.
 ---
 
-# MCP Harbour
+MCP Harbour is one surface with two faces: an **action plane** for your agents — the single place they connect to and act through — and a **control plane** for you, where you register the MCP servers they use and grant each one policy-scoped access to exactly the tools it needs. You decide what every agent can reach.
 
-MCP Harbour is the port authority for your MCP servers. It manages, aggregates, and secures MCP servers for AI agents — giving users a single place to add servers and control which agents can access which tools.
-
-Built as an implementation of the [GPARS](https://gpars.io) plane boundary.
+New here? Start with [the control plane](/concepts/control-plane) for the mental model, then the [quickstart](/getting-started/quickstart).
 
 ## What it does
 
@@ -25,7 +23,7 @@ Built as an implementation of the [GPARS](https://gpars.io) plane boundary.
     Each agent gets an access key. The daemon resolves the agent from the access key — agents cannot self-declare who they are.
   </Card>
   <Card title="Centralized Config" icon="gear" color="#10b981">
-    One place to manage all your MCP servers, agents, and policies. No per-client configuration.
+    One place to manage all your MCP servers, agents, and policies. No per-tool configuration.
   </Card>
   <Card title="Cross-Platform" icon="desktop" color="#10b981">
     Works on Windows, macOS, and Linux. Streamable HTTP transport, platform-native service management.
@@ -44,4 +42,4 @@ This gives the user a single control point for:
 
 - **What servers exist** — add once, grant access per-agent
 - **Who can access what** — per-agent policies with tool and argument-level control
-- **How servers run** — process lifecycle managed by the daemon, not by individual clients
+- **How servers run** — process lifecycle managed by the daemon, not by individual tools

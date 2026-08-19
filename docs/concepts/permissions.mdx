@@ -3,11 +3,11 @@ title: Permissions
 description: How the policy engine controls what agents can do.
 ---
 
-## Default Deny
+## Default deny
 
 MCP Harbour uses a **whitelist-based** permission model. An agent with no policy gets zero tools — the harbour creates an empty policy that denies everything.
 
-## How Policy Evaluation Works
+## How policy evaluation works
 
 When an agent calls a tool, the harbour checks three things in order:
 
@@ -25,11 +25,11 @@ When an agent calls a tool, the harbour checks three things in order:
 
 If all checks pass, the request is forwarded to the MCP server.
 
-## Tool Filtering
+## Tool filtering
 
 `list_tools` only returns tools that match at least one entry in the policy. Agents never see tools they aren't allowed to use.
 
-## Argument Policies
+## Argument policies
 
 Argument policies restrict the values of specific tool arguments. Two match types are supported:
 
@@ -40,17 +40,17 @@ Argument policies restrict the values of specific tool arguments. Two match type
 
 A glob pattern without wildcards is an exact match — `mode=readonly` matches only `"readonly"`.
 
-### CLI Examples
+### CLI examples
 
 ```bash
 # Glob: allow read_text_file only under /home/user/projects
-harbour grant agent filesystem --tool "read_text_file" --args "path=/home/user/projects/**"
+harbour grant my-agent filesystem --tool "read_text_file" --args "path=/home/user/projects/**"
 
 # Regex: allow only SELECT queries
-harbour grant agent database --tool "query" --args "sql=re:^SELECT\s.*"
+harbour grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*"
 
 # Multiple argument policies on one tool
-harbour grant agent database --tool "query" --args "sql=re:^SELECT\s.*" "db=production"
+harbour grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*" "db=production"
 ```
 
 ## Agents
@@ -64,5 +64,5 @@ Agents are created with `harbour add agent <name>`. Each gets:
 The agent authenticates by sending the access key as `Authorization: Bearer <key>` to the daemon's Streamable HTTP MCP endpoint. The daemon resolves the agent by checking the access key against all stored hashes.
 
 <Warning>
-  The client does not declare which agent it is. The daemon resolves the agent from the Bearer token. The client cannot influence how it is identified.
+  The caller does not declare which agent it is. Harbour resolves the agent from the access key, so the caller cannot influence how it is identified.
 </Warning>

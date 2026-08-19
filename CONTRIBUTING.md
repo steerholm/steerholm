@@ -26,14 +26,14 @@ mcp_harbour/
 ├── process_manager.py   # ServerProcess, HarbourDaemon
 ├── gateway.py           # HarbourGateway, Streamable HTTP endpoint and routing
 ├── permissions.py       # PermissionEngine, policy matching
-└── errors.py            # GPARS error codes (AUTHORIZATION_DENIED, SERVER_UNAVAILABLE)
+└── errors.py            # Structured error codes (AUTHORIZATION_DENIED, SERVER_UNAVAILABLE)
 ```
 
 ## Architecture
 
-MCP Harbour implements the [GPARS](https://gpars.io) plane boundary. The key architectural rule: the agent (Cognitive Plane) never talks directly to MCP servers (Action Plane). All traffic flows through the harbour, which enforces the user's security policy.
+The key architectural rule: agents never talk directly to MCP servers. All traffic flows through the harbour, which authenticates the agent and enforces the user's security policy.
 
-Agents connect to the daemon's Streamable HTTP MCP endpoint. Users manage servers, identities, policies, and daemon lifecycle through the `harbour` admin CLI.
+Agents connect to the daemon's Streamable HTTP MCP endpoint. Users manage servers, agents, policies, and daemon lifecycle through the `harbour` admin CLI.
 
 ## What We're Looking For
 
@@ -47,5 +47,5 @@ Agents connect to the daemon's Streamable HTTP MCP endpoint. Users manage server
 
 - Run `pytest` before submitting. All tests must pass.
 - Policy enforcement is default-deny. No code path should allow access without an explicit policy check.
-- Errors returned to agents must use GPARS error codes (`-31001` for `AUTHORIZATION_DENIED`, `-31002` for `SERVER_UNAVAILABLE`).
+- Errors returned to agents must use Harbour's error codes (`-31001` for `AUTHORIZATION_DENIED`, `-31002` for `SERVER_UNAVAILABLE`).
 - Don't leak policy details in error messages. The agent should know *what* was denied, not *what would be allowed*.

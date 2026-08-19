@@ -5,7 +5,7 @@ description: Control-plane commands for managing servers, agents, and access.
 
 The `harbour` CLI is the admin interface for your MCP servers, agents, and their
 access. Commands read verb-first — `harbour <verb> <resource> [name]` — because
-Harbour is the control plane your agents operate in. Agents themselves connect to
+Harbour is your control plane — you add agents and servers to it and govern their access. Agents themselves connect to
 the daemon's Streamable HTTP MCP endpoint; they never run the admin CLI.
 
 The verbs are `add`, `remove`, `list`, `show`, `grant`, `revoke`, and `rotate`;
@@ -67,7 +67,7 @@ harbour show server filesystem
 ## Agents
 
 An agent has a name and an **access key**. The access key is what the agent uses
-to authenticate — Harbour derives the agent from the key, so agents cannot
+to authenticate — Harbour resolves the agent from the key, so agents cannot
 impersonate each other.
 
 ### harbour add agent
@@ -90,7 +90,7 @@ harbour list agents
 ### harbour show agent
 
 Show an agent: its access-key prefix, everything it can reach (server → tools →
-argument constraints), and how to connect a client with its key.
+argument constraints), and how to connect it with its key.
 
 ```bash
 harbour show agent my-agent
@@ -99,7 +99,7 @@ harbour show agent my-agent
 ### harbour rotate agent
 
 Generate a new access key for an agent, keeping all of its grants. The previous
-key stops working immediately — update the agent's client config with the new
+key stops working immediately — update the agent's config in its tool with the new
 key.
 
 ```bash
@@ -231,6 +231,13 @@ harbour serve --host 0.0.0.0 --port 5000
 | `--host` | `127.0.0.1` | Host to bind |
 | `--port` | `4767` | Port to bind |
 
+<Warning>
+  Harbour binds to loopback (`127.0.0.1`) by default. Binding to a non-loopback
+  host like `0.0.0.0` exposes the endpoint — and its tool access — to your
+  network, and access keys travel as Bearer tokens over plain HTTP. Only do this
+  on a trusted network, ideally behind a TLS-terminating reverse proxy.
+</Warning>
+
 ## Version & updates
 
 ### harbour version
@@ -248,10 +255,10 @@ downloads the release for your platform, verifies it against the published
 checksums, and runs the official install script.
 
 ```bash
-harbour update              # install the latest release
-harbour update --check      # report whether an update is available, without installing
-harbour update --tag v0.1.2 # install a specific release tag
-harbour update --yes        # install without the confirmation prompt
+harbour update               # install the latest release
+harbour update --check       # report whether an update is available, without installing
+harbour update --tag vX.Y.Z  # install a specific release tag
+harbour update --yes         # install without the confirmation prompt
 ```
 
 | Option | Description |

@@ -1,0 +1,74 @@
+---
+title: The control plane
+description: The mental model — agents, servers, and the governed access between them.
+---
+
+MCP Harbour is one surface with two faces. To your **agents** it's an **action
+plane** — the single place they connect to and act through. To **you** it's a
+**control plane** — where you register the agents and the MCP servers they might
+use, then grant each agent policy-scoped access to exactly the capabilities it
+needs. Nothing reaches a server that you didn't allow; you stay in control of
+what every agent can touch.
+
+## The three elements
+
+Everything on the control plane is one of three things:
+
+<CardGroup cols={3}>
+  <Card title="Agents" icon="robot" color="#10b981">
+    The AI tools you govern (Claude Code, Cursor, VS Code, OpenCode). Each has a
+    name, an access key, and a policy.
+  </Card>
+  <Card title="Servers" icon="server" color="#10b981">
+    The MCP servers you add. Each one exposes tools — the **capabilities** an
+    agent might use.
+  </Card>
+  <Card title="Grants" icon="key" color="#10b981">
+    Controlled access from an agent to a server's capabilities, scoped by policy.
+    No grant means no access.
+  </Card>
+</CardGroup>
+
+Two kinds of thing you **add** (agents, servers) and one governed **edge** you
+draw between them (a grant). That's the whole model.
+
+## How you operate it
+
+Every command reads as *manage an agent* or *control its access*:
+
+```bash
+harbour add server filesystem --command "..."   # register a capability
+harbour add agent coding-agent                  # register an agent
+harbour grant coding-agent filesystem --tool "read_*" --args "path=/home/**"
+harbour show agent coding-agent                 # what can it reach?
+harbour revoke coding-agent filesystem          # take access away
+```
+
+Grants are additive and default-deny: an agent starts with zero access and only
+ever gets what you grant. See [Permissions](/concepts/permissions) for the tool
+and argument syntax.
+
+## A grant is a governed connection
+
+When you grant an agent access to a server, you're wiring a **connection routed
+through Harbour**. The agent never talks to the server directly — it connects to
+Harbour, and Harbour forwards each call to the server *only where the grant and
+its policy allow*. The grant is the edge; Harbour is what the traffic flows
+through and gets checked at. (See [Architecture](/concepts/architecture) for how
+that boundary is enforced.)
+
+## Bringing an agent online
+
+Registering an agent and connecting the tool it runs in are two steps today:
+
+1. `harbour add agent <name>` registers the agent and issues its access key.
+2. You configure the tool with that key so it opens its connection to Harbour —
+   see [Connect an agent](/guides/connect-an-agent).
+3. `harbour grant ...` gives the agent access to the servers it should reach.
+
+<Note>
+  Step 2 is the current **manual** last mile. It's part of *adding an agent* —
+  just not yet automated. We're working toward Harbour setting up that connection
+  for you (and launching agent sessions directly), so the copy-the-key step goes
+  away while the model above stays exactly the same.
+</Note>

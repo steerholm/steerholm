@@ -7,10 +7,6 @@
 </p>
 
 <p align="center">
-  Built as an implementation of the <a href="https://gpars.io">GPARS</a> plane boundary.
-</p>
-
-<p align="center">
   <a href="https://github.com/mcpharbour/mcpharbour/releases/latest"><img src="https://img.shields.io/github/v/release/mcpharbour/mcpharbour?color=darkgreen&label=version" alt="Version" /></a>
   <a href="https://docs.mcpharbour.ai"><img src="https://img.shields.io/badge/docs-latest-indigo" alt="Docs" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License"></a>
@@ -80,7 +76,7 @@ Agent → Streamable HTTP /mcp → Harbour Daemon → MCP Servers
 - **Agent from token** — agents cannot self-assert who they are; the access key determines the agent
 - **Per-agent policies** — whitelist of servers, tools, and argument constraints
 - **Isolation by policy** — one shared daemon; each agent is confined by its policy, not by separate server processes
-- **GPARS error codes** — `AUTHORIZATION_DENIED` (-31001) and `SERVER_UNAVAILABLE` (-31002)
+- **Structured error codes** — `AUTHORIZATION_DENIED` (-31001) and `SERVER_UNAVAILABLE` (-31002)
 
 ## Documentation
 

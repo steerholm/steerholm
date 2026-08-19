@@ -18,11 +18,6 @@
   "navbar": {
     "links": [
       {
-        "label": "GPARS Spec",
-        "href": "https://gpars.io",
-        "icon": "book"
-      },
-      {
         "label": "GitHub",
         "href": "https://github.com/mcpharbour/mcpharbour",
         "icon": "github"
@@ -45,8 +40,17 @@
         ]
       },
       {
+        "group": "Guides",
+        "pages": [
+          "guides/connect-an-agent",
+          "guides/managing-access",
+          "guides/troubleshooting"
+        ]
+      },
+      {
         "group": "Concepts",
         "pages": [
+          "concepts/control-plane",
           "concepts/architecture",
           "concepts/permissions",
           "concepts/error-codes"

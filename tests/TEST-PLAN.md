@@ -102,12 +102,12 @@ Runs on all three OSes in the `pytest` matrix job. Status: **DONE**.
   (glob path allow/deny, missing/!absent required arg denied, regex
   allow/deny, literal-glob deny), default-deny on empty policy, first-match
   semantics, regex anchored-at-start behavior, and that denials raise an
-  `McpError` carrying the GPARS `AUTHORIZATION_DENIED` code, data, and
+  `McpError` carrying the `AUTHORIZATION_DENIED` code, data, and
   message.
 - **test_identity.py** — token → agent resolution. Correct agent for a
   valid token, `None` for unknown/partial tokens, `None` when no agents
   exist, and graceful `None` when the keyring backend throws.
-- **test_errors.py** — GPARS error constructors produce the correct MCP error
+- **test_errors.py** — the error constructors produce the correct MCP error
   codes/messages/data for `AUTHORIZATION_DENIED` and `SERVER_UNAVAILABLE`.
 - **test_process_manager.py** — command parsing (`shlex.split` of stdio
   commands incl. quoted paths, uvx/npx forms), `HarbourDaemon` shared-process

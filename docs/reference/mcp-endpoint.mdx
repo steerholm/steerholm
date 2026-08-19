@@ -1,9 +1,9 @@
 ---
 title: MCP Endpoint
-description: Connect MCP clients to the Harbour daemon.
+description: Connect an MCP-capable agent to the Harbour daemon.
 ---
 
-MCP Harbour exposes a Streamable HTTP MCP endpoint directly from the daemon. MCP clients connect to `/mcp` and authenticate with an access key in the `Authorization` header.
+MCP Harbour exposes a Streamable HTTP MCP endpoint directly from the daemon. An MCP-capable agent — the tool you run, such as Claude Code — connects to `/mcp` and authenticates with an access key in the `Authorization` header. (At the protocol level the tool is the MCP client and Harbour is the MCP server.)
 
 ## Endpoint
 
@@ -21,11 +21,11 @@ Every request must include a Bearer token:
 Authorization: Bearer harbour_sk_XXXX
 ```
 
-The daemon resolves the agent from the Bearer token by checking it against stored key hashes. The client does not declare which agent it is.
+The daemon resolves the agent from the Bearer token by checking it against stored key hashes. The caller does not declare which agent it is.
 
-## MCP Client Configuration
+## Configuring the connection
 
-Configure your MCP client to use Harbour as a Streamable HTTP server:
+Configure your tool to use Harbour as a Streamable HTTP server:
 
 ```json
 {
@@ -42,7 +42,7 @@ Configure your MCP client to use Harbour as a Streamable HTTP server:
 
 This keeps the admin CLI separate from agent access. Agents connect only to the MCP endpoint; users manage servers, agents, policies, and daemon lifecycle through the `harbour` command.
 
-## HTTP Statuses
+## HTTP statuses
 
 | Status | Meaning |
 |---|---|

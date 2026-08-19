@@ -1,13 +1,15 @@
 ---
 title: Architecture
-description: How MCP Harbour enforces the GPARS plane boundary.
+description: How MCP Harbour sits between agents and servers and enforces policy.
 ---
 
 ## Overview
 
-MCP Harbour is the port authority for your MCP servers. It aggregates multiple servers into a single endpoint, manages their lifecycle, and enforces per-agent security policies. It implements the [GPARS](https://gpars.io) plane boundary — agents never talk to MCP servers directly.
+MCP Harbour is the port authority for your MCP servers. It aggregates multiple servers into a single endpoint, manages their lifecycle, and enforces per-agent security policies. Agents never talk to MCP servers directly — every request goes through the daemon, which authenticates the agent and checks its policy before forwarding.
 
-## System Diagram
+This page is the technical view of [the control plane](/concepts/control-plane): how a grant becomes a governed connection, and how the boundary is enforced on every request.
+
+## System diagram
 
 <div style={{
   background: 'linear-gradient(135deg, #0c0c1d 0%, #111128 100%)',
@@ -91,7 +93,7 @@ MCP Harbour is the port authority for your MCP servers. It aggregates multiple s
 
 </div>
 
-## Request Flow
+## Request flow
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'actorBkg': '#4a4dae', 'actorTextColor': '#fff', 'actorBorder': '#6366f1', 'activationBorderColor': '#6366f1', 'activationBkgColor': '#2d2d5e', 'signalColor': '#6366f1', 'signalTextColor': '#e2e8f0', 'noteBkgColor': '#1e1e2e', 'noteTextColor': '#e2e8f0', 'noteBorderColor': '#4a4dae', 'altSectionBkgColor': '#16162a', 'loopTextColor': '#e2e8f0', 'labelBoxBkgColor': '#1e1e2e', 'labelTextColor': '#10b981'}}}%%
@@ -115,14 +117,14 @@ sequenceDiagram
     end
 ```
 
-## Entry Points
+## Entry points
 
 <CardGroup cols={2}>
-  <Card title="harbour" icon="terminal" color="#10b981">
-    Admin CLI for the user. Manages servers, agents, policies, and the daemon. Belongs to the Action Plane.
+  <Card title="harbour — control plane" icon="terminal" color="#10b981">
+    Your governance surface. Manage servers, agents, policies, and the daemon — this is where you control what every agent can do.
   </Card>
-  <Card title="/mcp" icon="globe" color="#10b981">
-    Streamable HTTP MCP endpoint for agents. Requires Bearer authentication and has no admin commands.
+  <Card title="/mcp — action plane" icon="globe" color="#10b981">
+    The agents' surface: they connect here over Streamable HTTP with a Bearer token to act. Requires authentication and has no admin commands.
   </Card>
 </CardGroup>
 
@@ -141,14 +143,14 @@ Servers are shared by all agents — the daemon runs one set of server processes
   </Card>
 </CardGroup>
 
-## Connection Flow
+## Connection flow
 
 <Steps>
-  <Step title="Client connects">
-    The MCP client connects to `http://127.0.0.1:4767/mcp` using Streamable HTTP.
+  <Step title="Agent connects">
+    The agent connects to `http://127.0.0.1:4767/mcp` over Streamable HTTP.
   </Step>
   <Step title="Authentication">
-    The client sends `Authorization: Bearer harbour_sk_...`. The daemon resolves the agent by checking the access key against stored hashes. The access key determines the agent — it cannot be self-declared.
+    The agent sends `Authorization: Bearer harbour_sk_...`. The daemon resolves the agent by checking the access key against stored hashes. The access key determines the agent — it cannot be self-declared.
   </Step>
   <Step title="Request authorized">
     The shared MCP server resolves the agent's policy and filters or routes tools through daemon-managed servers.
@@ -158,15 +160,12 @@ Servers are shared by all agents — the daemon runs one set of server processes
   </Step>
 </Steps>
 
-## GPARS Alignment
+## Summary
 
-| GPARS Concept | MCP Harbour |
+| Aspect | How Harbour handles it |
 |---|---|
-| Cognitive Plane | Agent + MCP client |
-| Action Plane | MCP servers + security policies |
-| Plane Boundary | Harbour daemon `/mcp` endpoint |
-| Security Policy | Per-agent policy files |
-| `AUTHORIZATION_DENIED` | JSON-RPC error code `-31001` |
-| `SERVER_UNAVAILABLE` | JSON-RPC error code `-31002` |
-| Agent verification | Bearer token → agent lookup |
+| Boundary | Agents reach servers only through the daemon's `/mcp` endpoint |
+| Authentication | Bearer access key → agent lookup (the key determines the agent) |
+| Authorization | Per-agent policy files, checked on every `call_tool` |
 | Default deny | No policy = no access |
+| Errors | `AUTHORIZATION_DENIED` (`-31001`), `SERVER_UNAVAILABLE` (`-31002`) |

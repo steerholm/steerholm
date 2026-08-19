@@ -1,0 +1,97 @@
+---
+title: Managing agents & access
+description: Audit, grant, revoke, and rotate after the initial setup.
+---
+
+The [quickstart](/getting-started/quickstart) gets one agent connected to one
+server. This guide covers the day-to-day tasks after that: seeing who can do
+what, changing access, rotating a key, and running more than one server.
+
+## See what an agent can do
+
+`show agent` lists an agent's access-key prefix and every grant it holds
+(server → tools → argument constraints):
+
+```bash
+harbour show agent my-agent
+```
+
+## See who can reach a server
+
+The reverse view — `show server` includes the agents that have been granted
+access, alongside the server's live status and tools:
+
+```bash
+harbour show server filesystem
+```
+
+## Grant more access
+
+Grants are additive — each `grant` adds a rule to the agent's policy. Grant a
+whole server, a specific tool, or a tool with argument constraints:
+
+```bash
+# every tool on the server
+harbour grant my-agent git
+
+# one tool
+harbour grant my-agent filesystem --tool "read_text_file"
+
+# one tool, constrained by argument
+harbour grant my-agent filesystem --tool "write_file" --args "path=/home/user/projects/**"
+```
+
+See [Permissions](/concepts/permissions) for the full glob/regex argument syntax.
+
+## Revoke access
+
+```bash
+# remove one tool grant
+harbour revoke my-agent filesystem --tool "read_text_file"
+
+# remove all of the agent's access to a server
+harbour revoke my-agent filesystem
+```
+
+<Note>
+  `--tool` matches the **exact pattern you granted**, not a glob expansion of it.
+  If you granted `--tool "read_*"`, revoke it with `--tool "read_*"`, not
+  `--tool "read_text_file"`.
+</Note>
+
+## Rotate a leaked or lost key
+
+Rotating issues a new access key and **keeps all of the agent's grants**. The
+previous key stops working immediately, so update the agent's config in its tool with
+the new key afterward:
+
+```bash
+harbour rotate agent my-agent
+```
+
+## Remove an agent
+
+Removes the agent, revokes its access key, and deletes its policy:
+
+```bash
+harbour remove agent my-agent
+```
+
+## Run more than one server
+
+Harbour aggregates any number of servers behind the one endpoint. Add each
+server, then grant an agent access to the ones it should reach:
+
+```bash
+harbour add server filesystem --command "npx -y @modelcontextprotocol/server-filesystem /home/user/projects"
+harbour add server git --command "npx -y @modelcontextprotocol/server-git"
+
+harbour grant my-agent filesystem --tool "read_*" --args "path=/home/user/projects/**"
+harbour grant my-agent git --tool "*"
+
+harbour list servers        # all servers + live status
+harbour show agent my-agent # everything my-agent can now reach
+```
+
+The agent still connects to the single endpoint; it sees the union of the tools
+its policy allows across every server.
