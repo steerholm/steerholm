@@ -45,7 +45,7 @@ One script, `tests/smoke/scenario.py`, is the single definition of "is
 Harbour usable," runnable against either the source CLI or an
 installed/frozen binary:
 
-- dock a downstream MCP server, create an identity, grant a scoped policy,
+- add a downstream MCP server, add an agent, grant a scoped policy,
 - reach the daemon (started either via the service or `harbour serve`),
 - connect with a **real MCP Streamable HTTP client** (`/mcp` needs session
   negotiation; raw curl is misleading),

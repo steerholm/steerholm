@@ -12,10 +12,10 @@ from mcp.client.streamable_http import streamable_http_client
 from tests.conftest import make_gateway, make_mock_process
 
 
-def _make_http_gateway(config_manager, token_identity=None):
+def _make_http_gateway(config_manager, token_agent=None):
     gateway = make_gateway(config_manager)
-    if token_identity is not None:
-        gateway._resolve_identity_from_token = MagicMock(return_value=token_identity)
+    if token_agent is not None:
+        gateway._resolve_agent_from_token = MagicMock(return_value=token_agent)
     return gateway
 
 
@@ -98,7 +98,7 @@ class TestControlPlane:
     @pytest.mark.asyncio
     async def test_agent_token_cannot_drive_control_plane(self, config_manager):
         # An agent's Bearer token must not be accepted on /control/*.
-        agent_token = config_manager.add_identity("agent")
+        agent_token = config_manager.add_agent("agent")
         app = make_gateway(config_manager).create_asgi_app("127.0.0.1", 4767)
         async with _asgi_client(app) as client:
             resp = await client.post(
@@ -128,15 +128,15 @@ class TestControlPlane:
         # Docked but not started in this gateway → reported as stopped.
         assert resp.json()["srv"]["state"] == "stopped"
 
-    def test_control_token_isolated_from_identity_keyring(self, config_manager):
+    def test_control_token_isolated_from_agent_keyring(self, config_manager):
         from mcp_harbour.config import get_or_create_control_token
 
         token = get_or_create_control_token()
         assert token.startswith("harbour_ctl_")
-        # An identity whose name would collide with the old control account must
+        # An agent whose name would collide with the old control account must
         # not corrupt the control token (it lives in a separate keyring service).
-        config_manager.add_identity("__control__")
-        config_manager.add_identity("token")
+        config_manager.add_agent("__control__")
+        config_manager.add_agent("token")
         assert get_or_create_control_token() == token
 
 
@@ -169,7 +169,7 @@ class TestHTTPAuthentication:
 
     @pytest.mark.asyncio
     async def test_valid_token_initializes_session(self, config_manager):
-        config_manager.add_identity("test-agent")
+        config_manager.add_agent("test-agent")
         gateway = _make_http_gateway(config_manager, "test-agent")
         app = gateway.create_asgi_app("127.0.0.1", 4767)
         async with AsyncExitStack() as stack:
@@ -182,11 +182,11 @@ class TestHTTPAuthentication:
             assert get_session_id()
 
     @pytest.mark.asyncio
-    async def test_session_id_cannot_switch_identity(self, config_manager):
-        config_manager.add_identity("agent-one")
-        config_manager.add_identity("agent-two")
+    async def test_session_id_cannot_switch_agent(self, config_manager):
+        config_manager.add_agent("agent-one")
+        config_manager.add_agent("agent-two")
         gateway = make_gateway(config_manager)
-        gateway._resolve_identity_from_token = MagicMock(side_effect=["agent-one", "agent-two"])
+        gateway._resolve_agent_from_token = MagicMock(side_effect=["agent-one", "agent-two"])
         app = gateway.create_asgi_app("127.0.0.1", 4767)
         async with _asgi_client(app) as client:
             init = await _post_initialize(client, {"Authorization": "Bearer token-one"})
@@ -203,7 +203,7 @@ class TestHTTPAuthentication:
 
     @pytest.mark.asyncio
     async def test_unknown_session_id_returns_404(self, config_manager):
-        config_manager.add_identity("test-agent")
+        config_manager.add_agent("test-agent")
         gateway = _make_http_gateway(config_manager, "test-agent")
         app = gateway.create_asgi_app("127.0.0.1", 4767)
         async with _asgi_client(app) as client:
@@ -221,7 +221,7 @@ class TestHTTPAuthentication:
 class TestSessionCleanup:
     @pytest.mark.asyncio
     async def test_delete_session_does_not_stop_shared_processes(self, config_manager):
-        config_manager.add_identity("test-agent")
+        config_manager.add_agent("test-agent")
         config_manager.add_server("test-server", command="mock-server")
         config_manager.grant_permission("test-agent", "test-server", tool="*")
 
@@ -249,7 +249,7 @@ class TestSessionCleanup:
 
     @pytest.mark.asyncio
     async def test_gateway_uses_one_shared_mcp_server(self, config_manager):
-        config_manager.add_identity("test-agent")
+        config_manager.add_agent("test-agent")
         gateway = _make_http_gateway(config_manager, "test-agent")
         app = gateway.create_asgi_app("127.0.0.1", 4767)
         shared_server = gateway.session_server

@@ -54,7 +54,7 @@ class TestSharedProcesses:
     async def test_failed_shared_server_does_not_block_healthy_server(self, config_manager):
         healthy = config_manager.add_server("healthy-server", command="echo")
         broken = config_manager.add_server("broken-server", command="bad")
-        config_manager.add_identity("agent")
+        config_manager.add_agent("agent")
         config_manager.grant_permission("agent", "healthy-server", tool="*")
         config_manager.grant_permission("agent", "broken-server", tool="*")
 
@@ -115,7 +115,7 @@ class TestSharedProcesses:
         assert result["started"] == ["B"]
         assert gateway.daemon.start_shared_server.await_count == 2
 
-        # Undock A while running -> A stops live.
+        # Remove A while running -> A stops live.
         config_manager.remove_server("A")
         result = await gateway.reconcile_servers()
         assert set(gateway.daemon.shared_processes) == {"B"}
@@ -188,7 +188,7 @@ class TestToolDiscovery:
     @pytest.mark.asyncio
     async def test_single_server(self, config_manager):
         config_manager.add_server("test-server", command="echo")
-        config_manager.add_identity("agent")
+        config_manager.add_agent("agent")
         config_manager.grant_permission("agent", "test-server", tool="*")
 
         gateway = make_gateway(config_manager)
@@ -205,7 +205,7 @@ class TestToolDiscovery:
     async def test_multiple_servers(self, config_manager):
         config_manager.add_server("test-server", command="echo")
         config_manager.add_server("git", command="echo")
-        config_manager.add_identity("agent")
+        config_manager.add_agent("agent")
         config_manager.grant_permission("agent", "test-server", tool="*")
         config_manager.grant_permission("agent", "git", tool="*")
 
@@ -223,7 +223,7 @@ class TestToolDiscovery:
 
     @pytest.mark.asyncio
     async def test_filtered_by_exact_tool_name(self, config_manager, sample_server):
-        config_manager.add_identity("reader")
+        config_manager.add_agent("reader")
         config_manager.grant_permission("reader", "test-server", tool="read_file")
 
         gateway = make_gateway(config_manager)
@@ -239,7 +239,7 @@ class TestToolDiscovery:
     @pytest.mark.asyncio
     async def test_filtered_by_glob(self, config_manager):
         config_manager.add_server("test-server", command="echo")
-        config_manager.add_identity("agent")
+        config_manager.add_agent("agent")
         config_manager.grant_permission("agent", "test-server", tool="read_*")
 
         gateway = make_gateway(config_manager)
@@ -253,7 +253,7 @@ class TestToolDiscovery:
     async def test_server_not_in_policy_skipped(self, config_manager):
         config_manager.add_server("test-server", command="echo")
         config_manager.add_server("bash", command="echo")
-        config_manager.add_identity("agent")
+        config_manager.add_agent("agent")
         config_manager.grant_permission("agent", "test-server", tool="*")
 
         gateway = make_gateway(config_manager)
@@ -272,7 +272,7 @@ class TestDefaultDeny:
     @pytest.mark.asyncio
     async def test_no_policy(self, config_manager):
         config_manager.add_server("test-server", command="echo")
-        config_manager.add_identity("unknown-agent")
+        config_manager.add_agent("unknown-agent")
 
         gateway = make_gateway(config_manager)
         gateway.daemon.shared_processes["test-server"] = make_mock_process(
@@ -284,7 +284,7 @@ class TestDefaultDeny:
     @pytest.mark.asyncio
     async def test_empty_policy(self, config_manager):
         config_manager.add_server("test-server", command="echo")
-        config_manager.add_identity("empty-agent")
+        config_manager.add_agent("empty-agent")
         config_manager.create_policy("empty-agent")
 
         gateway = make_gateway(config_manager)
@@ -300,7 +300,7 @@ class TestToolCalls:
     async def test_routes_to_correct_server(self, config_manager):
         config_manager.add_server("test-server", command="echo")
         config_manager.add_server("git", command="echo")
-        config_manager.add_identity("agent")
+        config_manager.add_agent("agent")
         config_manager.grant_permission("agent", "test-server", tool="*")
         config_manager.grant_permission("agent", "git", tool="*")
 
@@ -320,7 +320,7 @@ class TestToolCalls:
     @pytest.mark.asyncio
     async def test_argument_policy_allowed(self, config_manager):
         config_manager.add_server("test-server", command="echo")
-        config_manager.add_identity("agent")
+        config_manager.add_agent("agent")
         config_manager.grant_permission(
             "agent", "test-server", tool="read_file", arg_policies=["path=/home/user/**"]
         )
@@ -335,7 +335,7 @@ class TestToolCalls:
     @pytest.mark.asyncio
     async def test_argument_policy_denied(self, config_manager):
         config_manager.add_server("test-server", command="echo")
-        config_manager.add_identity("agent")
+        config_manager.add_agent("agent")
         config_manager.grant_permission(
             "agent", "test-server", tool="read_file", arg_policies=["path=/home/user/**"]
         )
@@ -351,7 +351,7 @@ class TestToolCalls:
 
     @pytest.mark.asyncio
     async def test_denied_tool_returns_error(self, config_manager, sample_server):
-        config_manager.add_identity("readonly")
+        config_manager.add_agent("readonly")
         config_manager.grant_permission("readonly", "test-server", tool="read_file")
 
         gateway = make_gateway(config_manager)
@@ -372,7 +372,7 @@ class TestToolCalls:
     @pytest.mark.asyncio
     async def test_unknown_tool(self, config_manager):
         config_manager.add_server("test-server", command="echo")
-        config_manager.add_identity("agent")
+        config_manager.add_agent("agent")
         config_manager.grant_permission("agent", "test-server", tool="read_file")
 
         gateway = make_gateway(config_manager)
@@ -387,7 +387,7 @@ class TestToolCalls:
     @pytest.mark.asyncio
     async def test_unavailable_server(self, config_manager):
         config_manager.add_server("test-server", command="echo")
-        config_manager.add_identity("agent")
+        config_manager.add_agent("agent")
         config_manager.grant_permission("agent", "test-server", tool="*")
 
         gateway = make_gateway(config_manager)
@@ -413,9 +413,9 @@ class TestProcessLifecycle:
         assert "test-server" not in gateway.daemon.shared_processes
 
     @pytest.mark.asyncio
-    async def test_multiple_identities_reuse_same_process(self, config_manager, sample_server):
-        config_manager.add_identity("admin")
-        config_manager.add_identity("reader")
+    async def test_multiple_agents_reuse_same_process(self, config_manager, sample_server):
+        config_manager.add_agent("admin")
+        config_manager.add_agent("reader")
         config_manager.grant_permission("admin", "test-server", tool="*")
         config_manager.grant_permission("reader", "test-server", tool="read_file")
 

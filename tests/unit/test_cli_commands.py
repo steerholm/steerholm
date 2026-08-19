@@ -115,164 +115,237 @@ def test_notify_reconcile_reports_unreachable(monkeypatch, capsys):
     assert "Could not reach the daemon" in capsys.readouterr().out
 
 
-# ─── dock / undock ──────────────────────────────────────────────────
+# ─── add / remove server ────────────────────────────────────────────
 
 
-def test_dock_adds_server_and_notifies(cli, monkeypatch):
+def test_add_server_and_notifies(cli, monkeypatch):
     notify = MagicMock()
     monkeypatch.setattr(m, "_notify_daemon_reconcile", notify)
-    result = runner.invoke(app, ["dock", "--name", "fs", "--command", "echo hi"])
+    result = runner.invoke(app, ["add", "server", "fs", "--command", "echo hi"])
     assert result.exit_code == 0
-    assert "docked" in result.output
+    assert "Added server" in result.output
     assert cli.get_server("fs") is not None
     notify.assert_called_once()
 
 
-def test_dock_invalid_shows_error(cli):
+def test_add_server_invalid_shows_error(cli):
     # Neither --command nor --url -> add_server raises -> _handle prints + Exit(1).
-    result = runner.invoke(app, ["dock", "--name", "bad"])
+    result = runner.invoke(app, ["add", "server", "bad"])
     assert result.exit_code == 1
     assert "Error" in result.output
 
 
-def test_undock_removes_server(cli, monkeypatch):
+def test_remove_server(cli, monkeypatch):
     cli.add_server("fs", command="echo")
     monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
-    result = runner.invoke(app, ["undock", "fs"])
+    result = runner.invoke(app, ["remove", "server", "fs"])
     assert result.exit_code == 0
+    assert "Removed server" in result.output
     assert cli.get_server("fs") is None
 
 
-# ─── identity ───────────────────────────────────────────────────────
+# ─── add / list / remove / rotate agent ─────────────────────────────
 
 
-def test_identity_create_shows_key(cli):
-    result = runner.invoke(app, ["identity", "create", "agent"])
+def test_add_agent_shows_key(cli):
+    result = runner.invoke(app, ["add", "agent", "agent"])
     assert result.exit_code == 0
     assert "harbour_sk_" in result.output
-    assert "agent" in cli.config.identities
+    assert "agent" in cli.config.agents
 
 
-def test_identity_create_duplicate_errors(cli):
-    cli.add_identity("agent")
-    result = runner.invoke(app, ["identity", "create", "agent"])
+def test_add_agent_duplicate_errors(cli):
+    cli.add_agent("agent")
+    result = runner.invoke(app, ["add", "agent", "agent"])
     assert result.exit_code == 1
     assert "Error" in result.output
 
 
-def test_identity_list_empty(cli):
-    result = runner.invoke(app, ["identity", "list"])
-    assert "No identities" in result.output
+def test_list_agents_empty(cli):
+    result = runner.invoke(app, ["list", "agents"])
+    assert "No agents" in result.output
 
 
-def test_identity_list_populated(cli):
-    cli.add_identity("agent")
-    result = runner.invoke(app, ["identity", "list"])
+def test_list_agents_populated(cli):
+    cli.add_agent("agent")
+    result = runner.invoke(app, ["list", "agents"])
     assert "agent" in result.output
 
 
-def test_identity_delete(cli):
-    cli.add_identity("agent")
-    result = runner.invoke(app, ["identity", "delete", "agent"])
+def test_remove_agent(cli):
+    cli.add_agent("agent")
+    result = runner.invoke(app, ["remove", "agent", "agent"])
     assert result.exit_code == 0
-    assert "agent" not in cli.config.identities
+    assert "Removed agent" in result.output
+    assert "agent" not in cli.config.agents
 
 
-# ─── permit ─────────────────────────────────────────────────────────
+def test_rotate_agent_shows_new_key(cli):
+    import re
+    first = cli.add_agent("agent")
+    result = runner.invoke(app, ["rotate", "agent", "agent"])
+    assert result.exit_code == 0
+    new_key = re.search(r"harbour_sk_\w+", result.output).group(0)
+    # compare full keys, not the 15-char display prefix (only 4 random chars)
+    assert new_key != first
 
 
-def test_permit_allow_warns_when_server_not_docked(cli):
-    cli.add_identity("agent")
-    result = runner.invoke(app, ["permit", "allow", "agent", "ghost"])
-    assert "not currently docked" in result.output
-    assert "Permission granted" in result.output
+def test_rotate_agent_not_found_errors(cli):
+    result = runner.invoke(app, ["rotate", "agent", "ghost"])
+    assert result.exit_code == 1
+    assert "Error" in result.output
 
 
-def test_permit_allow_docked_server(cli):
-    cli.add_identity("agent")
+# ─── grant / revoke / show agent ────────────────────────────────────
+
+
+def test_grant_warns_when_server_not_added(cli):
+    cli.add_agent("agent")
+    result = runner.invoke(app, ["grant", "agent", "ghost"])
+    assert "not currently added" in result.output
+    assert "Granted" in result.output
+
+
+def test_grant_agent_not_found_errors_before_server_warning(cli):
+    # error-ordering fix: an unknown agent errors out, and the server-not-added
+    # warning is never printed.
+    result = runner.invoke(app, ["grant", "nobody", "ghost"])
+    assert result.exit_code == 1
+    assert "Agent 'nobody' not found" in result.output
+    assert "not currently added" not in result.output
+
+
+def test_grant_added_server(cli):
+    cli.add_agent("agent")
     cli.add_server("fs", command="echo")
-    result = runner.invoke(app, ["permit", "allow", "agent", "fs", "--tool", "read_*",
+    result = runner.invoke(app, ["grant", "agent", "fs", "--tool", "read_*",
                                  "--args", "path=/home/**"])
     assert result.exit_code == 0
-    assert "Permission granted" in result.output
+    assert "Granted" in result.output
 
 
-def test_permit_show_no_policy(cli):
-    result = runner.invoke(app, ["permit", "show", "nobody"])
-    assert "No policy found" in result.output
+def test_revoke_removes_grant(cli):
+    cli.add_agent("agent")
+    cli.add_server("fs", command="echo")
+    cli.grant_permission("agent", "fs", tool="read_*")
+    result = runner.invoke(app, ["revoke", "agent", "fs", "--tool", "read_*"])
+    assert result.exit_code == 0
+    assert "Revoked" in result.output
 
 
-def test_permit_show_with_regex_and_glob(cli):
-    cli.add_identity("agent")
+def test_revoke_nothing_to_revoke(cli):
+    cli.add_agent("agent")
+    result = runner.invoke(app, ["revoke", "agent", "fs"])
+    assert result.exit_code == 0
+    assert "Nothing to revoke" in result.output
+
+
+def test_revoke_agent_not_found_errors(cli):
+    result = runner.invoke(app, ["revoke", "ghost", "fs"])
+    assert result.exit_code == 1
+    assert "not found" in result.output
+
+
+def test_show_agent_no_grants(cli):
+    cli.add_agent("agent")
+    result = runner.invoke(app, ["show", "agent", "agent"])
+    assert result.exit_code == 0
+    assert "none granted" in result.output
+
+
+def test_show_agent_not_found_errors(cli):
+    result = runner.invoke(app, ["show", "agent", "ghost"])
+    assert result.exit_code == 1
+    assert "not found" in result.output
+
+
+def test_show_agent_with_regex_and_glob(cli):
+    cli.add_agent("agent")
     cli.add_server("db", command="echo")
     cli.grant_permission("agent", "db", tool="query", arg_policies=["sql=re:^SELECT", "env=prod"])
-    result = runner.invoke(app, ["permit", "show", "agent"])
+    result = runner.invoke(app, ["show", "agent", "agent"])
     assert "db" in result.output
     assert "query" in result.output
     assert "re:" in result.output  # regex prefix rendered
 
 
-# ─── list / inspect ─────────────────────────────────────────────────
+# ─── list servers / show server ─────────────────────────────────────
 
 
-def test_list_no_servers(cli):
-    result = runner.invoke(app, ["list"])
-    assert "No servers docked" in result.output
+def test_list_servers_empty(cli):
+    result = runner.invoke(app, ["list", "servers"])
+    assert "No servers added" in result.output
 
 
-def test_list_daemon_down(cli):
+def test_list_servers_daemon_down(cli):
     cli.add_server("fs", command="echo")
-    result = runner.invoke(app, ["list"])
+    result = runner.invoke(app, ["list", "servers"])
     assert "fs" in result.output
     assert "status unavailable" in result.output
 
 
-def test_list_daemon_up_running(cli, monkeypatch):
+def test_list_servers_daemon_up_running(cli, monkeypatch):
     cli.add_server("fs", command="echo")
     monkeypatch.setattr(m, "_daemon_server_status",
                         lambda: {"fs": {"state": "running", "uptime_seconds": 5,
                                         "tools": [{"name": "t", "description": "d"}]}})
-    result = runner.invoke(app, ["list"])
+    result = runner.invoke(app, ["list", "servers"])
     assert "running" in result.output
 
 
-def test_inspect_not_found(cli):
-    result = runner.invoke(app, ["inspect", "ghost"])
+def test_show_server_not_found(cli):
+    result = runner.invoke(app, ["show", "server", "ghost"])
     assert result.exit_code == 1
     assert "not found" in result.output
 
 
-def test_inspect_daemon_down(cli):
+def test_show_server_daemon_down(cli):
     cli.add_server("fs", command="echo")
-    result = runner.invoke(app, ["inspect", "fs"])
+    result = runner.invoke(app, ["show", "server", "fs"])
     assert "fs" in result.output
     assert "daemon not running" in result.output
 
 
-def test_inspect_running_with_tools(cli, monkeypatch):
+def test_show_server_lists_grantees(cli):
+    cli.add_agent("agent")
+    cli.add_server("fs", command="echo")
+    cli.grant_permission("agent", "fs", tool="read_*")
+    result = runner.invoke(app, ["show", "server", "fs"])
+    assert "Agents with access" in result.output
+    assert "agent" in result.output
+    assert "read_*" in result.output
+
+
+def test_show_server_running_with_tools(cli, monkeypatch):
     cli.add_server("fs", command="echo")
     monkeypatch.setattr(m, "_daemon_server_status",
                         lambda: {"fs": {"state": "running", "uptime_seconds": 12,
                                         "error": None,
                                         "tools": [{"name": "read", "description": "Read a file"}]}})
-    result = runner.invoke(app, ["inspect", "fs"])
+    result = runner.invoke(app, ["show", "server", "fs"])
     assert "running" in result.output
     assert "read" in result.output
 
 
-def test_inspect_running_no_tools(cli, monkeypatch):
+def test_show_server_running_no_tools(cli, monkeypatch):
     cli.add_server("fs", command="echo")
     monkeypatch.setattr(m, "_daemon_server_status",
                         lambda: {"fs": {"state": "running", "uptime_seconds": 1, "error": None, "tools": []}})
-    result = runner.invoke(app, ["inspect", "fs"])
+    result = runner.invoke(app, ["show", "server", "fs"])
     assert "no tools" in result.output.lower()
 
 
-def test_inspect_unknown_status(cli, monkeypatch):
+def test_show_server_unknown_status(cli, monkeypatch):
     cli.add_server("fs", command="echo")
     monkeypatch.setattr(m, "_daemon_server_status", lambda: {})  # daemon up but server absent
-    result = runner.invoke(app, ["inspect", "fs"])
+    result = runner.invoke(app, ["show", "server", "fs"])
     assert "unknown" in result.output.lower()
+
+
+def test_version_flag(cli):
+    result = runner.invoke(app, ["--version"])
+    assert result.exit_code == 0
+    assert m.__version__ in result.output
 
 
 # ─── start / stop / status (platform branches) ──────────────────────
@@ -459,16 +532,16 @@ def test_update_check_up_to_date(monkeypatch):
     assert "up to date" in result.output.lower()
 
 
-def test_inspect_url_server(cli):
+def test_show_server_url_server(cli):
     cli.add_server("api", url="http://localhost:9000/mcp")
-    result = runner.invoke(app, ["inspect", "api"])
+    result = runner.invoke(app, ["show", "server", "api"])
     assert "http://localhost:9000/mcp" in result.output
 
 
-def test_inspect_failed_server_shows_error(cli, monkeypatch):
+def test_show_server_failed_shows_error(cli, monkeypatch):
     cli.add_server("fs", command="echo")
     monkeypatch.setattr(m, "_daemon_server_status",
                         lambda: {"fs": {"state": "failed", "uptime_seconds": None,
                                         "error": "connection refused", "tools": []}})
-    result = runner.invoke(app, ["inspect", "fs"])
+    result = runner.invoke(app, ["show", "server", "fs"])
     assert "connection refused" in result.output

@@ -25,7 +25,7 @@ description: Config files, directory layout, and platform support.
 
 </CodeGroup>
 
-API key hashes are stored in the system keyring, not in config files.
+Access-key hashes are stored in the system keyring, not in config files.
 
 ## config.json
 
@@ -43,7 +43,7 @@ API key hashes are stored in the system keyring, not in config files.
       "server_type": "http"
     }
   },
-  "identities": {
+  "agents": {
     "coding-agent": {
       "name": "coding-agent",
       "key_prefix": "harbour_sk_A7x..."
@@ -51,6 +51,12 @@ API key hashes are stored in the system keyring, not in config files.
   }
 }
 ```
+
+<Note>
+  A config written before the agent rename stored agents under an `identities`
+  key. It still loads unchanged — the key is migrated to `agents` on the next
+  save.
+</Note>
 
 ### Server Fields
 
@@ -62,12 +68,12 @@ API key hashes are stored in the system keyring, not in config files.
 | `env` | `object` | Extra environment variables |
 | `server_type` | `"stdio"` or `"http"` | Transport type (inferred from `--command` or `--url`) |
 
-### Identity Fields
+### Agent Fields
 
 | Field | Type | Description |
 |---|---|---|
 | `name` | `string` | Unique identifier |
-| `key_prefix` | `string` | First 15 chars of API key (display only) |
+| `key_prefix` | `string` | First 15 chars of the access key (display only) |
 
 ## Defaults
 

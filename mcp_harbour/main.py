@@ -8,7 +8,10 @@ from . import __version__
 from .config import ConfigManager
 from .updater import UpdateError, run_update_installer, update_binary
 
-app = typer.Typer(help="MCP Harbour: Manage your MCP servers and permissions.")
+app = typer.Typer(
+    help="MCP Harbour — the control plane for your MCP servers and agents.",
+    no_args_is_help=True,
+)
 console = Console()
 err_console = Console(stderr=True)
 config_manager = ConfigManager()
@@ -17,8 +20,20 @@ config_manager = ConfigManager()
 _UPDATE_CHECK_INTERVAL = 86400  # 24h
 
 
+def _version_callback(value: bool):
+    if value:
+        console.print(__version__)
+        raise typer.Exit()
+
+
 @app.callback()
-def _root(ctx: typer.Context):
+def _root(
+    ctx: typer.Context,
+    version: bool = typer.Option(
+        None, "--version", callback=_version_callback, is_eager=True,
+        help="Show the installed Harbour version and exit.",
+    ),
+):
     """Register a best-effort 'update available' hint after interactive commands."""
     if ctx.resilient_parsing:  # shell completion
         return
@@ -72,13 +87,22 @@ def _maybe_notify_update() -> None:
             f"{__version__} -> {latest}. Run [bold]harbour update[/bold]."
         )
 
-# Sub-typer for identity management
-identity_app = typer.Typer()
-app.add_typer(identity_app, name="identity", help="Manage identities (Captains)")
 
-# Sub-typer for permission management
-permit_app = typer.Typer()
-app.add_typer(permit_app, name="permit", help="Manage permissions (Policies)")
+# Verb-first sub-typers: `harbour <verb> <resource>`.
+add_app = typer.Typer(no_args_is_help=True, help="Add an agent or server to Harbour.")
+app.add_typer(add_app, name="add")
+
+remove_app = typer.Typer(no_args_is_help=True, help="Remove an agent or server.")
+app.add_typer(remove_app, name="remove")
+
+list_app = typer.Typer(no_args_is_help=True, help="List agents or servers.")
+app.add_typer(list_app, name="list")
+
+show_app = typer.Typer(no_args_is_help=True, help="Show details for an agent or server.")
+app.add_typer(show_app, name="show")
+
+rotate_app = typer.Typer(no_args_is_help=True, help="Rotate an agent's access key.")
+app.add_typer(rotate_app, name="rotate")
 
 
 def _handle(fn, *args, **kwargs):
@@ -138,37 +162,41 @@ def update(
     console.print(f"[bold green]Updated Harbour to {info.tag}.[/bold green]")
 
 
-@app.command()
-def dock(
-    name: str = typer.Option(..., help="Name of the server/ship"),
+# ─── Servers ─────────────────────────────────────────────────────────
+
+
+@add_app.command("server")
+def add_server(
+    name: str,
     command: Optional[str] = typer.Option(None, help="Full command to run the server (stdio)"),
     url: Optional[str] = typer.Option(None, help="Server URL (streamable HTTP)"),
 ):
     """
-    Dock (install/register) a new MCP server.
+    Add an MCP server behind Harbour.
 
     Provide --command for stdio servers or --url for HTTP servers (not both).
 
     Examples:
-      harbour dock --name filesystem --command "npx -y @modelcontextprotocol/server-filesystem /home/user"
-      harbour dock --name remote-api --url "http://localhost:8000/mcp"
+      harbour add server filesystem --command "npx -y @modelcontextprotocol/server-filesystem /home/user"
+      harbour add server remote-api --url "http://localhost:8000/mcp"
     """
     _handle(config_manager.add_server, name, command=command, url=url)
-    console.print(f"[bold green]Success:[/bold green] Server '{name}' docked successfully!")
+    console.print(f"[bold green]Added server '{name}'.[/bold green]")
     _notify_daemon_reconcile()
+    console.print(f"Next: let an agent use it with [bold]harbour grant <agent> {name}[/bold].")
 
 
-@app.command()
-def undock(name: str):
-    """Undock (remove) an MCP server."""
+@remove_app.command("server")
+def remove_server(name: str):
+    """Remove an MCP server."""
     _handle(config_manager.remove_server, name)
-    console.print(f"[bold green]Success:[/bold green] Server '{name}' undocked.")
+    console.print(f"[bold green]Removed server '{name}'.[/bold green]")
     _notify_daemon_reconcile()
 
 
 def _notify_daemon_reconcile() -> None:
-    """Tell a running daemon to apply docked-server changes now (the CLI drives
-    the daemon, like `docker` drives `dockerd`). No-op with a note if it's down —
+    """Tell a running daemon to apply server changes now (the CLI drives the
+    daemon, like `docker` drives `dockerd`). No-op with a note if it's down —
     the change is persisted in config and applied when the daemon next starts.
     """
     import json
@@ -248,17 +276,17 @@ def _status_markup(state: str) -> str:
     }.get(state, "[dim]unknown[/dim]")
 
 
-@app.command("list")
+@list_app.command("servers")
 def list_servers():
-    """List all docked MCP servers with their live status."""
+    """List all servers with their live status."""
     servers = config_manager.list_servers()
     if not servers:
-        console.print("No servers docked.")
+        console.print("No servers added yet. Add one with [bold]harbour add server <name>[/bold].")
         return
 
     status = _daemon_server_status()
 
-    table = Table(title="Docked Ships (MCP Servers)")
+    table = Table(title="Servers")
     table.add_column("Name", style="cyan")
     table.add_column("Command", style="magenta")
     table.add_column("Type", style="green")
@@ -282,22 +310,8 @@ def list_servers():
         console.print("[dim]Daemon not running; live status unavailable.[/dim]")
 
 
-@app.command()
-def inspect(name: str):
-    """Inspect a docked server: its config, live status, and the tools it provides."""
-    server = config_manager.get_server(name)
-    if not server:
-        console.print(f"[bold red]Error:[/bold red] Server '{name}' not found.")
-        raise typer.Exit(code=1)
-
-    console.print(f"[bold]Name:[/bold] {server.name}")
-    if server.command:
-        console.print(f"[bold]Command:[/bold] {server.command}")
-    if server.url:
-        console.print(f"[bold]URL:[/bold] {server.url}")
-    console.print(f"[bold]Env:[/bold] {server.env}")
-    console.print(f"[bold]Type:[/bold] {server.server_type.value}")
-
+def _print_server_status(name: str) -> None:
+    """Print live status + the tools a server provides (shared by `show server`)."""
     status = _daemon_server_status()
     if status is None:
         console.print("[bold]Status:[/bold] [dim]daemon not running[/dim]")
@@ -325,6 +339,45 @@ def inspect(name: str):
         console.print(tools_table)
     elif st["state"] == "running":
         console.print("[dim]This server exposes no tools.[/dim]")
+
+
+def _print_server_grantees(name: str) -> None:
+    """Print which agents have been granted access to a server."""
+    grantees = []
+    for agent_name in config_manager.config.agents:
+        policy = config_manager.load_policy(agent_name)
+        if policy and name in policy.permissions:
+            tools = ", ".join(t.name for t in policy.permissions[name])
+            grantees.append((agent_name, tools))
+    if not grantees:
+        console.print("[dim]No agents have been granted access to this server.[/dim]")
+        return
+    table = Table(title="Agents with access")
+    table.add_column("Agent", style="cyan")
+    table.add_column("Tools", style="green")
+    for agent_name, tools in grantees:
+        table.add_row(agent_name, tools)
+    console.print(table)
+
+
+@show_app.command("server")
+def show_server(name: str):
+    """Show a server: its config, live status, tools, and which agents can reach it."""
+    server = config_manager.get_server(name)
+    if not server:
+        console.print(f"[bold red]Error:[/bold red] Server '{name}' not found.")
+        raise typer.Exit(code=1)
+
+    console.print(f"[bold]Name:[/bold] {server.name}")
+    if server.command:
+        console.print(f"[bold]Command:[/bold] {server.command}")
+    if server.url:
+        console.print(f"[bold]URL:[/bold] {server.url}")
+    console.print(f"[bold]Env:[/bold] {server.env}")
+    console.print(f"[bold]Type:[/bold] {server.server_type.value}")
+
+    _print_server_grantees(name)
+    _print_server_status(name)
 
 
 @app.command()
@@ -480,41 +533,91 @@ def status():
         raise typer.Exit(1)
 
 
-@identity_app.command("create")
-def identity_create(name: str):
-    """Create a new identity (Captain) and generate an API key."""
-    api_key = _handle(config_manager.add_identity, name)
-    console.print(f"[bold green]Identity '{name}' created successfully![/bold green]")
-    console.print(f"API Key: [bold]{api_key}[/bold]")
-    console.print("[yellow]Keep this key safe! It won't be shown again.[/yellow]")
+# ─── Agents ──────────────────────────────────────────────────────────
 
 
-@identity_app.command("list")
-def identity_list():
-    """List all identities."""
-    identities = config_manager.config.identities
-    if not identities:
-        console.print("No identities found.")
+@add_app.command("agent")
+def add_agent(name: str):
+    """Add an agent and generate its access key."""
+    access_key = _handle(config_manager.add_agent, name)
+    console.print(f"[bold green]Added agent '{name}'.[/bold green]")
+    console.print(f"[bold]Access key:[/bold] {access_key}")
+    console.print("[yellow]Store it now — it is shown only once.[/yellow]")
+    console.print(f"Next: grant it access with [bold]harbour grant {name} <server>[/bold].")
+
+
+@rotate_app.command("agent")
+def rotate_agent(name: str):
+    """Generate a new access key for an agent, keeping its grants."""
+    access_key = _handle(config_manager.rotate_agent_key, name)
+    console.print(f"[bold green]Rotated the access key for '{name}'.[/bold green]")
+    console.print(f"[bold]New access key:[/bold] {access_key}")
+    console.print("[yellow]The previous key no longer works. Update the agent's config.[/yellow]")
+
+
+@list_app.command("agents")
+def list_agents():
+    """List all agents."""
+    agents = config_manager.config.agents
+    if not agents:
+        console.print("No agents yet. Add one with [bold]harbour add agent <name>[/bold].")
         return
 
-    table = Table(title="Docked Captains (Identities)")
+    table = Table(title="Agents")
     table.add_column("Name", style="cyan")
-    table.add_column("API Key Prefix", style="magenta")
-    for name, identity in identities.items():
-        table.add_row(name, identity.key_prefix)
+    table.add_column("Access key", style="magenta")
+    for name, agent in agents.items():
+        table.add_row(name, agent.key_prefix)
     console.print(table)
 
 
-@identity_app.command("delete")
-def identity_delete(name: str):
-    """Delete an identity (Captain) and its policy."""
-    _handle(config_manager.remove_identity, name)
-    console.print(f"[bold green]Success:[/bold green] Identity '{name}' deleted.")
+@remove_app.command("agent")
+def remove_agent(name: str):
+    """Remove an agent, its access key, and its grants."""
+    _handle(config_manager.remove_agent, name)
+    console.print(f"[bold green]Removed agent '{name}'.[/bold green]")
 
 
-@permit_app.command("allow")
-def permit_allow(
-    identity: str,
+@show_app.command("agent")
+def show_agent(name: str):
+    """Show an agent: its access-key prefix, its grants, and how to connect."""
+    agent = config_manager.get_agent(name)
+    if not agent:
+        console.print(f"[bold red]Error:[/bold red] Agent '{name}' not found.")
+        raise typer.Exit(code=1)
+
+    console.print(f"[bold]Agent:[/bold] {agent.name}")
+    console.print(f"[bold]Access key:[/bold] {agent.key_prefix}")
+
+    policy = config_manager.load_policy(name)
+    if not policy or not policy.permissions:
+        console.print("[bold]Access:[/bold] [dim]none granted (default-deny)[/dim]")
+    else:
+        console.print("[bold]Access:[/bold]")
+        for server, tools in policy.permissions.items():
+            console.print(f"  [cyan]{server}[/cyan]")
+            for tool in tools:
+                pol_str = ""
+                if tool.policies:
+                    pol_str = " -> " + ", ".join(
+                        f"{p.arg_name}={'re:' if p.match_type == 'regex' else ''}{p.pattern}"
+                        for p in tool.policies
+                    )
+                console.print(f"    - [green]{tool.name}[/green]{pol_str}")
+
+    from .config import DEFAULT_HOST, DEFAULT_PORT
+    console.print(
+        f"[dim]Connect: point the client at http://{DEFAULT_HOST}:{DEFAULT_PORT}/mcp "
+        "with header 'Authorization: Bearer <access key>'.[/dim]"
+    )
+
+
+# ─── Grants ──────────────────────────────────────────────────────────
+
+
+@app.command()
+def grant(
+    agent: str,
     server: str,
     tool: str = typer.Option("*", help="Tool name or glob pattern (default: *)"),
     args: Optional[List[str]] = typer.Option(
@@ -522,39 +625,53 @@ def permit_allow(
     ),
 ):
     """
-    Grant permission to an identity.
+    Grant an agent access to a server's tools.
 
     Examples:
-      harbour permit allow agent filesystem
-      harbour permit allow agent filesystem --tool "read_*" --args "path=/home/user/**"
-      harbour permit allow agent db --tool "query" --args "sql=re:^SELECT.*" "db=production"
+      harbour grant my-agent filesystem
+      harbour grant my-agent filesystem --tool "read_*" --args "path=/home/user/**"
+      harbour grant my-agent db --tool "query" --args "sql=re:^SELECT.*" "db=production"
     """
+    if agent not in config_manager.config.agents:
+        console.print(f"[bold red]Error:[/bold red] Agent '{agent}' not found.")
+        raise typer.Exit(code=1)
     if not config_manager.get_server(server) and server != "*":
-        console.print(f"[yellow]Warning: Server '{server}' is not currently docked.[/yellow]")
+        console.print(f"[yellow]Warning: Server '{server}' is not currently added.[/yellow]")
 
-    _handle(config_manager.grant_permission, identity, server, tool=tool, arg_policies=args)
-    console.print(f"[bold green]Permission granted for '{identity}' on '{server}' tool '{tool}'[/bold green]")
+    _handle(config_manager.grant_permission, agent, server, tool=tool, arg_policies=args)
+    console.print(f"[bold green]Granted[/bold green] '{agent}' access to '{server}' tool '{tool}'.")
 
 
-@permit_app.command("show")
-def permit_show(identity: str):
-    """Show the policy for an identity."""
-    policy = config_manager.load_policy(identity)
-    if not policy:
-        console.print(f"[yellow]No policy found for '{identity}'. (Access Denied All)[/yellow]")
-        return
+@app.command()
+def revoke(
+    agent: str,
+    server: str,
+    tool: Optional[str] = typer.Option(
+        None, help="Revoke only this tool grant (default: all access to the server)"
+    ),
+):
+    """
+    Revoke an agent's access to a server.
 
-    console.print(f"[bold]Policy for {identity}:[/bold]")
-    for server, tools in policy.permissions.items():
-        console.print(f"  Server: [cyan]{server}[/cyan]")
-        for tool in tools:
-            pol_str = ""
-            if tool.policies:
-                pol_str = " -> " + ", ".join(
-                    f"{p.arg_name}={'re:' if p.match_type == 'regex' else ''}{p.pattern}"
-                    for p in tool.policies
-                )
-            console.print(f"    - Tool: [green]{tool.name}[/green]{pol_str}")
+    With --tool, remove only that tool grant; without it, remove the agent's
+    entire access to the server. --tool matches the exact pattern you granted
+    (e.g. "read_*"), not a glob expansion of it.
+
+    Examples:
+      harbour revoke my-agent filesystem
+      harbour revoke my-agent filesystem --tool "read_*"
+    """
+    if agent not in config_manager.config.agents:
+        console.print(f"[bold red]Error:[/bold red] Agent '{agent}' not found.")
+        raise typer.Exit(code=1)
+
+    removed = _handle(config_manager.revoke_permission, agent, server, tool=tool)
+    what = f"tool '{tool}' on '{server}'" if tool else f"all access to '{server}'"
+    if removed:
+        console.print(f"[bold green]Revoked[/bold green] {agent}'s {what}.")
+    else:
+        target = f"tool '{tool}' on '{server}'" if tool else f"'{server}'"
+        console.print(f"[yellow]Nothing to revoke: '{agent}' has no grant for {target}.[/yellow]")
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -13,7 +13,7 @@ from mcp_harbour.errors import AUTHORIZATION_DENIED_CODE
 @pytest.fixture
 def engine_read_only():
     policy = AgentPolicy(
-        identity_name="readonly",
+        agent_name="readonly",
         permissions={
             "filesystem": [
                 ToolPermission(
@@ -35,7 +35,7 @@ def engine_read_only():
 @pytest.fixture
 def engine_wildcard():
     policy = AgentPolicy(
-        identity_name="admin",
+        agent_name="admin",
         permissions={"filesystem": [ToolPermission(name="*", policies=[])]},
     )
     return PermissionEngine(policy)
@@ -44,7 +44,7 @@ def engine_wildcard():
 @pytest.fixture
 def engine_glob_tools():
     policy = AgentPolicy(
-        identity_name="reader",
+        agent_name="reader",
         permissions={"filesystem": [ToolPermission(name="read_*", policies=[])]},
     )
     return PermissionEngine(policy)
@@ -53,7 +53,7 @@ def engine_glob_tools():
 @pytest.fixture
 def engine_multi_policy():
     policy = AgentPolicy(
-        identity_name="strict",
+        agent_name="strict",
         permissions={
             "database": [
                 ToolPermission(
@@ -153,7 +153,7 @@ class TestArgumentPolicy:
         # Regression: `--tool "*" --args "path=..."` must not reject tools that
         # have no `path` argument.
         policy = AgentPolicy(
-            identity_name="fs",
+            agent_name="fs",
             permissions={
                 "filesystem": [
                     ToolPermission(
@@ -214,14 +214,14 @@ class TestArgumentPolicy:
 
 class TestEdgeCases:
     def test_empty_policy(self):
-        engine = PermissionEngine(AgentPolicy(identity_name="empty", permissions={}))
+        engine = PermissionEngine(AgentPolicy(agent_name="empty", permissions={}))
         with pytest.raises(McpError) as exc_info:
             engine.check_permission("any", "any")
         assert_authorization_denied(exc_info)
 
     def test_policy_with_empty_tool_list(self):
         engine = PermissionEngine(
-            AgentPolicy(identity_name="no_tools", permissions={"filesystem": []})
+            AgentPolicy(agent_name="no_tools", permissions={"filesystem": []})
         )
         with pytest.raises(McpError) as exc_info:
             engine.check_permission("filesystem", "read_file")
@@ -246,7 +246,7 @@ class TestGPARSErrorCodes:
 class TestMultipleToolPermissions:
     def test_multiple_patterns_on_same_server(self):
         engine = PermissionEngine(AgentPolicy(
-            identity_name="agent",
+            agent_name="agent",
             permissions={"fs": [
                 ToolPermission(name="read_*"),
                 ToolPermission(name="write_file"),
@@ -260,7 +260,7 @@ class TestMultipleToolPermissions:
 
     def test_first_matching_permission_wins(self):
         engine = PermissionEngine(AgentPolicy(
-            identity_name="agent",
+            agent_name="agent",
             permissions={"fs": [
                 ToolPermission(name="read_file", policies=[
                     ArgumentPolicy(arg_name="path", match_type="glob", pattern="/safe/**"),
@@ -276,7 +276,7 @@ class TestMultipleToolPermissions:
 class TestRegexAnchoring:
     def test_regex_anchored_at_start_not_end(self):
         engine = PermissionEngine(AgentPolicy(
-            identity_name="agent",
+            agent_name="agent",
             permissions={"db": [
                 ToolPermission(name="query", policies=[
                     ArgumentPolicy(arg_name="sql", match_type="regex", pattern=r"^SELECT"),
@@ -287,7 +287,7 @@ class TestRegexAnchoring:
 
     def test_regex_full_match_with_dollar(self):
         engine = PermissionEngine(AgentPolicy(
-            identity_name="agent",
+            agent_name="agent",
             permissions={"db": [
                 ToolPermission(name="query", policies=[
                     ArgumentPolicy(arg_name="sql", match_type="regex", pattern=r"^SELECT\s+\w+$"),

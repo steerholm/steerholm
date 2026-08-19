@@ -3,7 +3,7 @@ title: MCP Endpoint
 description: Connect MCP clients to the Harbour daemon.
 ---
 
-MCP Harbour exposes a Streamable HTTP MCP endpoint directly from the daemon. MCP clients connect to `/mcp` and authenticate with an API key in the `Authorization` header.
+MCP Harbour exposes a Streamable HTTP MCP endpoint directly from the daemon. MCP clients connect to `/mcp` and authenticate with an access key in the `Authorization` header.
 
 ## Endpoint
 
@@ -21,7 +21,7 @@ Every request must include a Bearer token:
 Authorization: Bearer harbour_sk_XXXX
 ```
 
-The daemon derives the identity from the token by checking it against stored key hashes. The client does not declare its identity.
+The daemon resolves the agent from the Bearer token by checking it against stored key hashes. The client does not declare which agent it is.
 
 ## MCP Client Configuration
 
@@ -40,7 +40,7 @@ Configure your MCP client to use Harbour as a Streamable HTTP server:
 }
 ```
 
-This keeps the admin CLI separate from agent access. Agents connect only to the MCP endpoint; users manage servers, identities, policies, and daemon lifecycle through the `harbour` command.
+This keeps the admin CLI separate from agent access. Agents connect only to the MCP endpoint; users manage servers, agents, policies, and daemon lifecycle through the `harbour` command.
 
 ## HTTP Statuses
 

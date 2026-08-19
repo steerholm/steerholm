@@ -13,13 +13,13 @@ class PermissionEngine:
         self, server_name: str, tool_name: str, arguments: Dict[str, Any] = None
     ) -> bool:
         """
-        Checks if the identity has permission to use the tool on the given server.
+        Checks if the agent has permission to use the tool on the given server.
         Raises McpError with AUTHORIZATION_DENIED if denied.
         Returns True if allowed.
         """
         if server_name not in self.policy.permissions:
             raise authorization_denied(
-                f"Access to server '{server_name}' denied for this identity."
+                f"Access to server '{server_name}' denied for this agent."
             )
 
         allowed_tools = self.policy.permissions[server_name]

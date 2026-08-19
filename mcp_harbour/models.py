@@ -9,7 +9,7 @@ class ServerType(str, Enum):
 
 
 class Server(BaseModel):
-    name: str = Field(..., description="Unique name of the docked ship")
+    name: str = Field(..., description="Unique name of the server")
     command: str = Field(default="", description="Full command to execute (stdio servers)")
     url: str = Field(default="", description="Server URL (http servers)")
     env: Dict[str, str] = Field(
@@ -39,17 +39,17 @@ class ToolPermission(BaseModel):
 
 
 class AgentPolicy(BaseModel):
-    identity_name: str
+    agent_name: str
     permissions: Dict[str, List[ToolPermission]] = Field(
         ..., description="Map of server_name -> list of allowed tools"
     )
 
 
-class Identity(BaseModel):
-    name: str = Field(..., description="Name of the identity (Captain)")
-    key_prefix: str = Field(..., description="First 15 chars of API key for display")
+class Agent(BaseModel):
+    name: str = Field(..., description="Name of the agent")
+    key_prefix: str = Field(..., description="First 15 chars of the access key for display")
 
 
 class Config(BaseModel):
     servers: Dict[str, Server] = Field(default_factory=dict)
-    identities: Dict[str, Identity] = Field(default_factory=dict)
+    agents: Dict[str, Agent] = Field(default_factory=dict)

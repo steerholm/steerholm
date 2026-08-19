@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Optional, List
 import bcrypt
 import keyring
-from .models import Config, Server, Identity, AgentPolicy, ToolPermission, ArgumentPolicy, ServerType
+from .models import Config, Server, Agent, AgentPolicy, ToolPermission, ArgumentPolicy, ServerType
 
 logger = logging.getLogger("mcp_harbour.config")
 
@@ -31,7 +31,7 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 4767
 
 # The control token lives under its OWN keyring service, separate from the
-# "mcp-harbour" service used for identity keys, so no identity name can ever
+# "mcp-harbour" service used for agent access keys, so no agent name can ever
 # collide with it.
 CONTROL_SERVICE = "mcp-harbour-control"
 CONTROL_ACCOUNT = "token"
@@ -68,10 +68,22 @@ class ConfigManager:
         try:
             with open(CONFIG_FILE, "r") as f:
                 data = json.load(f)
+            data = self._migrate_config(data)
             return Config(**data)
         except Exception as e:
             print(f"Warning: Could not load config: {e}")
             return Config()
+
+    @staticmethod
+    def _migrate_config(data: dict) -> dict:
+        """Transparently upgrade a legacy config to the current schema. A config
+        written before the agent rename stored agents under an `identities` key;
+        map it across so old installs load unchanged (and get rewritten to the new
+        schema on the next save)."""
+        if isinstance(data, dict) and "identities" in data and "agents" not in data:
+            data = dict(data)  # copy first: don't mutate the caller's dict
+            data["agents"] = data.pop("identities")
+        return data
 
     def save_config(self):
         with open(CONFIG_FILE, "w") as f:
@@ -111,41 +123,54 @@ class ConfigManager:
     def list_servers(self) -> List[Server]:
         return list(self.config.servers.values())
 
-    # --- Identity Management ---
-    def add_identity(self, name: str) -> str:
-        """Create an identity, generate an API key, hash it, store in keyring.
-        Returns the api_key. Only available at creation time."""
-        if name in self.config.identities:
-            raise ValueError(f"Identity '{name}' already exists.")
+    # --- Agent Management ---
+    def _generate_access_key(self, name: str) -> str:
+        """Mint a fresh access key, hash it, and store the hash in the keyring.
+        Returns the raw key — only available at creation/rotation time."""
         alphabet = string.ascii_letters + string.digits
         token = "".join(secrets.choice(alphabet) for _ in range(32))
-        api_key = f"harbour_sk_{token}"
-        key_prefix = api_key[:15] + "..."
-
-        hashed = bcrypt.hashpw(api_key.encode(), bcrypt.gensalt())
+        access_key = f"harbour_sk_{token}"
+        hashed = bcrypt.hashpw(access_key.encode(), bcrypt.gensalt())
         keyring.set_password("mcp-harbour", name, hashed.decode())
+        return access_key
 
-        self.config.identities[name] = Identity(name=name, key_prefix=key_prefix)
+    def add_agent(self, name: str) -> str:
+        """Create an agent, generate an access key, hash it, store in keyring.
+        Returns the access key. Only available at creation time."""
+        if name in self.config.agents:
+            raise ValueError(f"Agent '{name}' already exists.")
+        access_key = self._generate_access_key(name)
+        self.config.agents[name] = Agent(name=name, key_prefix=access_key[:15] + "...")
         self.save_config()
-        return api_key
+        return access_key
 
-    def get_identity(self, name: str) -> Optional[Identity]:
-        return self.config.identities.get(name)
+    def rotate_agent_key(self, name: str) -> str:
+        """Generate a new access key for an existing agent, keeping its grants.
+        Returns the new key; the old one stops working immediately."""
+        if name not in self.config.agents:
+            raise ValueError(f"Agent '{name}' not found.")
+        access_key = self._generate_access_key(name)
+        self.config.agents[name] = Agent(name=name, key_prefix=access_key[:15] + "...")
+        self.save_config()
+        return access_key
 
-    def remove_identity(self, name: str):
-        """Remove an identity, its keyring entry, and its policy."""
-        if name not in self.config.identities:
-            raise ValueError(f"Identity '{name}' not found.")
+    def get_agent(self, name: str) -> Optional[Agent]:
+        return self.config.agents.get(name)
+
+    def remove_agent(self, name: str):
+        """Remove an agent, its keyring entry, and its policy."""
+        if name not in self.config.agents:
+            raise ValueError(f"Agent '{name}' not found.")
         try:
             keyring.delete_password("mcp-harbour", name)
         except keyring.errors.PasswordDeleteError:
             pass  # entry already absent — nothing to remove
         except Exception as e:
             # Don't fail the removal, but surface it: a lingering keyring entry
-            # must not be able to authenticate a removed identity.
+            # must not be able to authenticate a removed agent.
             logger.warning("Could not delete keyring entry for '%s': %s", name, e)
-        if name in self.config.identities:
-            del self.config.identities[name]
+        if name in self.config.agents:
+            del self.config.agents[name]
             self.save_config()
             policy_path = self._get_policy_path(name)
             if policy_path.exists():
@@ -154,29 +179,29 @@ class ConfigManager:
                 except OSError:
                     pass
 
-    def list_identities(self) -> list:
-        return list(self.config.identities.values())
+    def list_agents(self) -> list:
+        return list(self.config.agents.values())
 
     # --- Policy Management ---
-    def _get_policy_path(self, identity_name: str) -> Path:
-        return POLICIES_DIR / f"{identity_name}.json"
+    def _get_policy_path(self, agent_name: str) -> Path:
+        return POLICIES_DIR / f"{agent_name}.json"
 
-    def create_policy(self, identity_name: str) -> AgentPolicy:
-        policy = AgentPolicy(identity_name=identity_name, permissions={})
+    def create_policy(self, agent_name: str) -> AgentPolicy:
+        policy = AgentPolicy(agent_name=agent_name, permissions={})
         self.save_policy(policy)
         return policy
 
     def save_policy(self, policy: AgentPolicy):
-        path = self._get_policy_path(policy.identity_name)
+        path = self._get_policy_path(policy.agent_name)
         with open(path, "w") as f:
             f.write(policy.model_dump_json(indent=2))
 
-    def grant_permission(self, identity_name: str, server_name: str,
+    def grant_permission(self, agent_name: str, server_name: str,
                          tool: str = "*", arg_policies: List[str] = None):
-        """Grant a tool permission to an identity on a server.
+        """Grant a tool permission to an agent on a server.
         arg_policies: list of 'arg=pattern' or 'arg=re:pattern' strings."""
-        if identity_name not in self.config.identities:
-            raise ValueError(f"Identity '{identity_name}' not found.")
+        if agent_name not in self.config.agents:
+            raise ValueError(f"Agent '{agent_name}' not found.")
         policies = []
         for arg_str in (arg_policies or []):
             if "=" not in arg_str:
@@ -189,9 +214,9 @@ class ConfigManager:
                 match_type = "glob"
             policies.append(ArgumentPolicy(arg_name=key, match_type=match_type, pattern=pattern))
 
-        policy = self.load_policy(identity_name)
+        policy = self.load_policy(agent_name)
         if not policy:
-            policy = self.create_policy(identity_name)
+            policy = self.create_policy(agent_name)
 
         if server_name not in policy.permissions:
             policy.permissions[server_name] = []
@@ -199,14 +224,42 @@ class ConfigManager:
         policy.permissions[server_name].append(ToolPermission(name=tool, policies=policies))
         self.save_policy(policy)
 
-    def load_policy(self, identity_name: str) -> Optional[AgentPolicy]:
-        path = self._get_policy_path(identity_name)
+    def revoke_permission(self, agent_name: str, server_name: str,
+                          tool: str = None) -> bool:
+        """Remove access an agent has to a server. With `tool`, drop only grants
+        whose tool pattern matches it exactly; without, drop the whole server.
+        Returns True if anything was removed."""
+        if agent_name not in self.config.agents:
+            raise ValueError(f"Agent '{agent_name}' not found.")
+        policy = self.load_policy(agent_name)
+        if not policy or server_name not in policy.permissions:
+            return False
+
+        if tool is None:
+            del policy.permissions[server_name]
+            self.save_policy(policy)
+            return True
+
+        remaining = [p for p in policy.permissions[server_name] if p.name != tool]
+        if len(remaining) == len(policy.permissions[server_name]):
+            return False  # no matching grant
+        if remaining:
+            policy.permissions[server_name] = remaining
+        else:
+            del policy.permissions[server_name]  # last grant for the server
+        self.save_policy(policy)
+        return True
+
+    def load_policy(self, agent_name: str) -> Optional[AgentPolicy]:
+        path = self._get_policy_path(agent_name)
         if not path.exists():
             return None
         try:
             with open(path, "r") as f:
                 data = json.load(f)
+            if isinstance(data, dict) and "identity_name" in data and "agent_name" not in data:
+                data["agent_name"] = data.pop("identity_name")  # legacy policy file
             return AgentPolicy(**data)
         except Exception as e:
-            print(f"Error loading policy for {identity_name}: {e}")
+            print(f"Error loading policy for {agent_name}: {e}")
             return None

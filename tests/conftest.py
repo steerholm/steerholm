@@ -99,16 +99,16 @@ def attach_process(http_gateway):
 
 
 @pytest.fixture
-def http_identity(config_manager):
-    config_manager.add_identity("agent")
+def http_agent(config_manager):
+    config_manager.add_agent("agent")
     return "agent"
 
 
 @pytest.fixture
-def grant_http_permission(config_manager, http_identity):
+def grant_http_permission(config_manager, http_agent):
     def factory(server_name: str, tool: str, *, arg_policies: list[str] | None = None):
         config_manager.grant_permission(
-            http_identity,
+            http_agent,
             server_name,
             tool=tool,
             arg_policies=arg_policies,
@@ -148,17 +148,17 @@ def setup_http_downstream(config_manager, http_gateway, make_http_process, attac
 
 
 @pytest.fixture
-def http_get_tools(http_gateway, http_identity):
+def http_get_tools(http_gateway, http_agent):
     async def factory():
-        return await get_tools(http_gateway.session_server, http_identity)
+        return await get_tools(http_gateway.session_server, http_agent)
 
     return factory
 
 
 @pytest.fixture
-def http_call_tool(http_gateway, http_identity):
+def http_call_tool(http_gateway, http_agent):
     async def factory(name: str, arguments: dict | None = None):
-        return await call_tool(http_gateway.session_server, name, arguments, http_identity)
+        return await call_tool(http_gateway.session_server, name, arguments, http_agent)
 
     return factory
 
@@ -209,9 +209,9 @@ def make_gateway(config_manager) -> HarbourGateway:
     return gateway
 
 
-def _set_request_identity(identity_name: str):
+def _set_request_agent(agent_name: str):
     request = SimpleNamespace(
-        state=SimpleNamespace(harbour_identity=identity_name)
+        state=SimpleNamespace(harbour_agent=agent_name)
     )
     return request_ctx.set(
         RequestContext(
@@ -224,9 +224,9 @@ def _set_request_identity(identity_name: str):
     )
 
 
-async def get_tools(session_server, identity_name: str = "agent") -> list:
+async def get_tools(session_server, agent_name: str = "agent") -> list:
     """Call list_tools on a session server and return the tool list."""
-    token = _set_request_identity(identity_name)
+    token = _set_request_agent(agent_name)
     try:
         result = await session_server.request_handlers[ListToolsRequest](MagicMock())
         return result.root.tools
@@ -234,9 +234,9 @@ async def get_tools(session_server, identity_name: str = "agent") -> list:
         request_ctx.reset(token)
 
 
-async def call_tool(session_server, name: str, arguments: dict = None, identity_name: str = "agent"):
+async def call_tool(session_server, name: str, arguments: dict = None, agent_name: str = "agent"):
     """Call a tool on a session server and return the raw handler result."""
-    token = _set_request_identity(identity_name)
+    token = _set_request_agent(agent_name)
     try:
         handler = session_server.request_handlers[CallToolRequest]
         request = MagicMock()

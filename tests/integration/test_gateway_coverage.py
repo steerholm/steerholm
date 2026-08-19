@@ -12,39 +12,39 @@ from tests.conftest import make_gateway, make_mock_process
 
 
 def test_auth_cache_evicts_oldest_over_cap(config_manager):
-    t1 = config_manager.add_identity("a")
-    t2 = config_manager.add_identity("b")
-    t3 = config_manager.add_identity("c")
+    t1 = config_manager.add_agent("a")
+    t2 = config_manager.add_agent("b")
+    t3 = config_manager.add_agent("c")
     gateway = make_gateway(config_manager)
     gateway._auth_cache_max = 2
 
-    assert gateway._resolve_identity_from_token(t1) == "a"
-    assert gateway._resolve_identity_from_token(t2) == "b"
-    assert gateway._resolve_identity_from_token(t3) == "c"
+    assert gateway._resolve_agent_from_token(t1) == "a"
+    assert gateway._resolve_agent_from_token(t2) == "b"
+    assert gateway._resolve_agent_from_token(t3) == "c"
 
     assert len(gateway._auth_cache) == 2  # oldest (a) evicted
 
 
 def test_auth_cache_hit_returns_without_rebcrypt(config_manager, monkeypatch):
     import mcp_harbour.gateway as gw
-    token = config_manager.add_identity("a")
+    token = config_manager.add_agent("a")
     gateway = make_gateway(config_manager)
 
-    assert gateway._resolve_identity_from_token(token) == "a"  # populates cache
+    assert gateway._resolve_agent_from_token(token) == "a"  # populates cache
     spy = MagicMock(wraps=gw.bcrypt.checkpw)
     monkeypatch.setattr(gw.bcrypt, "checkpw", spy)
-    assert gateway._resolve_identity_from_token(token) == "a"  # cache hit
+    assert gateway._resolve_agent_from_token(token) == "a"  # cache hit
     spy.assert_not_called()
 
 
 def test_auth_cache_hit_keyring_error_invalidates(config_manager, monkeypatch):
     import mcp_harbour.gateway as gw
-    token = config_manager.add_identity("a")
+    token = config_manager.add_agent("a")
     gateway = make_gateway(config_manager)
-    assert gateway._resolve_identity_from_token(token) == "a"  # populate cache
+    assert gateway._resolve_agent_from_token(token) == "a"  # populate cache
 
     monkeypatch.setattr(gw.keyring, "get_password", MagicMock(side_effect=RuntimeError("boom")))
-    assert gateway._resolve_identity_from_token(token) is None  # invalidated, then miss
+    assert gateway._resolve_agent_from_token(token) is None  # invalidated, then miss
 
 
 # ─── reconcile edge branches ────────────────────────────────────────
@@ -178,7 +178,7 @@ async def test_serve_runs_and_cancels_supervisor(config_manager, monkeypatch):
     fake_server.serve.assert_awaited_once()
 
 
-# ─── __init__, identity-context, tool error paths ───────────────────
+# ─── __init__, agent-context, tool error paths ─────────────────────
 
 
 def test_gateway_real_init(config_manager):
@@ -188,17 +188,17 @@ def test_gateway_real_init(config_manager):
     assert gw.session_server is not None
 
 
-def test_current_identity_name_without_context_denies(config_manager):
+def test_current_agent_name_without_context_denies(config_manager):
     from mcp.shared.exceptions import McpError
     gateway = make_gateway(config_manager)
     with pytest.raises(McpError):
-        gateway._current_identity_name()
+        gateway._current_agent_name()
 
 
 @pytest.mark.asyncio
 async def test_list_allowed_tools_logs_and_skips_on_error(config_manager):
     config_manager.add_server("srv", command="echo")
-    config_manager.add_identity("agent")
+    config_manager.add_agent("agent")
     config_manager.grant_permission("agent", "srv", tool="*")
     gateway = make_gateway(config_manager)
     proc = make_mock_process("srv", ["t"])
@@ -211,7 +211,7 @@ async def test_list_allowed_tools_logs_and_skips_on_error(config_manager):
 @pytest.mark.asyncio
 async def test_resolve_tool_server_logs_and_returns_none_on_error(config_manager):
     config_manager.add_server("srv", command="echo")
-    config_manager.add_identity("agent")
+    config_manager.add_agent("agent")
     config_manager.grant_permission("agent", "srv", tool="*")
     gateway = make_gateway(config_manager)
     proc = make_mock_process("srv", ["t"])
@@ -225,19 +225,19 @@ async def test_resolve_tool_server_logs_and_returns_none_on_error(config_manager
 async def test_call_tool_server_unavailable_when_no_process(config_manager, monkeypatch):
     from mcp.shared.exceptions import McpError
     config_manager.add_server("srv", command="echo")
-    config_manager.add_identity("agent")
+    config_manager.add_agent("agent")
     config_manager.grant_permission("agent", "srv", tool="*")
     gateway = make_gateway(config_manager)
     monkeypatch.setattr(gateway, "_resolve_tool_server", AsyncMock(return_value="srv"))
     with pytest.raises(McpError):
-        await gateway._call_tool_for_identity("agent", "t", {})
+        await gateway._call_tool_for_agent("agent", "t", {})
 
 
 @pytest.mark.asyncio
 async def test_call_tool_wraps_generic_error(config_manager):
     from mcp.shared.exceptions import McpError
     config_manager.add_server("srv", command="echo")
-    config_manager.add_identity("agent")
+    config_manager.add_agent("agent")
     config_manager.grant_permission("agent", "srv", tool="*")
     gateway = make_gateway(config_manager)
     proc = make_mock_process("srv", ["t"])
@@ -245,7 +245,7 @@ async def test_call_tool_wraps_generic_error(config_manager):
     proc.call_tool = AsyncMock(side_effect=RuntimeError("kaboom"))
     gateway.daemon.shared_processes["srv"] = proc
     with pytest.raises(McpError):
-        await gateway._call_tool_for_identity("agent", "t", {})
+        await gateway._call_tool_for_agent("agent", "t", {})
 
 
 @pytest.mark.asyncio
@@ -253,7 +253,7 @@ async def test_call_tool_reraises_mcp_error(config_manager):
     from mcp.shared.exceptions import McpError
     from mcp.types import ErrorData
     config_manager.add_server("srv", command="echo")
-    config_manager.add_identity("agent")
+    config_manager.add_agent("agent")
     config_manager.grant_permission("agent", "srv", tool="*")
     gateway = make_gateway(config_manager)
     proc = make_mock_process("srv", ["t"])
@@ -261,7 +261,7 @@ async def test_call_tool_reraises_mcp_error(config_manager):
     proc.call_tool = AsyncMock(side_effect=McpError(ErrorData(code=-31001, message="denied")))
     gateway.daemon.shared_processes["srv"] = proc
     with pytest.raises(McpError):
-        await gateway._call_tool_for_identity("agent", "t", {})
+        await gateway._call_tool_for_agent("agent", "t", {})
 
 
 @pytest.mark.asyncio
@@ -347,11 +347,11 @@ async def test_serve_other_bind_error_reraises(config_manager, monkeypatch):
         await gateway.serve("127.0.0.1", 4767)
 
 
-# ─── session-identity binding eviction ──────────────────────────────
+# ─── session-agent binding eviction ────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_session_identity_binding_evicts_oldest(config_manager):
+async def test_session_agent_binding_evicts_oldest(config_manager):
     from mcp_harbour.gateway import HarbourAuthenticatedStreamableHTTPApp
     from mcp.server.streamable_http import MCP_SESSION_ID_HEADER
 
@@ -380,4 +380,4 @@ async def test_session_identity_binding_evicts_oldest(config_manager):
     await app(dict(scope), recv, snd)
     await app(dict(scope), recv, snd)
 
-    assert list(app._session_identities.keys()) == ["s2"]  # s1 evicted
+    assert list(app._session_agents.keys()) == ["s2"]  # s1 evicted

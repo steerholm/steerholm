@@ -38,7 +38,7 @@ class HarbourAuthenticatedStreamableHTTPApp:
         self.manager = manager
         # Bounded: clients that disconnect without a DELETE never remove their
         # entry, so cap it (LRU) to avoid unbounded growth over the daemon's life.
-        self._session_identities: "OrderedDict[str, str]" = OrderedDict()
+        self._session_agents: "OrderedDict[str, str]" = OrderedDict()
         self._max_sessions = 4096
 
     async def __call__(self, scope, receive, send):
@@ -46,17 +46,17 @@ class HarbourAuthenticatedStreamableHTTPApp:
             key.decode("latin1").lower(): value.decode("latin1")
             for key, value in scope.get("headers", [])
         }
-        identity_name = self.gateway._authenticate_authorization_header(
+        agent_name = self.gateway._authenticate_authorization_header(
             headers.get("authorization")
         )
-        if not identity_name:
+        if not agent_name:
             await self._send_auth_error(scope, receive, send)
             return
 
         request_session_id = headers.get(MCP_SESSION_ID_HEADER)
         if request_session_id:
-            bound_identity = self._session_identities.get(request_session_id)
-            if bound_identity and bound_identity != identity_name:
+            bound_agent = self._session_agents.get(request_session_id)
+            if bound_agent and bound_agent != agent_name:
                 await self._send_auth_error(scope, receive, send)
                 return
 
@@ -72,16 +72,16 @@ class HarbourAuthenticatedStreamableHTTPApp:
                 response_session_id = response_headers.get(MCP_SESSION_ID_HEADER)
             await send(message)
 
-        scope.setdefault("state", {})["harbour_identity"] = identity_name
+        scope.setdefault("state", {})["harbour_agent"] = agent_name
         await self.manager.handle_request(scope, receive, send_with_session_binding)
 
         if response_session_id:
-            self._session_identities[response_session_id] = identity_name
-            self._session_identities.move_to_end(response_session_id)
-            while len(self._session_identities) > self._max_sessions:
-                self._session_identities.popitem(last=False)
+            self._session_agents[response_session_id] = agent_name
+            self._session_agents.move_to_end(response_session_id)
+            while len(self._session_agents) > self._max_sessions:
+                self._session_agents.popitem(last=False)
         if scope.get("method") == "DELETE" and request_session_id:
-            self._session_identities.pop(request_session_id, None)
+            self._session_agents.pop(request_session_id, None)
 
     async def _send_auth_error(self, scope, receive, send) -> None:
         response = JSONResponse(
@@ -97,8 +97,8 @@ class HarbourGateway:
         self.config_manager = ConfigManager()
         self.daemon = HarbourDaemon()
         self.session_server = Server("mcp-harbour")
-        # token sha256 -> (identity, stored key hash). Lets repeat requests skip the
-        # per-request O(identities) bcrypt; invalidated when the stored hash changes.
+        # token sha256 -> (agent, stored key hash). Lets repeat requests skip the
+        # per-request O(agents) bcrypt; invalidated when the stored hash changes.
         self._auth_cache: "OrderedDict[str, tuple[str, str]]" = OrderedDict()
         self._auth_cache_max = 4096
         # Serializes lifecycle reconciliation (startup, control plane, supervisor).
@@ -108,25 +108,25 @@ class HarbourGateway:
     def _register_handlers(self) -> None:
         @self.session_server.list_tools()
         async def list_tools() -> List[Tool]:
-            return await self._list_allowed_tools(self._current_identity_name())
+            return await self._list_allowed_tools(self._current_agent_name())
 
         @self.session_server.call_tool(validate_input=False)
         async def call_tool(name: str, arguments: dict) -> types.CallToolResult:
-            return await self._call_tool_for_identity(
-                self._current_identity_name(), name, arguments
+            return await self._call_tool_for_agent(
+                self._current_agent_name(), name, arguments
             )
 
-    def _current_identity_name(self) -> str:
+    def _current_agent_name(self) -> str:
         try:
             request = self.session_server.request_context.request
-            identity_name = request.state.harbour_identity if request else None
+            agent_name = request.state.harbour_agent if request else None
         except (AttributeError, LookupError):
-            identity_name = None
-        if not identity_name:
-            raise authorization_denied("Missing authenticated identity.")
-        return identity_name
+            agent_name = None
+        if not agent_name:
+            raise authorization_denied("Missing authenticated agent.")
+        return agent_name
 
-    def _resolve_identity_from_token(self, token: str) -> Optional[str]:
+    def _resolve_agent_from_token(self, token: str) -> Optional[str]:
         token_hash = hashlib.sha256(token.encode()).hexdigest()
 
         cached = self._auth_cache.get(token_hash)
@@ -136,20 +136,20 @@ class HarbourGateway:
                 current_key = keyring.get_password("mcp-harbour", name)
             except Exception:
                 current_key = None
-            # Trust the cache only while the identity is still in config AND its
+            # Trust the cache only while the agent is still in config AND its
             # stored hash is unchanged, so a removed or rotated key invalidates the
             # cached token at once (config membership is the authoritative source,
             # matching the miss-loop below).
             if (
                 current_key is not None
                 and current_key == cached_key
-                and name in self.config_manager.config.identities
+                and name in self.config_manager.config.agents
             ):
                 self._auth_cache.move_to_end(token_hash)
                 return name
             self._auth_cache.pop(token_hash, None)
 
-        for name in self.config_manager.config.identities:
+        for name in self.config_manager.config.agents:
             try:
                 hashed_key = keyring.get_password("mcp-harbour", name)
                 if hashed_key and bcrypt.checkpw(token.encode(), hashed_key.encode()):
@@ -159,7 +159,7 @@ class HarbourGateway:
                         self._auth_cache.popitem(last=False)
                     return name
             except Exception as e:
-                logger.error(f"Keyring error checking identity '{name}': {e}")
+                logger.error(f"Keyring error checking agent '{name}': {e}")
         return None
 
     def _extract_bearer_token(self, authorization: Optional[str]) -> Optional[str]:
@@ -175,12 +175,12 @@ class HarbourGateway:
         if not token:
             return None
         self.config_manager.reload()
-        return self._resolve_identity_from_token(token)
+        return self._resolve_agent_from_token(token)
 
-    def _load_identity_policy(self, identity_name: str) -> AgentPolicy:
-        policy = self.config_manager.load_policy(identity_name)
+    def _load_agent_policy(self, agent_name: str) -> AgentPolicy:
+        policy = self.config_manager.load_policy(agent_name)
         if not policy:
-            return AgentPolicy(identity_name=identity_name, permissions={})
+            return AgentPolicy(agent_name=agent_name, permissions={})
         return policy
 
     def _iter_accessible_processes(self, policy: AgentPolicy):
@@ -189,14 +189,14 @@ class HarbourGateway:
             if process and process.session:
                 yield server_name, process
 
-    async def _list_allowed_tools(self, identity_name: str) -> List[Tool]:
-        policy = self._load_identity_policy(identity_name)
+    async def _list_allowed_tools(self, agent_name: str) -> List[Tool]:
+        policy = self._load_agent_policy(agent_name)
         all_tools = []
 
         for server_name, process in self._iter_accessible_processes(policy):
             try:
-                ship_tools = await process.list_tools()
-                for tool in ship_tools.tools:
+                server_tools = await process.list_tools()
+                for tool in server_tools.tools:
                     for perm in policy.permissions.get(server_name, []):
                         if fnmatch(tool.name, perm.name):
                             all_tools.append(tool)
@@ -206,13 +206,13 @@ class HarbourGateway:
 
         return all_tools
 
-    async def _resolve_tool_server(self, identity_name: str, tool_name: str) -> Optional[str]:
-        policy = self._load_identity_policy(identity_name)
+    async def _resolve_tool_server(self, agent_name: str, tool_name: str) -> Optional[str]:
+        policy = self._load_agent_policy(agent_name)
 
         for server_name, process in self._iter_accessible_processes(policy):
             try:
-                ship_tools = await process.list_tools()
-                for tool in ship_tools.tools:
+                server_tools = await process.list_tools()
+                for tool in server_tools.tools:
                     if tool.name == tool_name:
                         return server_name
             except Exception as e:
@@ -220,12 +220,12 @@ class HarbourGateway:
 
         return None
 
-    async def _call_tool_for_identity(
-        self, identity_name: str, name: str, arguments: dict
+    async def _call_tool_for_agent(
+        self, agent_name: str, name: str, arguments: dict
     ) -> types.CallToolResult:
-        policy = self._load_identity_policy(identity_name)
+        policy = self._load_agent_policy(agent_name)
         engine = PermissionEngine(policy)
-        server_name = await self._resolve_tool_server(identity_name, name)
+        server_name = await self._resolve_tool_server(agent_name, name)
 
         if not server_name:
             raise authorization_denied(f"Tool '{name}' not found on any docked server.")
@@ -409,15 +409,15 @@ class HarbourGateway:
         http_app = HarbourAuthenticatedStreamableHTTPApp(self, manager)
 
         async def health(_request):
-            # Unauthenticated identity/liveness probe. Loopback-only, so exposing
-            # the service name + version here is acceptable and lets tooling
-            # confirm it is Harbour answering (not just any open port).
+            # Unauthenticated liveness probe. Loopback-only, so exposing the
+            # service name + version here is acceptable and lets tooling confirm
+            # it is Harbour answering (not just any open port).
             return JSONResponse({"service": "mcp-harbour", "version": __version__})
 
         async def control_reconcile(request):
-            # Control plane: the CLI (dock/undock) calls this so the daemon applies
-            # lifecycle changes immediately. The control token authenticates it —
-            # agent tokens never match, so they cannot drive lifecycle.
+            # Control plane: the CLI (add/remove server) calls this so the daemon
+            # applies lifecycle changes immediately. The control token authenticates
+            # it — agent tokens never match, so they cannot drive lifecycle.
             denied = self._control_unauthorized(request)
             if denied is not None:
                 return denied

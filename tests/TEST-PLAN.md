@@ -56,7 +56,8 @@ covers macOS/Windows protocol behavior.
 ³ Built and lint-clean, but `workflow_dispatch`-gated and **not yet run** — the
 headless service path and real-update path can only be validated on real
 runners and need first-run iteration. Not a PR gate yet.
-⁴ list/inspect/identity-list/permit-show are asserted; `undock` is not yet.
+⁴ `list servers`/`show server`/`list agents`/`show agent` are asserted;
+`remove server` is not yet.
 
 The honest summary: **L0–L6, L8 (foreground), L9, L11 are real and (on Linux)
 locally validated. The remaining true-service paths (L7, L8s, L10) are written,
@@ -84,14 +85,16 @@ Purpose: prove each logic unit in isolation. Fast, no network, no daemon.
 Runs on all three OSes in the `pytest` matrix job. Status: **DONE**.
 
 - **test_models.py** — Pydantic models. Server stdio/http defaults and
-  validation, Identity required fields, ArgumentPolicy match-type validation
+  validation, Agent required fields, ArgumentPolicy match-type validation
   (glob/regex only; `exact`/`fuzzy` rejected), ToolPermission with/without
   arg policies, Config shape, and JSON round-trip for Server and AgentPolicy.
 - **test_config.py** — `ConfigManager`. Add/list/remove/get servers (stdio +
-  http, reject both/neither, reject duplicates), identity add/get/remove with
-  policy cascade-delete, policy grant (glob + `re:` regex, additive across
-  tools and servers, invalid `arg=pattern` format rejected, grant to unknown
-  identity rejected), on-disk persistence across manager instances, and
+  http, reject both/neither, reject duplicates), agent add/get/remove/rotate
+  (rotation issues a fresh key while keeping existing grants) with policy
+  cascade-delete, policy grant (glob + `re:` regex, additive across tools and
+  servers, invalid `arg=pattern` format rejected, grant to unknown agent
+  rejected) and revoke (per-tool, whole-server, no-match/no-policy no-ops,
+  unknown agent rejected), on-disk persistence across manager instances, and
   platform config-dir resolution (`.mcp-harbour` on unix, `%APPDATA%` on
   win32).
 - **test_permissions.py** — `PermissionEngine`, the heart of enforcement.
@@ -101,15 +104,15 @@ Runs on all three OSes in the `pytest` matrix job. Status: **DONE**.
   semantics, regex anchored-at-start behavior, and that denials raise an
   `McpError` carrying the GPARS `AUTHORIZATION_DENIED` code, data, and
   message.
-- **test_identity.py** — token → identity resolution. Correct identity for a
-  valid token, `None` for unknown/partial tokens, `None` when no identities
+- **test_identity.py** — token → agent resolution. Correct agent for a
+  valid token, `None` for unknown/partial tokens, `None` when no agents
   exist, and graceful `None` when the keyring backend throws.
 - **test_errors.py** — GPARS error constructors produce the correct MCP error
   codes/messages/data for `AUTHORIZATION_DENIED` and `SERVER_UNAVAILABLE`.
 - **test_process_manager.py** — command parsing (`shlex.split` of stdio
   commands incl. quoted paths, uvx/npx forms), `HarbourDaemon` shared-process
   bookkeeping, and `ServerHealth` tracking (healthy on successful start,
-  failed + error recorded when a docked server fails to start).
+  failed + error recorded when a server fails to start).
 - **test_updater.py** — self-update logic. Tag normalization, version
   comparison, platform asset selection (incl. Darwin x86_64 → arm64,
   unsupported platform error), installer-asset selection, checksum parsing
@@ -139,8 +142,8 @@ all three OSes in the `pytest` job. Status: **DONE**.
   rejection.
 - **test_handshake.py** — Streamable HTTP auth/session. Missing/malformed/
   invalid `Authorization` → 401 (+ `WWW-Authenticate: Bearer`); a valid token
-  initializes a session; a session id cannot switch identity (→ 401); an
-  unknown session id → 404; `DELETE` of a session does not stop shared docked
+  initializes a session; a session id cannot switch agent (→ 401); an
+  unknown session id → 404; `DELETE` of a session does not stop shared server
   processes; one shared `Server("mcp-harbour")` backs all sessions; and
   `serve` exits(1) on a port already in use.
 
@@ -155,8 +158,8 @@ server and the real MCP client library.
   port, connects with the MCP `streamable_http_client`, and drives the full
   protocol against `@modelcontextprotocol/server-everything` (requires Node /
   `npx`): valid/invalid token, initialize capabilities, list-tools for
-  full/restricted/no-policy identities, tool calls, argument-policy denial,
-  and multi-session identity isolation through one endpoint.
+  full/restricted/no-policy agents, tool calls, argument-policy denial,
+  and multi-session agent isolation through one endpoint.
 
 Status: **PARTIAL** — the test exists and is strong, but (a) it is **not run
 in the CI matrix**, and (b) it depends on `npx`/Node. The hermetic
@@ -189,7 +192,7 @@ Purpose: prove the *frozen binary* (not the source) works as an end-user MCP
 endpoint — without yet involving the installer or service manager.
 
 - **scenario.py** (`tests/smoke/`) drives the external binary:
-  `dock` a hermetic downstream → `identity create` → `permit allow` (a tool
+  `add server` for a hermetic downstream → `add agent` → `grant` (a tool
   and an argument policy) → `serve` on an ephemeral port → connect with a real
   MCP client and assert: unauthenticated → 401, initialize → `mcp-harbour`,
   policy-filtered discovery, allowed call succeeds, denied call rejected,
@@ -255,7 +258,7 @@ scenario.
 Planned scenario, per OS:
 
 - Do **not** start `harbour serve`; the service is already running.
-- Configure servers/identities/policies via the installed `harbour` CLI.
+- Configure servers/agents/policies via the installed `harbour` CLI.
 - Connect as an MCP client to the running service and assert the same policy
   surface as L5 (auth, discovery filtering, allowed/denied calls, argument
   policies), plus that config changes are picked up per the daemon's reload
@@ -272,14 +275,16 @@ starting its own `serve`. This is the single most important missing piece for
 
 Purpose: prove every command behaves, not just the policy-critical ones.
 
-Covered today (via L1/L2/L5): `dock` (stdio+http), `identity create`,
-`permit allow`, `serve`, `version`, `update --check`. Their underlying logic
-is unit/integration tested.
+Covered today (via L1/L2/L5): `add server` (stdio+http), `add agent`,
+`grant`, `serve`, `version`, `update --check`. Their underlying logic
+is unit/integration tested, and the smoke scenario now also asserts the
+read commands end-to-end: `list servers`, `show server`, `list agents`,
+`show agent`.
 
-Not yet asserted end-to-end against the installed binary: `list`, `inspect`,
-`undock`, `identity list`, `identity delete`, `permit show`. *To close:*
-extend the scenario (or add a CLI-surface scenario) to run each command
-against the installed binary and assert on output/exit codes.
+Not yet asserted end-to-end against the installed binary: `remove server`
+and `remove agent`. *To close:* extend the scenario (or add a CLI-surface
+scenario) to run each command against the installed binary and assert on
+output/exit codes.
 
 Status: **PARTIAL**.
 
@@ -350,13 +355,13 @@ server). Needs the Allure 3 CLI: `npm install -g allure`.
   (`MCP_HARBOUR_NO_SERVICE`) modes** — *done, validated*. Mirrored in
   `install.ps1`.
 - **Keyring bundled into the frozen binary** (`--collect-all keyrings.alt`) so
-  headless `identity create` works with the file backend — *done, validated*
+  headless `add agent` works with the file backend — *done, validated*
   on Linux. Removes the gnome-keyring/dbus fragility.
 - **L0 actionlint**, **L3 npx e2e (ubuntu)**, **L5 binary smoke**, **L6/L8
   install-use**, **L11 uninstall** — wired into `test-matrix.yml` /
   `install-matrix.yml` and lint-clean.
-- **L9 CLI assertions** — `list` / `inspect` / `identity list` / `permit show`
-  asserted in the scenario `configure` step.
+- **L9 CLI assertions** — `list servers` / `show server` / `list agents` /
+  `show agent` asserted in the scenario `configure` step.
 
 ## Still open (needs a first real-runner pass)
 
@@ -368,7 +373,7 @@ In priority order:
    iterate; only then move it onto the PR gate.
 2. **L10 self-update** — `self-update` job exists (`workflow_dispatch`); needs a
    published release to update *from* and *to*, so it runs post-release.
-3. **L9 `undock`** — add an assertion for the one remaining uncovered command.
+3. **L9 `remove server`** — add an assertion for the one remaining uncovered command.
 4. **release.yml reusable-build refactor** — verify via a `workflow_dispatch`
    build before the next real tagged release.
 5. Promote the dispatch-gated jobs to PR gates once they pass reliably.

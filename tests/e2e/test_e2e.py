@@ -100,9 +100,9 @@ def e2e_port():
 def e2e_setup(e2e_config, e2e_dir, e2e_port):
     e2e_config.add_server("everything", command="npx -y @modelcontextprotocol/server-everything")
 
-    full_token = e2e_config.add_identity("full-access")
-    restricted_token = e2e_config.add_identity("restricted")
-    no_policy_token = e2e_config.add_identity("no-policy")
+    full_token = e2e_config.add_agent("full-access")
+    restricted_token = e2e_config.add_agent("restricted")
+    no_policy_token = e2e_config.add_agent("no-policy")
 
     e2e_config.grant_permission("full-access", "everything", tool="*")
     e2e_config.grant_permission("restricted", "everything", tool="echo")

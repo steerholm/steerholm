@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from mcp_harbour.models import (
     Server,
     ServerType,
-    Identity,
+    Agent,
     Config,
     AgentPolicy,
     ToolPermission,
@@ -42,15 +42,15 @@ class TestServer:
         assert s.server_type == ServerType.stdio
 
 
-class TestIdentity:
+class TestAgent:
     def test_create(self):
-        i = Identity(name="agent", key_prefix="harbour_sk_a...")
+        i = Agent(name="agent", key_prefix="harbour_sk_a...")
         assert i.name == "agent"
         assert i.key_prefix.startswith("harbour_sk_")
 
     def test_missing_fields_raises(self):
         with pytest.raises(ValidationError):
-            Identity(name="agent")
+            Agent(name="agent")
 
 
 class TestArgumentPolicy:
@@ -90,14 +90,14 @@ class TestToolPermission:
 class TestAgentPolicy:
     def test_create(self):
         p = AgentPolicy(
-            identity_name="test",
+            agent_name="test",
             permissions={"filesystem": [ToolPermission(name="read_file")]},
         )
         assert "filesystem" in p.permissions
         assert len(p.permissions["filesystem"]) == 1
 
     def test_empty_permissions(self):
-        p = AgentPolicy(identity_name="empty", permissions={})
+        p = AgentPolicy(agent_name="empty", permissions={})
         assert p.permissions == {}
 
 
@@ -105,15 +105,15 @@ class TestConfig:
     def test_empty_config(self):
         c = Config()
         assert c.servers == {}
-        assert c.identities == {}
+        assert c.agents == {}
 
     def test_with_data(self):
         c = Config(
             servers={"fs": Server(name="fs", command="echo")},
-            identities={"a": Identity(name="a", key_prefix="harbour_sk_x")},
+            agents={"a": Agent(name="a", key_prefix="harbour_sk_x")},
         )
         assert "fs" in c.servers
-        assert "a" in c.identities
+        assert "a" in c.agents
 
 
 class TestJsonRoundtrip:
@@ -125,7 +125,7 @@ class TestJsonRoundtrip:
 
     def test_policy_roundtrip(self):
         p = AgentPolicy(
-            identity_name="agent",
+            agent_name="agent",
             permissions={
                 "fs": [
                     ToolPermission(

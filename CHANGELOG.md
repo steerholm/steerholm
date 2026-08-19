@@ -10,6 +10,30 @@ tagging it.
 
 ## [Unreleased]
 
+### Changed
+- **CLI overhaul to a verb-first, plain vocabulary.** Commands now read
+  `harbour <verb> <resource>`: `add server` / `add agent` (was `dock` /
+  `identity create`), `remove server` / `remove agent` (was `undock` /
+  `identity delete`), `list servers` / `list agents`, `show server` (was
+  `inspect`) / `show agent` (was `permit show`), and `grant` (was `permit
+  allow`). "Identity" is now **agent** and the credential is an **access key**.
+  The daemon lifecycle commands (`start`/`stop`/`status`/`serve`) and
+  `version`/`update` are unchanged.
+- Config schema renamed to match: `config.json` stores agents under an `agents`
+  key (was `identities`) and policy files use `agent_name` (was
+  `identity_name`). Existing configs and policies load unchanged and are
+  migrated to the new schema transparently on the next save.
+
+### Added
+- `harbour revoke <agent> <server> [--tool PATTERN]` removes a grant — one tool
+  with `--tool`, or all access to the server without it. (Previously access
+  could only be added, never removed.)
+- `harbour rotate agent <name>` issues a new access key while keeping the
+  agent's grants; the previous key stops working immediately.
+- `harbour --version` flag, alongside the existing `harbour version` command.
+- `harbour show server` now also lists which agents have been granted access to
+  the server.
+
 ## [0.1.3] - 2026-08-17
 
 ### Added

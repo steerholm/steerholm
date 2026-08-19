@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  Dock your servers once, control which agents can access which tools, and manage everything from a single place.<br/>
+  Add your MCP servers once, control which agents can access which tools, and manage everything from a single place.<br/>
 </p>
 
 <p align="center">
@@ -39,18 +39,19 @@ Or download binaries directly from [GitHub Releases](https://github.com/mcpharbo
 ## Quick Start
 
 ```bash
-# 1. Dock an MCP server
-harbour dock --name filesystem \
+# 1. Add an MCP server
+harbour add server filesystem \
   --command "npx -y @modelcontextprotocol/server-filesystem /home/user/projects"
 
-# 2. Create an identity
-harbour identity create my-agent
+# 2. Add an agent (prints its access key once)
+harbour add agent my-agent
 
-# 3. Grant permissions
-harbour permit allow my-agent filesystem --tool "*" --args "path=/home/user/projects/**"
+# 3. Grant it scoped access
+harbour grant my-agent filesystem --tool "*" --args "path=/home/user/projects/**"
 ```
 
-Then configure your MCP client (Claude Code, VS Code, Cursor, OpenCode):
+Then configure your MCP client (Claude Code, VS Code, Cursor, OpenCode) with the
+agent's access key as the Bearer token:
 
 ```json
 {
@@ -70,13 +71,13 @@ Then configure your MCP client (Claude Code, VS Code, Cursor, OpenCode):
 ```
 Agent → Streamable HTTP /mcp → Harbour Daemon → MCP Servers
               │                       │
-          Bearer auth          identity verification
+          Bearer auth          agent verification
                                policy enforcement
                                AUTHORIZATION_DENIED / SERVER_UNAVAILABLE
 ```
 
-- **Default deny** — no policy means no access
-- **Identity from token** — agents cannot self-assert their identity
+- **Default deny** — no grant means no access
+- **Agent from token** — agents cannot self-assert who they are; the access key determines the agent
 - **Per-agent policies** — whitelist of servers, tools, and argument constraints
 - **Isolation by policy** — one shared daemon; each agent is confined by its policy, not by separate server processes
 - **GPARS error codes** — `AUTHORIZATION_DENIED` (-31001) and `SERVER_UNAVAILABLE` (-31002)

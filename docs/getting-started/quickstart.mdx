@@ -3,27 +3,27 @@ title: Quickstart
 description: Get from zero to a policy-controlled agent in 2 minutes.
 ---
 
-## 1. Dock an MCP server
+## 1. Add an MCP server
 
 ```bash
-harbour dock --name filesystem \
+harbour add server filesystem \
   --command "npx -y @modelcontextprotocol/server-filesystem /home/user/projects"
 ```
 
-## 2. Create an identity
+## 2. Add an agent
 
 ```bash
-harbour identity create my-agent
+harbour add agent my-agent
 ```
 
 <Warning>
-  Save the API key — it won't be shown again.
+  Save the access key — it's shown only once.
 </Warning>
 
-## 3. Grant permissions
+## 3. Grant access
 
 ```bash
-harbour permit allow my-agent filesystem \
+harbour grant my-agent filesystem \
   --tool "*" --args "path=/home/user/projects/**"
 ```
 
@@ -31,7 +31,8 @@ This allows `my-agent` to use any tool on the `filesystem` server, but only for 
 
 ## 4. Connect your agent
 
-Configure your MCP client (Claude Code, VS Code, Cursor, OpenCode):
+Configure your MCP client (Claude Code, VS Code, Cursor, OpenCode) with the
+agent's access key as the Bearer token:
 
 ```json
 {
@@ -46,14 +47,14 @@ Configure your MCP client (Claude Code, VS Code, Cursor, OpenCode):
 }
 ```
 
-The agent sees tools only from servers and tools its policy permits.
+The agent sees only the servers and tools its policy allows.
 
 ## What happens at runtime
 
 ```
 Agent sends: call_tool("read_text_file", {"path": "/home/user/projects/main.py"})
   → MCP client sends Streamable HTTP request to http://127.0.0.1:4767/mcp
-  → daemon verifies identity from the Bearer token
+  → daemon resolves the agent from the Bearer token
   → daemon checks policy: filesystem allowed, read_text_file matches *, path matches /home/user/projects/**
   → forwards to filesystem MCP server
   → returns file content to agent

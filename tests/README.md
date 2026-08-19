@@ -12,7 +12,7 @@ pytest tests/e2e        # needs npx
 **[test_models.py](unit/test_models.py)** — Pydantic model validation
 
 - Server: stdio, http, defaults, missing name
-- Identity: creation, missing fields
+- Agent: creation, missing fields
 - ArgumentPolicy: glob, regex, default type, invalid types
 - ToolPermission, AgentPolicy, Config: creation, empty states
 - JSON roundtrip for Server and AgentPolicy
@@ -20,8 +20,8 @@ pytest tests/e2e        # needs npx
 **[test_config.py](unit/test_config.py)** — ConfigManager service methods
 
 - Servers: add (stdio/http), validation (both/neither/duplicate), list, remove, persistence
-- Identities: add, duplicate raises, remove cascades to policy, nonexistent raises
-- Policies: grant_permission creates policy, argument policies (glob/regex), invalid format raises, identity not found raises, additive within server, additive across servers
+- Agents: add, duplicate raises, remove cascades to policy, nonexistent raises, rotate key keeps grants
+- Policies: grant_permission creates policy, argument policies (glob/regex), invalid format raises, agent not found raises, additive within server, additive across servers; revoke_permission removes a tool/whole server, no-match/no-policy no-ops
 - Platform: Unix vs Windows config directory
 
 **[test_permissions.py](unit/test_permissions.py)** — PermissionEngine
@@ -44,25 +44,25 @@ pytest tests/e2e        # needs npx
 - shlex split: simple, multi-arg, quoted paths, single word, uvx
 - HarbourDaemon: init, nonexistent lookup, stop all shared
 
-**[test_identity.py](unit/test_identity.py)** — Token resolution
+**[test_identity.py](unit/test_identity.py)** — Agent resolution from tokens
 
-- Resolves correct identity from multiple
-- Returns None: unknown token, no identities, keyring error, partial token
+- Resolves correct agent from multiple
+- Returns None: unknown token, no agents, keyring error, partial token
 
 ## Integration
 
 **[test_session.py](integration/test_session.py)** — Shared gateway server (mocked MCP servers)
 
-- Shared process startup for stdio and HTTP docked servers
+- Shared process startup for stdio and HTTP servers
 - Tool discovery: single server, multiple servers, exact filter, glob filter, server filtering
 - Default deny: no policy, empty policy
 - Tool calls: correct routing, argument policy allowed/denied, denied tool, unknown tool, unavailable server
-- Lifecycle: shared process shutdown and multi-identity process reuse
+- Lifecycle: shared process shutdown and multi-agent process reuse
 
 **[test_handshake.py](integration/test_handshake.py)** — Streamable HTTP authentication and sessions
 
 - Auth: valid token, invalid token, missing authorization, malformed authorization
-- Session binding: valid initialization, identity mismatch rejection, unknown session id
+- Session binding: valid initialization, agent mismatch rejection, unknown session id
 - Port conflict: exits cleanly when port is in use
 
 ## E2E

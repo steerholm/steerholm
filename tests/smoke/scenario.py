@@ -5,11 +5,11 @@ and validates real MCP behavior. Reused by every layer of the test framework,
 on every OS.
 
 Modes:
-  serve-check   Self-contained: isolated config, dock/identity/permit, start
-                `harbour serve`, connect, assert, tear down. (binary smoke, L5)
-  configure     Write servers/identities/policies into the ambient config dir
+  serve-check   Self-contained: isolated config, add server/add agent/grant,
+                start `harbour serve`, connect, assert, tear down. (binary smoke, L5)
+  configure     Write servers/agents/policies into the ambient config dir
                 (MCP_HARBOUR_CONFIG_DIR or the installed default) and print
-                `TOKEN=<api key>`. Used before starting the real service. (L8)
+                `TOKEN=<access key>`. Used before starting the real service. (L8)
   check         Connect to an already-running daemon at --url with --token and
                 run the client assertions only. (L8, against the service)
 
@@ -170,27 +170,27 @@ def downstream_command() -> str:
 
 
 def setup_config(harbour: list[str], env: dict, checks: Checks) -> str:
-    """Dock the downstream, create an identity, grant scoped policy, and assert
-    the surrounding CLI surface (list/inspect/permit show/identity list).
-    Returns the API token."""
-    run_cli(harbour, env, "dock", "--name", "smoke", "--command", downstream_command())
-    created = run_cli(harbour, env, "identity", "create", "agent")
+    """Add the downstream server, add an agent, grant a scoped policy, and assert
+    the surrounding CLI surface (list servers/show server/show agent/list agents).
+    Returns the access key."""
+    run_cli(harbour, env, "add", "server", "smoke", "--command", downstream_command())
+    created = run_cli(harbour, env, "add", "agent", "agent")
     match = TOKEN_RE.search(created.stdout)
     if not match:
-        raise RuntimeError(f"could not parse API key from:\n{created.stdout}")
+        raise RuntimeError(f"could not parse access key from:\n{created.stdout}")
     token = match.group(0)
-    run_cli(harbour, env, "permit", "allow", "agent", "smoke", "--tool", "echo")
-    run_cli(harbour, env, "permit", "allow", "agent", "smoke", "--tool", "add", "--args", "a=re:^\\d+$")
+    run_cli(harbour, env, "grant", "agent", "smoke", "--tool", "echo")
+    run_cli(harbour, env, "grant", "agent", "smoke", "--tool", "add", "--args", "a=re:^\\d+$")
 
     # L9 — CLI surface assertions against the same binary.
-    listed = run_cli(harbour, env, "list").stdout
-    checks.check("smoke" in listed, "`list` shows the docked server")
-    inspected = run_cli(harbour, env, "inspect", "smoke").stdout
-    checks.check("smoke" in inspected, "`inspect` shows server details")
-    identities = run_cli(harbour, env, "identity", "list").stdout
-    checks.check("agent" in identities, "`identity list` shows the identity")
-    policy = run_cli(harbour, env, "permit", "show", "agent").stdout
-    checks.check("echo" in policy and "add" in policy, "`permit show` lists granted tools")
+    listed = run_cli(harbour, env, "list", "servers").stdout
+    checks.check("smoke" in listed, "`list servers` shows the server")
+    inspected = run_cli(harbour, env, "show", "server", "smoke").stdout
+    checks.check("smoke" in inspected, "`show server` shows server details")
+    agents = run_cli(harbour, env, "list", "agents").stdout
+    checks.check("agent" in agents, "`list agents` shows the agent")
+    policy = run_cli(harbour, env, "show", "agent", "agent").stdout
+    checks.check("echo" in policy and "add" in policy, "`show agent` lists granted tools")
 
     return token
 
