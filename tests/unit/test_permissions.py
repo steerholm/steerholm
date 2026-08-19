@@ -228,16 +228,16 @@ class TestEdgeCases:
         assert_authorization_denied(exc_info)
 
 
-# ─── GPARS Error Code Tests ─────────────────────────────────────────
+# ─── Error code tests ───────────────────────────────────────────────
 
 
-class TestGPARSErrorCodes:
-    def test_denied_error_carries_gpars_data(self, engine_read_only):
+class TestErrorCodes:
+    def test_denied_error_carries_error_type_data(self, engine_read_only):
         # The code/message facets are covered by test_errors.py; this asserts the
-        # engine's denial actually carries the GPARS data payload end to end.
+        # engine's denial actually carries the error_type data payload end to end.
         with pytest.raises(McpError) as exc_info:
             engine_read_only.check_permission("git", "git_status")
-        assert exc_info.value.error.data == {"gpars_code": "AUTHORIZATION_DENIED"}
+        assert exc_info.value.error.data == {"error_type": "AUTHORIZATION_DENIED"}
 
 
 # ─── Multiple Permissions & Regex ──────────────────────────────────
