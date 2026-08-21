@@ -1,0 +1,48 @@
+---
+title: Error Codes
+description: GPARS-standard error codes returned by MCP Harbour.
+---
+
+MCP Harbour returns structured JSON-RPC errors using [GPARS](https://gpars.io)-standard error codes outside the reserved JSON-RPC range.
+
+## Error Codes
+
+| Code | Name | Meaning |
+|------|------|---------|
+| `-31001` | `AUTHORIZATION_DENIED` | The operation violates the user's security policy |
+| `-31002` | `SERVER_UNAVAILABLE` | The target MCP server is not reachable |
+
+## Response Format
+
+Errors include a `gpars_code` field in the `data` payload:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -31001,
+    "message": "Tool 'write_file' on server 'filesystem' is not allowed.",
+    "data": {
+      "gpars_code": "AUTHORIZATION_DENIED"
+    }
+  }
+}
+```
+
+## Behavior
+
+### AUTHORIZATION_DENIED
+
+Returned when:
+- The agent calls a tool not in its policy
+- The agent calls a tool with arguments that violate an argument policy
+- The agent calls a tool that doesn't exist on any server it has access to
+
+The agent **must not retry** the same operation — the denial is authoritative.
+
+### SERVER_UNAVAILABLE
+
+Returned when the target MCP server process is not running or not reachable.
+
+The agent **may retry** — the server might become available later.

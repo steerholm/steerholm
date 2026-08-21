@@ -1,0 +1,72 @@
+name: Build
+
+# Reusable binary build shared by release.yml and test-matrix.yml so the
+# packaging definition lives in exactly one place.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x64
+          - os: macos-latest
+            platform: darwin-arm64
+          - os: windows-latest
+            platform: windows-x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -e .
+          pip install pyinstaller keyrings.alt
+
+      # keyrings.alt is collected so a file-based keyring backend is available
+      # in headless environments (no OS Secret Service). It is only used when
+      # PYTHON_KEYRING_BACKEND is set; real users still get the native backend.
+      - name: Build harbour
+        run: pyinstaller --onefile --name harbour --collect-all keyrings.alt entry_harbour.py
+
+      # Windowless daemon used by the per-user logon task so no console window
+      # appears. Same gateway as `harbour serve`; --windowed = GUI subsystem.
+      - name: Build harbourd (Windows, windowless daemon)
+        if: runner.os == 'Windows'
+        run: pyinstaller --onefile --windowed --name harbourd --collect-all keyrings.alt entry_harbourd.py
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p release
+          cp dist/harbour release/
+          cp scripts/install.sh release/
+          cp scripts/uninstall.sh release/
+          tar -czf mcp-harbour-${{ matrix.platform }}.tar.gz -C release .
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          mkdir release
+          copy dist\harbour.exe release\
+          copy dist\harbourd.exe release\
+          copy scripts\install.ps1 release\
+          copy scripts\uninstall.ps1 release\
+          Compress-Archive -Path release\* -DestinationPath mcp-harbour-${{ matrix.platform }}.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcp-harbour-${{ matrix.platform }}
+          path: mcp-harbour-${{ matrix.platform }}.*

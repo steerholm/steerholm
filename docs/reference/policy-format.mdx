@@ -1,0 +1,79 @@
+---
+title: Policy Format
+description: JSON schema for per-identity security policies.
+---
+
+Policy files live at `policies/<identity_name>.json` inside the config directory.
+
+## Example
+
+```json
+{
+  "identity_name": "coding-agent",
+  "permissions": {
+    "filesystem": [
+      {
+        "name": "read_text_file",
+        "policies": [
+          {
+            "arg_name": "path",
+            "match_type": "glob",
+            "pattern": "/home/user/projects/**"
+          }
+        ]
+      },
+      {
+        "name": "write_file",
+        "policies": []
+      }
+    ],
+    "database": [
+      {
+        "name": "query",
+        "policies": [
+          {
+            "arg_name": "sql",
+            "match_type": "regex",
+            "pattern": "^SELECT\\s.*"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+## Schema
+
+### Top Level
+
+| Field | Type | Description |
+|---|---|---|
+| `identity_name` | `string` | Must match the identity name |
+| `permissions` | `object` | Map of server name → list of tool permissions |
+
+### ToolPermission
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Tool name or glob pattern (e.g. `read_*`, `*`) |
+| `policies` | `array` | Argument-level restrictions (empty = no restrictions) |
+
+### ArgumentPolicy
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `arg_name` | `string` | — | Argument to restrict |
+| `match_type` | `string` | `glob` | `glob` or `regex` |
+| `pattern` | `string` | — | Pattern to match against |
+
+## Match Types
+
+<CardGroup cols={2}>
+  <Card title="Glob" icon="asterisk" color="#10b981">
+    Shell-style wildcards. `*` matches within one level, `**` matches across levels. A pattern without wildcards is an exact match.
+  </Card>
+  <Card title="Regex" icon="code" color="#10b981">
+    Full regular expression, matched from the start of the value. Use `re:` prefix in CLI.
+  </Card>
+</CardGroup>

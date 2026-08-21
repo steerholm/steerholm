@@ -1,0 +1,52 @@
+---
+title: MCP Endpoint
+description: Connect MCP clients to the Harbour daemon.
+---
+
+MCP Harbour exposes a Streamable HTTP MCP endpoint directly from the daemon. MCP clients connect to `/mcp` and authenticate with an API key in the `Authorization` header.
+
+## Endpoint
+
+```text
+http://127.0.0.1:4767/mcp
+```
+
+Use the host and port configured for `harbour serve` if you changed the defaults.
+
+## Authentication
+
+Every request must include a Bearer token:
+
+```http
+Authorization: Bearer harbour_sk_XXXX
+```
+
+The daemon derives the identity from the token by checking it against stored key hashes. The client does not declare its identity.
+
+## MCP Client Configuration
+
+Configure your MCP client to use Harbour as a Streamable HTTP server:
+
+```json
+{
+  "mcpServers": {
+    "harbour": {
+      "url": "http://127.0.0.1:4767/mcp",
+      "headers": {
+        "Authorization": "Bearer harbour_sk_XXXX"
+      }
+    }
+  }
+}
+```
+
+This keeps the admin CLI separate from agent access. Agents connect only to the MCP endpoint; users manage servers, identities, policies, and daemon lifecycle through the `harbour` command.
+
+## HTTP Statuses
+
+| Status | Meaning |
+|---|---|
+| `401` | Missing, malformed, or invalid Bearer token |
+| `404` | Unknown MCP session id |
+
+Authenticated policy denials are returned as MCP errors, not HTTP auth failures. Unauthorized tool calls return `AUTHORIZATION_DENIED` (`-31001`). Downstream server failures return `SERVER_UNAVAILABLE` (`-31002`).

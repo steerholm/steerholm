@@ -1,0 +1,69 @@
+---
+title: Quickstart
+description: Get from zero to a policy-controlled agent in 2 minutes.
+---
+
+## 1. Dock an MCP server
+
+```bash
+harbour dock --name filesystem \
+  --command "npx -y @modelcontextprotocol/server-filesystem /home/user/projects"
+```
+
+## 2. Create an identity
+
+```bash
+harbour identity create my-agent
+```
+
+<Warning>
+  Save the API key — it won't be shown again.
+</Warning>
+
+## 3. Grant permissions
+
+```bash
+harbour permit allow my-agent filesystem \
+  --tool "*" --args "path=/home/user/projects/**"
+```
+
+This allows `my-agent` to use any tool on the `filesystem` server, but only for paths under `/home/user/projects/`.
+
+## 4. Connect your agent
+
+Configure your MCP client (Claude Code, VS Code, Cursor, OpenCode):
+
+```json
+{
+  "mcpServers": {
+    "harbour": {
+      "url": "http://127.0.0.1:4767/mcp",
+      "headers": {
+        "Authorization": "Bearer harbour_sk_..."
+      }
+    }
+  }
+}
+```
+
+The agent sees tools only from servers and tools its policy permits.
+
+## What happens at runtime
+
+```
+Agent sends: call_tool("read_text_file", {"path": "/home/user/projects/main.py"})
+  → MCP client sends Streamable HTTP request to http://127.0.0.1:4767/mcp
+  → daemon verifies identity from the Bearer token
+  → daemon checks policy: filesystem allowed, read_text_file matches *, path matches /home/user/projects/**
+  → forwards to filesystem MCP server
+  → returns file content to agent
+```
+
+If the agent tries something unauthorized:
+
+```
+Agent sends: call_tool("read_text_file", {"path": "/etc/shadow"})
+  → policy check fails: path does not match /home/user/projects/**
+  → returns AUTHORIZATION_DENIED (-31001)
+  → agent receives error, does not retry
+```

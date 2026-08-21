@@ -1,0 +1,22 @@
+.nav-logo {
+    height: 2.5rem;
+}
+
+/* Mermaid diagram container */
+.mermaid {
+    background: #0f0f1a;
+    border-radius: 12px;
+    padding: 24px;
+    border: 1px solid #2d2d5e;
+}
+
+/* Card borders - indigo accent */
+[class*="card"],
+[class*="Card"] {
+    border-color: #4a4dae !important;
+}
+
+/* CardGroup card children */
+a[class*="block"] {
+    border-color: #4a4dae !important;
+}

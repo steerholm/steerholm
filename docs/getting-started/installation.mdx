@@ -1,0 +1,88 @@
+---
+title: Installation
+description: Install MCP Harbour and start the daemon.
+---
+
+## One-line Install
+
+The install script downloads pre-built binaries, registers a per-user background daemon that runs as you, and starts it. No admin rights, no Python or package manager required.
+
+<CodeGroup>
+
+```bash Linux / macOS
+curl -fsSL https://mcpharbour.ai/install.sh | bash
+```
+
+```powershell Windows
+irm https://mcpharbour.ai/install.ps1 | iex
+```
+
+</CodeGroup>
+
+This installs the `harbour` command for server administration and starts the daemon's Streamable HTTP MCP endpoint at `http://127.0.0.1:4767/mcp`.
+
+## What the Install Script Does
+
+1. Downloads the latest release binaries for your platform
+2. Installs `harbour` to `~/.local/bin` (Linux/macOS) or `%LOCALAPPDATA%\mcp-harbour\bin` (Windows)
+3. Registers a per-user background daemon that runs as you (no admin required):
+   - **Linux**: systemd user service
+   - **macOS**: launchd user agent
+   - **Windows**: a logon Scheduled Task
+4. Starts the daemon on `http://127.0.0.1:4767/mcp`
+
+The daemon starts at login and restarts on crash.
+
+You can also download binaries manually from the [GitHub Releases](https://github.com/mcpharbour/mcpharbour/releases) page.
+
+## Verify
+
+```bash
+harbour status
+```
+
+## Upgrade
+
+Update to the latest release in place:
+
+```bash
+harbour update
+```
+
+Use `harbour update --check` to see whether a newer version is available without installing, and `harbour version` to print the installed version. See the [CLI reference](/reference/cli) for all options.
+
+## Uninstall
+
+<CodeGroup>
+
+```bash Linux / macOS
+curl -fsSL https://mcpharbour.ai/uninstall.sh | bash
+```
+
+```powershell Windows
+irm https://mcpharbour.ai/uninstall.ps1 | iex
+```
+
+</CodeGroup>
+
+## Development Setup
+
+For contributing or local development:
+
+```bash
+git clone https://github.com/mcpharbour/mcpharbour.git
+cd mcp-harbour
+uv venv
+source .venv/bin/activate
+uv pip install -e ".[dev]"
+```
+
+This installs in editable mode — changes to the source take effect immediately.
+
+```bash
+# Run tests
+pytest
+
+# Run the daemon locally
+harbour serve
+```

@@ -1,0 +1,47 @@
+---
+title: Introduction
+description: What MCP Harbour is and why it exists.
+---
+
+# MCP Harbour
+
+MCP Harbour is the port authority for your MCP servers. It manages, aggregates, and secures MCP servers for AI agents — giving users a single place to dock servers and control which agents can access which tools.
+
+Built as an implementation of the [GPARS](https://gpars.io) plane boundary.
+
+## What it does
+
+<CardGroup cols={2}>
+  <Card title="Aggregation" icon="layer-group" color="#10b981">
+    Dock multiple MCP servers and expose them as a single unified endpoint. Each agent sees one connection with tools permitted by its policy.
+  </Card>
+  <Card title="Server Management" icon="server" color="#10b981">
+    Register, start, and manage docked MCP server processes from the daemon.
+  </Card>
+  <Card title="Per-Agent Policies" icon="shield" color="#10b981">
+    Define what each agent can access — which servers, which tools, which arguments. No policy means no access.
+  </Card>
+  <Card title="Identity & Auth" icon="key" color="#10b981">
+    Each agent gets a token. The daemon derives identity from the token — agents cannot self-declare who they are.
+  </Card>
+  <Card title="Centralized Config" icon="gear" color="#10b981">
+    One place to manage all your MCP servers, identities, and policies. No per-client configuration.
+  </Card>
+  <Card title="Cross-Platform" icon="desktop" color="#10b981">
+    Works on Windows, macOS, and Linux. Streamable HTTP transport, platform-native service management.
+  </Card>
+</CardGroup>
+
+## The problem
+
+Today, each AI agent (Claude Code, VS Code, Cursor, OpenCode) configures its own MCP servers independently. There's no shared management, no centralized policy, and no way to control what an agent can do once it has access to a server.
+
+## How Harbour solves it
+
+Like a port authority inspects and controls what enters and leaves a harbour, MCP Harbour inspects and controls all MCP traffic between agents and servers. Agents check in with a token, the harbour verifies their identity, and every request is checked against the user's policy before reaching any server.
+
+This gives the user a single control point for:
+
+- **What servers exist** — dock once, grant access per-agent
+- **Who can access what** — per-agent policies with tool and argument-level control
+- **How servers run** — process lifecycle managed by the daemon, not by individual clients

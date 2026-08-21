@@ -1,0 +1,98 @@
+name: Docs
+
+# Publishes versioned docs to the `docs-live` branch, which Mintlify deploys.
+# `docs-live` is rebuilt deterministically from the release tags: every vX.Y.Z tag is
+# grouped by its minor line (vX.Y), the latest patch per line is frozen as that version,
+# and the highest line becomes the default. The working docs on `main` stay a single,
+# flat "next" version (served only via Mintlify PR previews).
+#
+# Runs automatically on each release tag, and can be re-run manually with no inputs
+# (used once to seed the first version, or any time to rebuild from scratch).
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: docs-live
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout (full history + tags, script, branding)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Prepare docs-live worktree
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          url="https://x-access-token:${GH_TOKEN}@github.com/${REPO}"
+          if git clone --branch docs-live --single-branch "$url" live 2>/dev/null; then
+            echo "cloned existing docs-live"
+          else
+            echo "docs-live does not exist yet; starting a fresh branch"
+            mkdir -p live
+            git -C live init -q
+            git -C live checkout -q -b docs-live
+            git -C live remote add origin "$url"
+          fi
+
+      - name: Rebuild docs-live from release tags
+        shell: bash
+        run: |
+          rm -rf live/docs && mkdir -p live/docs
+          declare -A latest
+          while read -r tag; do
+            [ -z "$tag" ] && continue
+            line="$(printf '%s' "$tag" | sed -E 's/^(v[0-9]+\.[0-9]+).*/\1/')"
+            latest["$line"]="$tag"   # tags arrive version-sorted, so this keeps the highest patch
+          done < <(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
+
+          if [ "${#latest[@]}" -eq 0 ]; then
+            echo "no release tags found; nothing to publish"
+            exit 0
+          fi
+
+          for line in "${!latest[@]}"; do
+            tag="${latest[$line]}"
+            if ! git cat-file -e "$tag:docs" 2>/dev/null; then
+              echo "skip $line: $tag has no docs/ tree"
+              continue
+            fi
+            echo "snapshotting $line from $tag"
+            rm -rf content && mkdir -p content
+            git archive "$tag" docs | tar -x -C content
+            python3 scripts/snapshot_docs.py \
+              --version "$line" \
+              --content-source content/docs \
+              --config-source docs \
+              --dest live/docs
+          done
+
+      - name: Commit and push docs-live
+        shell: bash
+        run: |
+          cd live
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "no docs changes to publish"
+            exit 0
+          fi
+          git commit -m "docs: rebuild docs-live from release tags"
+          git push origin docs-live

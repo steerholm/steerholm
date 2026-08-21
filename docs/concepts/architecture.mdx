@@ -1,0 +1,172 @@
+---
+title: Architecture
+description: How MCP Harbour enforces the GPARS plane boundary.
+---
+
+## Overview
+
+MCP Harbour is the port authority for your MCP servers. It aggregates multiple servers into a single endpoint, manages their lifecycle, and enforces per-agent security policies. It implements the [GPARS](https://gpars.io) plane boundary — agents never talk to MCP servers directly.
+
+## System Diagram
+
+<div style={{
+  background: 'linear-gradient(135deg, #0c0c1d 0%, #111128 100%)',
+  borderRadius: '14px',
+  padding: '24px 20px',
+  border: '1px solid #2d2d5e',
+  fontFamily: 'system-ui, -apple-system, sans-serif',
+  color: '#e2e8f0'
+}}>
+
+  {/* Agents */}
+  <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+    <span style={{ color: '#818cf8', fontSize: '12px', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Agents</span>
+  </div>
+  <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginBottom: '14px' }}>
+    {['VS Code', 'Claude Code', 'Cursor', 'OpenCode'].map((name) => (
+      <div key={name} style={{ background: '#1a1a2e', border: '1px solid #4a4dae', borderRadius: '8px', padding: '8px 16px', textAlign: 'center' }}>
+        <span style={{ fontWeight: 600, color: '#c7d2fe', fontSize: '14px' }}>{name}</span>
+      </div>
+    ))}
+  </div>
+
+  {/* Arrow: agents → daemon */}
+  <div style={{ textAlign: 'center', margin: '6px 0', color: '#6366f1', fontSize: '12px' }}>▼ <span style={{ color: '#525280' }}>Streamable HTTP + Bearer token</span></div>
+
+  {/* Harbour Daemon */}
+  <div style={{ background: '#1a1a35', border: '2px solid #4a4dae', borderRadius: '12px', padding: '18px', margin: '10px 0' }}>
+    <div style={{ textAlign: 'center', marginBottom: '14px' }}>
+      <span style={{ color: '#9196d4', fontSize: '12px', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Harbour Daemon</span>
+      <span style={{ color: '#9196d4', fontSize: '12px', fontWeight: 600, letterSpacing: '0.08em'}}> /mcp</span>
+    </div>
+
+    {/* Auth */}
+    <div style={{ background: '#4a4dae', borderRadius: '8px', padding: '10px 14px', fontWeight: 600, color: '#fff', fontSize: '14px', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      Identity Verification
+    </div>
+
+    {/* Sessions */}
+    <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+      {[{ l: 'Session A', p: 'read only' }, { l: 'Session B', p: 'full access' }, { l: 'Session C', p: 'git only' }].map((s) => (
+        <div key={s.l} style={{ background: '#16162a', border: '1px solid #3b3d8f', borderRadius: '8px', padding: '8px 10px', textAlign: 'center', flex: 1 }}>
+          <div style={{ fontWeight: 500, color: '#c7d2fe', fontSize: '13px' }}>{s.l}</div>
+          <div style={{ color: '#818cf8', fontSize: '11px', marginTop: '2px' }}>{s.p}</div>
+        </div>
+      ))}
+    </div>
+
+    {/* Policy + Tool Routing */}
+    <div style={{ display: 'flex', gap: '8px' }}>
+      <div style={{ background: '#10b981', borderRadius: '8px', padding: '10px 14px', fontWeight: 600, color: '#fff', fontSize: '14px', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Policy Enforcement
+      </div>
+      <div style={{ background: '#0d9488', borderRadius: '8px', padding: '10px 14px', fontWeight: 600, color: '#fff', fontSize: '14px', flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8l4 4-4 4"/></svg>
+        Tool Routing
+      </div>
+    </div>
+  </div>
+
+  {/* Arrow: daemon → servers */}
+  <div style={{ textAlign: 'center', margin: '6px 0', color: '#10b981', fontSize: '12px' }}>▼ <span style={{ color: '#065f46' }}>spawn / connect</span></div>
+
+  {/* MCP Servers */}
+  <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+    <span style={{ color: '#10b981', fontSize: '12px', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>MCP Servers</span>
+  </div>
+  <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
+    {[
+      { name: 'filesystem', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> },
+      { name: 'git', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg> },
+      { name: 'database', icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6ee7b7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg> }
+    ].map((s) => (
+      <div key={s.name} style={{ background: '#0a2a1e', border: '1px solid #10b981', borderRadius: '8px', padding: '8px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+        {s.icon}
+        <span style={{ fontWeight: 600, color: '#d1fae5', fontSize: '14px' }}>{s.name}</span>
+      </div>
+    ))}
+  </div>
+
+</div>
+
+## Request Flow
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'actorBkg': '#4a4dae', 'actorTextColor': '#fff', 'actorBorder': '#6366f1', 'activationBorderColor': '#6366f1', 'activationBkgColor': '#2d2d5e', 'signalColor': '#6366f1', 'signalTextColor': '#e2e8f0', 'noteBkgColor': '#1e1e2e', 'noteTextColor': '#e2e8f0', 'noteBorderColor': '#4a4dae', 'altSectionBkgColor': '#16162a', 'loopTextColor': '#e2e8f0', 'labelBoxBkgColor': '#1e1e2e', 'labelTextColor': '#10b981'}}}%%
+
+sequenceDiagram
+    participant Agent
+    participant Daemon as ⚓ Harbour /mcp
+    participant Server as MCP Server
+
+    Agent->>Daemon: MCP request (Streamable HTTP + Bearer token)
+
+    Note over Daemon: 🔐 Verify identity
+    Note over Daemon: 🛡 Check policy
+
+    alt ✅ Allowed
+        Daemon->>Server: Forward request
+        Server-->>Daemon: Response
+        Daemon-->>Agent: MCP response
+    else ❌ Denied
+        Daemon-->>Agent: AUTHORIZATION_DENIED (-31001)
+    end
+```
+
+## Entry Points
+
+<CardGroup cols={2}>
+  <Card title="harbour" icon="terminal" color="#10b981">
+    Admin CLI for the user. Manages servers, identities, policies, and the daemon. Belongs to the Action Plane.
+  </Card>
+  <Card title="/mcp" icon="globe" color="#10b981">
+    Streamable HTTP MCP endpoint for agents. Requires Bearer authentication and has no admin commands.
+  </Card>
+</CardGroup>
+
+Agents connect to `/mcp`; they do not run the `harbour` admin CLI.
+
+## Server processes
+
+Docked servers are shared by all agents — the daemon runs one set of server processes and isolates agents by policy, not by per-agent processes.
+
+<CardGroup cols={2}>
+  <Card title="Stdio servers" icon="box" color="#10b981">
+    Started and managed by the daemon as shared docked server processes.
+  </Card>
+  <Card title="Streamable HTTP servers" icon="globe" color="#10b981">
+    Connected by the daemon as shared docked server sessions.
+  </Card>
+</CardGroup>
+
+## Connection Flow
+
+<Steps>
+  <Step title="Client connects">
+    The MCP client connects to `http://127.0.0.1:4767/mcp` using Streamable HTTP.
+  </Step>
+  <Step title="Authentication">
+    The client sends `Authorization: Bearer harbour_sk_...`. The daemon derives the identity by checking the token against stored hashes. The agent cannot self-declare its identity.
+  </Step>
+  <Step title="Request authorized">
+    The shared MCP server resolves the identity's policy and filters or routes tools through daemon-managed docked servers.
+  </Step>
+  <Step title="MCP traffic flows">
+    Standard MCP traffic flows through the harbour. Every `call_tool` is checked against the policy before forwarding.
+  </Step>
+</Steps>
+
+## GPARS Alignment
+
+| GPARS Concept | MCP Harbour |
+|---|---|
+| Cognitive Plane | Agent + MCP client |
+| Action Plane | MCP servers + security policies |
+| Plane Boundary | Harbour daemon `/mcp` endpoint |
+| Security Policy | Per-identity policy files |
+| `AUTHORIZATION_DENIED` | JSON-RPC error code `-31001` |
+| `SERVER_UNAVAILABLE` | JSON-RPC error code `-31002` |
+| Identity verification | Bearer token → identity lookup |
+| Default deny | No policy = no access |

@@ -1,0 +1,77 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "MCP Harbour",
+  "favicon": "/favicon.svg",
+  "colors": {
+    "primary": "#4a4dae",
+    "light": "#6366f1",
+    "dark": "#3b3d8f"
+  },
+  "appearance": {
+    "default": "dark"
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "GPARS Spec",
+        "href": "https://gpars.io",
+        "icon": "book"
+      },
+      {
+        "label": "GitHub",
+        "href": "https://github.com/mcpharbour/mcpharbour",
+        "icon": "github"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Install",
+      "href": "/getting-started/installation"
+    }
+  },
+  "navigation": {
+    "groups": [
+      {
+        "group": "Getting Started",
+        "pages": [
+          "getting-started/introduction",
+          "getting-started/installation",
+          "getting-started/quickstart"
+        ]
+      },
+      {
+        "group": "Concepts",
+        "pages": [
+          "concepts/architecture",
+          "concepts/permissions",
+          "concepts/error-codes"
+        ]
+      },
+      {
+        "group": "Reference",
+        "pages": [
+          "reference/cli",
+          "reference/mcp-endpoint",
+          "reference/configuration",
+          "reference/policy-format"
+        ]
+      }
+    ]
+  },
+  "redirects": [
+    {
+      "source": "/reference/bridge",
+      "destination": "/reference/mcp-endpoint"
+    }
+  ],
+  "footer": {
+    "socials": {
+      "github": "https://github.com/mcpharbour/mcpharbour"
+    }
+  }
+}

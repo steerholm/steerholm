@@ -1,0 +1,77 @@
+---
+title: Configuration
+description: Config files, directory layout, and platform support.
+---
+
+## Directory Layout
+
+<CodeGroup>
+
+```bash Linux / macOS
+~/.mcp-harbour/
+├── config.json
+└── policies/
+    ├── coding-agent.json
+    └── research-agent.json
+```
+
+```bash Windows
+%APPDATA%\mcp-harbour\
+├── config.json
+└── policies\
+    ├── coding-agent.json
+    └── research-agent.json
+```
+
+</CodeGroup>
+
+API key hashes are stored in the system keyring, not in config files.
+
+## config.json
+
+```json
+{
+  "servers": {
+    "filesystem": {
+      "name": "filesystem",
+      "command": "npx -y @modelcontextprotocol/server-filesystem /home/user",
+      "server_type": "stdio"
+    },
+    "remote-api": {
+      "name": "remote-api",
+      "url": "http://localhost:8000/mcp",
+      "server_type": "http"
+    }
+  },
+  "identities": {
+    "coding-agent": {
+      "name": "coding-agent",
+      "key_prefix": "harbour_sk_A7x..."
+    }
+  }
+}
+```
+
+### Server Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Unique identifier |
+| `command` | `string` | Full launch command (stdio servers) |
+| `url` | `string` | Server URL (HTTP servers) |
+| `env` | `object` | Extra environment variables |
+| `server_type` | `"stdio"` or `"http"` | Transport type (inferred from `--command` or `--url`) |
+
+### Identity Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Unique identifier |
+| `key_prefix` | `string` | First 15 chars of API key (display only) |
+
+## Defaults
+
+| Setting | Value |
+|---|---|
+| Host | `127.0.0.1` |
+| Port | `4767` |
