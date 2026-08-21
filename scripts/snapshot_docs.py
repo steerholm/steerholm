@@ -25,7 +25,7 @@ import shutil
 from pathlib import Path
 
 # Per-version content directories copied into vX.Y/.
-CONTENT_DIRS = ("getting-started", "concepts", "reference")
+CONTENT_DIRS = ("getting-started", "guides", "concepts", "reference")
 # Shared assets copied to the docs root (referenced as /logo, /favicon.svg, ...).
 ASSET_PATHS = ("logo", "images", "favicon.svg", "custom.css")
 

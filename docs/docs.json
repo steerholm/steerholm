@@ -44,7 +44,8 @@
         "pages": [
           "guides/connect-an-agent",
           "guides/managing-access",
-          "guides/troubleshooting"
+          "guides/troubleshooting",
+          "guides/migrating-from-mcp-harbour"
         ]
       },
       {

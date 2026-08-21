@@ -3,10 +3,8 @@ name: Docs
 # Publishes versioned docs to the `docs-live` branch, which Mintlify deploys.
 # `docs-live` is rebuilt deterministically from the release tags: every vX.Y.Z tag is
 # grouped by its minor line (vX.Y), the latest patch per line is frozen as that version,
-# and the highest line becomes the default. Lines below MIN_LINE (the pre-rebrand
-# "MCP Harbour" era) are excluded so the old brand never surfaces on the Steerholm site.
-# The working docs on `main` stay a single, flat "next" version (served only via
-# Mintlify PR previews).
+# and the highest line becomes the default. The working docs on `main` stay a single,
+# flat "next" version (served only via Mintlify PR previews).
 #
 # Runs automatically on each release tag, and can be re-run manually with no inputs
 # (used once to seed the first version, or any time to rebuild from scratch).
@@ -57,18 +55,10 @@ jobs:
         shell: bash
         run: |
           rm -rf live/docs && mkdir -p live/docs
-          # v0.1.x shipped as "MCP Harbour"; its docs are frozen with the old brand and
-          # `harbour` CLI, so we do not publish any line below MIN_LINE to the live site.
-          MIN_LINE="v0.2"
           declare -A latest
           while read -r tag; do
             [ -z "$tag" ] && continue
             line="$(printf '%s' "$tag" | sed -E 's/^(v[0-9]+\.[0-9]+).*/\1/')"
-            if [ "$line" != "$MIN_LINE" ] && \
-               [ "$(printf '%s\n%s\n' "$line" "$MIN_LINE" | sort -V | head -n1)" = "$line" ]; then
-              echo "skip $line ($tag): pre-rebrand, not published"
-              continue
-            fi
             latest["$line"]="$tag"   # tags arrive version-sorted, so this keeps the highest patch
           done < <(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
 
