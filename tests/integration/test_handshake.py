@@ -50,14 +50,14 @@ async def _post_initialize(client: httpx.AsyncClient, headers=None):
 
 class TestHealthEndpoint:
     @pytest.mark.asyncio
-    async def test_healthz_returns_harbour_signature(self, config_manager):
+    async def test_healthz_returns_holm_signature(self, config_manager):
         app = make_gateway(config_manager).create_asgi_app("127.0.0.1", 4767)
         async with _asgi_client(app) as client:
             response = await client.get("/healthz")
 
         assert response.status_code == 200
         body = response.json()
-        assert body["service"] == "mcp-harbour"
+        assert body["service"] == "steerholm"
         assert "version" in body
 
     @pytest.mark.asyncio
@@ -76,14 +76,14 @@ class TestControlPlane:
         async with _asgi_client(app) as client:
             no_auth = await client.post("/control/reconcile")
             bad = await client.post(
-                "/control/reconcile", headers={"Authorization": "Bearer harbour_sk_wrong"}
+                "/control/reconcile", headers={"Authorization": "Bearer steer_sk_wrong"}
             )
         assert no_auth.status_code == 401
         assert bad.status_code == 401
 
     @pytest.mark.asyncio
     async def test_reconcile_with_control_token(self, config_manager):
-        from mcp_harbour.config import get_or_create_control_token
+        from steerholm.config import get_or_create_control_token
 
         token = get_or_create_control_token()
         app = make_gateway(config_manager).create_asgi_app("127.0.0.1", 4767)
@@ -115,7 +115,7 @@ class TestControlPlane:
 
     @pytest.mark.asyncio
     async def test_servers_status_returns_state(self, config_manager):
-        from mcp_harbour.config import get_or_create_control_token
+        from steerholm.config import get_or_create_control_token
 
         config_manager.add_server("srv", command="echo")
         token = get_or_create_control_token()
@@ -129,10 +129,10 @@ class TestControlPlane:
         assert resp.json()["srv"]["state"] == "stopped"
 
     def test_control_token_isolated_from_agent_keyring(self, config_manager):
-        from mcp_harbour.config import get_or_create_control_token
+        from steerholm.config import get_or_create_control_token
 
         token = get_or_create_control_token()
-        assert token.startswith("harbour_ctl_")
+        assert token.startswith("steer_ctl_")
         # An agent whose name would collide with the old control account must
         # not corrupt the control token (it lives in a separate keyring service).
         config_manager.add_agent("__control__")
@@ -173,7 +173,7 @@ class TestHTTPAuthentication:
         gateway = _make_http_gateway(config_manager, "test-agent")
         app = gateway.create_asgi_app("127.0.0.1", 4767)
         async with AsyncExitStack() as stack:
-            http_client = await stack.enter_async_context(_asgi_client(app, {"Authorization": "Bearer harbour_sk_test"}))
+            http_client = await stack.enter_async_context(_asgi_client(app, {"Authorization": "Bearer steer_sk_test"}))
             read, write, get_session_id = await stack.enter_async_context(
                 streamable_http_client("http://127.0.0.1:4767/mcp", http_client=http_client)
             )
@@ -210,7 +210,7 @@ class TestHTTPAuthentication:
             response = await _post_initialize(
                 client,
                 {
-                    "Authorization": "Bearer harbour_sk_test",
+                    "Authorization": "Bearer steer_sk_test",
                     "mcp-session-id": "missing-session",
                 },
             )
@@ -231,7 +231,7 @@ class TestSessionCleanup:
 
         app = gateway.create_asgi_app("127.0.0.1", 4767)
         async with AsyncExitStack() as stack:
-            http_client = await stack.enter_async_context(_asgi_client(app, {"Authorization": "Bearer harbour_sk_test"}))
+            http_client = await stack.enter_async_context(_asgi_client(app, {"Authorization": "Bearer steer_sk_test"}))
             read, write, get_session_id = await stack.enter_async_context(
                 streamable_http_client(
                     "http://127.0.0.1:4767/mcp",
@@ -255,7 +255,7 @@ class TestSessionCleanup:
         shared_server = gateway.session_server
 
         async with AsyncExitStack() as stack:
-            http_client = await stack.enter_async_context(_asgi_client(app, {"Authorization": "Bearer harbour_sk_test"}))
+            http_client = await stack.enter_async_context(_asgi_client(app, {"Authorization": "Bearer steer_sk_test"}))
             first = await stack.enter_async_context(
                 streamable_http_client("http://127.0.0.1:4767/mcp", http_client=http_client)
             )

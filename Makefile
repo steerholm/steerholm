@@ -8,7 +8,7 @@ install:
 
 # Build standalone binary
 build:
-	python -m PyInstaller --onefile --name harbour entry_harbour.py
+	python -m PyInstaller --onefile --name holm entry_holm.py
 
 # Run all tests
 test:

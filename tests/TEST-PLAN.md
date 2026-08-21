@@ -1,7 +1,7 @@
-# MCP Harbour — Complete Test Plan
+# Steerholm — Complete Test Plan
 
 This document is the authoritative catalogue of everything we test (or intend
-to test) for MCP Harbour, on every platform, from a single unit assertion up
+to test) for Steerholm, on every platform, from a single unit assertion up
 to an end user installing a release, the service starting, and real MCP
 traffic flowing through the daemon.
 
@@ -47,7 +47,7 @@ be validated on this Linux host). "validated" = exercised locally.
 | L8 End-user usage (installed, foreground) | real user path | DONE² | CI-only | CI-only |
 | L8s End-user usage (installed + service) | real service path | DISPATCH³ | DISPATCH³ | DISPATCH³ |
 | L9 Full CLI surface | every command behaves | DONE⁴ | CI-only | CI-only |
-| L10 Self-update | `harbour update` really updates | DISPATCH³ | DISPATCH³ | DISPATCH³ |
+| L10 Self-update | `holm update` really updates | DISPATCH³ | DISPATCH³ | DISPATCH³ |
 | L11 Uninstall | clean removal | DONE² | CI-only | CI-only |
 
 ¹ L3 runs only on the ubuntu runner (needs Node/npx); the hermetic scenario
@@ -95,7 +95,7 @@ Runs on all three OSes in the `pytest` matrix job. Status: **DONE**.
   servers, invalid `arg=pattern` format rejected, grant to unknown agent
   rejected) and revoke (per-tool, whole-server, no-match/no-policy no-ops,
   unknown agent rejected), on-disk persistence across manager instances, and
-  platform config-dir resolution (`.mcp-harbour` on unix, `%APPDATA%` on
+  platform config-dir resolution (`.steerholm` on unix, `%APPDATA%` on
   win32).
 - **test_permissions.py** — `PermissionEngine`, the heart of enforcement.
   Server-level allow/deny, tool-level exact/glob/wildcard, argument policies
@@ -110,7 +110,7 @@ Runs on all three OSes in the `pytest` matrix job. Status: **DONE**.
 - **test_errors.py** — the error constructors produce the correct MCP error
   codes/messages/data for `AUTHORIZATION_DENIED` and `SERVER_UNAVAILABLE`.
 - **test_process_manager.py** — command parsing (`shlex.split` of stdio
-  commands incl. quoted paths, uvx/npx forms), `HarbourDaemon` shared-process
+  commands incl. quoted paths, uvx/npx forms), `SteerholmDaemon` shared-process
   bookkeeping, and `ServerHealth` tracking (healthy on successful start,
   failed + error recorded when a server fails to start).
 - **test_updater.py** — self-update logic. Tag normalization, version
@@ -118,9 +118,9 @@ Runs on all three OSes in the `pytest` matrix job. Status: **DONE**.
   unsupported platform error), installer-asset selection, checksum parsing
   (two formats) and verify success/failure, release-info from cached JSON,
   installer delegation (runs installer when an update exists, not on
-  `--check`), version threaded as `MCP_HARBOUR_VERSION`, and subprocess
+  `--check`), version threaded as `STEERHOLM_VERSION`, and subprocess
   failure surfaced as `UpdateError`.
-- **test_cli.py** — `harbour version` prints the version; `harbour update`
+- **test_cli.py** — `holm version` prints the version; `holm update`
   `--check` reports available/up-to-date, prompts then installs (with `--yes`
   to skip), and surfaces updater/installer errors as exit code 1.
 
@@ -144,7 +144,7 @@ all three OSes in the `pytest` job. Status: **DONE**.
   invalid `Authorization` → 401 (+ `WWW-Authenticate: Bearer`); a valid token
   initializes a session; a session id cannot switch agent (→ 401); an
   unknown session id → 404; `DELETE` of a session does not stop shared server
-  processes; one shared `Server("mcp-harbour")` backs all sessions; and
+  processes; one shared `Server("steerholm")` backs all sessions; and
   `serve` exits(1) on a port already in use.
 
 ---
@@ -154,7 +154,7 @@ all three OSes in the `pytest` job. Status: **DONE**.
 Purpose: a *real* daemon over real Streamable HTTP with a real downstream MCP
 server and the real MCP client library.
 
-- **test_e2e.py** — starts `HarbourGateway.serve` in-process on an ephemeral
+- **test_e2e.py** — starts `SteerholmGateway.serve` in-process on an ephemeral
   port, connects with the MCP `streamable_http_client`, and drives the full
   protocol against `@modelcontextprotocol/server-everything` (requires Node /
   `npx`): valid/invalid token, initialize capabilities, list-tools for
@@ -175,13 +175,13 @@ local/manual check.
 
 Purpose: prove a shippable artifact actually builds on each OS.
 
-- Reusable workflow: PyInstaller builds `harbour` (and `harbour-service` on
+- Reusable workflow: PyInstaller builds `holm` (and `holm-service` on
   Windows), packages with the install/uninstall scripts into the
   platform archive, uploads it as an artifact. Shared with `release.yml` so
   packaging is defined once.
 
 Status: **DONE** (called by both `release.yml` and `test-matrix.yml`).
-*Validated locally:* the Linux PyInstaller binary builds and `harbour version`
+*Validated locally:* the Linux PyInstaller binary builds and `holm version`
 runs, confirming no missing hidden imports.
 
 ---
@@ -194,7 +194,7 @@ endpoint — without yet involving the installer or service manager.
 - **scenario.py** (`tests/smoke/`) drives the external binary:
   `add server` for a hermetic downstream → `add agent` → `grant` (a tool
   and an argument policy) → `serve` on an ephemeral port → connect with a real
-  MCP client and assert: unauthenticated → 401, initialize → `mcp-harbour`,
+  MCP client and assert: unauthenticated → 401, initialize → `steerholm`,
   policy-filtered discovery, allowed call succeeds, denied call rejected,
   argument policy allows valid / rejects invalid.
 - **downstream_server.py** — a self-contained stdio MCP server (`echo`,
@@ -202,7 +202,7 @@ endpoint — without yet involving the installer or service manager.
 
 Status: **DONE** — validated locally against both the source CLI and the
 frozen Linux binary. In CI it runs on all three OSes, but note: it uses
-`harbour serve` (a foreground daemon the scenario starts itself), **not** the
+`holm serve` (a foreground daemon the scenario starts itself), **not** the
 installed/service-managed daemon. That distinction is exactly what L6–L8 add.
 
 ---
@@ -217,13 +217,13 @@ Planned scenarios, per OS:
   the freshly built artifact; assert the binary lands on PATH, checksum
   verification runs (against a staged `checksums.txt`), and — unless
   skip-service is set — the service unit/agent is registered.
-- **Windows (`install.ps1`)** — same, installing `harbour.exe` and
-  `harbour-service.exe` to `%LOCALAPPDATA%`, registering the Windows service.
+- **Windows (`install.ps1`)** — same, installing `holm.exe` and
+  `holm-service.exe` to `%LOCALAPPDATA%`, registering the Windows service.
 
 Status: **GAP**. Requires two approved-but-unbuilt enabling changes:
-`install.sh` **local-file mode** (`MCP_HARBOUR_LOCAL_ARCHIVE`) and
-**skip-service mode** (`MCP_HARBOUR_NO_SERVICE`). `install.ps1` already has a
-local mode (`$HarbourBinaryPath`).
+`install.sh` **local-file mode** (`STEERHOLM_LOCAL_ARCHIVE`) and
+**skip-service mode** (`STEERHOLM_NO_SERVICE`). `install.ps1` already has a
+local mode (`$SteerholmBinaryPath`).
 
 ---
 
@@ -234,11 +234,11 @@ real user after install.
 
 Planned scenario, per OS, after L6 install:
 
-- `harbour status` → running
-- `harbour stop` → `status` shows stopped
-- `harbour start` → `status` shows running
+- `holm status` → running
+- `holm stop` → `status` shows stopped
+- `holm start` → `status` shows running
 - exercised through the real service manager: systemd `--user` (Linux),
-  launchd LaunchAgent (macOS), SCM via `harbour-service.exe` (Windows).
+  launchd LaunchAgent (macOS), SCM via `holm-service.exe` (Windows).
 
 Status: **GAP**. Headless-CI caveats (documented in the design doc): Linux
 needs linger/`XDG_RUNTIME_DIR`/`dbus-run-session`; macOS user agents may not
@@ -257,8 +257,8 @@ scenario.
 
 Planned scenario, per OS:
 
-- Do **not** start `harbour serve`; the service is already running.
-- Configure servers/agents/policies via the installed `harbour` CLI.
+- Do **not** start `holm serve`; the service is already running.
+- Configure servers/agents/policies via the installed `holm` CLI.
 - Connect as an MCP client to the running service and assert the same policy
   surface as L5 (auth, discovery filtering, allowed/denied calls, argument
   policies), plus that config changes are picked up per the daemon's reload
@@ -292,14 +292,14 @@ Status: **PARTIAL**.
 
 ## L10 — Self-update (GAP)
 
-Purpose: prove `harbour update` really replaces a running install, on each OS,
+Purpose: prove `holm update` really replaces a running install, on each OS,
 including the Windows running-exe lock that unit tests cannot reach.
 
 Planned scenarios:
 
-- `harbour update --check` reports correctly on each OS.
+- `holm update --check` reports correctly on each OS.
 - **High-fidelity (recommended):** install the previous real release, run
-  `harbour update` to the latest real release, assert version bump and that
+  `holm update` to the latest real release, assert version bump and that
   the binary still works. Zero mocking; exercises real checksum verification
   and binary replacement. Runs on tag / on demand (needs real releases).
 - **Pre-merge (optional):** stage a local "release" and point the updater at
@@ -351,8 +351,8 @@ server). Needs the Allure 3 CLI: `npm install -g allure`.
 
 - **`scenario.py` attach mode** (`configure` / `check` subcommands) — *done,
   validated*. Enables L8 against any running daemon.
-- **`install.sh` local-file (`MCP_HARBOUR_LOCAL_ARCHIVE`) + skip-service
-  (`MCP_HARBOUR_NO_SERVICE`) modes** — *done, validated*. Mirrored in
+- **`install.sh` local-file (`STEERHOLM_LOCAL_ARCHIVE`) + skip-service
+  (`STEERHOLM_NO_SERVICE`) modes** — *done, validated*. Mirrored in
   `install.ps1`.
 - **Keyring bundled into the frozen binary** (`--collect-all keyrings.alt`) so
   headless `add agent` works with the file backend — *done, validated*

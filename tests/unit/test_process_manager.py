@@ -1,31 +1,31 @@
-"""Tests for process_manager command parsing and HarbourDaemon."""
+"""Tests for process_manager command parsing and SteerholmDaemon."""
 
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from mcp_harbour.models import Server
-from mcp_harbour.process_manager import HarbourDaemon, ServerHealth
+from steerholm.models import Server
+from steerholm.process_manager import SteerholmDaemon, ServerHealth
 from tests.conftest import make_mock_process
 
 
-class TestHarbourDaemon:
+class TestSteerholmDaemon:
     def test_init_empty(self):
-        daemon = HarbourDaemon()
+        daemon = SteerholmDaemon()
         assert daemon.shared_processes == {}
         assert daemon.server_health == {}
 
     def test_get_shared_nonexistent(self):
-        assert HarbourDaemon().get_shared_process("nope") is None
+        assert SteerholmDaemon().get_shared_process("nope") is None
 
     def test_get_server_health_nonexistent(self):
-        assert HarbourDaemon().get_server_health("nope") is None
+        assert SteerholmDaemon().get_server_health("nope") is None
 
     @pytest.mark.asyncio
     async def test_start_shared_server_records_healthy_state(self):
-        daemon = HarbourDaemon()
+        daemon = SteerholmDaemon()
         server = Server(name="test", command="echo")
 
-        with patch("mcp_harbour.process_manager.ServerProcess.start", new=AsyncMock()) as start:
+        with patch("steerholm.process_manager.ServerProcess.start", new=AsyncMock()) as start:
             await daemon.start_shared_server(server)
 
         start.assert_awaited_once()
@@ -37,11 +37,11 @@ class TestHarbourDaemon:
 
     @pytest.mark.asyncio
     async def test_start_shared_server_records_failed_state(self):
-        daemon = HarbourDaemon()
+        daemon = SteerholmDaemon()
         server = Server(name="broken", command="echo")
 
         with patch(
-            "mcp_harbour.process_manager.ServerProcess.start",
+            "steerholm.process_manager.ServerProcess.start",
             new=AsyncMock(side_effect=RuntimeError("connection refused")),
         ):
             with pytest.raises(RuntimeError, match="connection refused"):
@@ -55,7 +55,7 @@ class TestHarbourDaemon:
 
     @pytest.mark.asyncio
     async def test_stop_shared_server_clears_health_state(self):
-        daemon = HarbourDaemon()
+        daemon = SteerholmDaemon()
         proc = make_mock_process("test", ["tool"])
         daemon.shared_processes["test"] = proc
         daemon.server_health["test"] = ServerHealth(state="healthy")
@@ -68,7 +68,7 @@ class TestHarbourDaemon:
 
     @pytest.mark.asyncio
     async def test_stop_all_shared(self):
-        daemon = HarbourDaemon()
+        daemon = SteerholmDaemon()
         proc = make_mock_process("test", ["tool"])
         daemon.shared_processes["test"] = proc
         daemon.server_health["test"] = ServerHealth(state="healthy")
@@ -80,7 +80,7 @@ class TestHarbourDaemon:
 
     @pytest.mark.asyncio
     async def test_stop_shared_server_clears_failed_health_without_process(self):
-        daemon = HarbourDaemon()
+        daemon = SteerholmDaemon()
         daemon.server_health["broken"] = ServerHealth(state="failed", error="boom")
 
         await daemon.stop_shared_server("broken")
@@ -93,8 +93,8 @@ class TestHarbourDaemon:
 import pytest as _pytest
 from unittest.mock import AsyncMock as _AM, MagicMock as _MM
 
-from mcp_harbour import process_manager as _pm
-from mcp_harbour.models import Server as _Server, ServerType as _ST
+from steerholm import process_manager as _pm
+from steerholm.models import Server as _Server, ServerType as _ST
 
 
 class _AsyncCM:

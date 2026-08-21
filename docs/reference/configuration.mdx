@@ -8,7 +8,7 @@ description: Config files, directory layout, and platform support.
 <CodeGroup>
 
 ```bash Linux / macOS
-~/.mcp-harbour/
+~/.steerholm/
 ├── config.json
 └── policies/
     ├── coding-agent.json
@@ -16,7 +16,7 @@ description: Config files, directory layout, and platform support.
 ```
 
 ```bash Windows
-%APPDATA%\mcp-harbour\
+%APPDATA%\steerholm\
 ├── config.json
 └── policies\
     ├── coding-agent.json
@@ -27,11 +27,11 @@ description: Config files, directory layout, and platform support.
 
 Access-key hashes are stored in the system keyring, not in config files.
 
-Set `MCP_HARBOUR_CONFIG_DIR` to override the config directory (both the CLI and
+Set `STEERHOLM_CONFIG_DIR` to override the config directory (both the CLI and
 the daemon read it) — useful for isolated setups or testing:
 
 ```bash
-MCP_HARBOUR_CONFIG_DIR=/tmp/harbour-test harbour list servers
+STEERHOLM_CONFIG_DIR=/tmp/steerholm-test holm list servers
 ```
 
 ## config.json
@@ -53,7 +53,7 @@ MCP_HARBOUR_CONFIG_DIR=/tmp/harbour-test harbour list servers
   "agents": {
     "coding-agent": {
       "name": "coding-agent",
-      "key_prefix": "harbour_sk_A7x..."
+      "key_prefix": "steer_sk_A7x..."
     }
   }
 }
@@ -77,7 +77,7 @@ MCP_HARBOUR_CONFIG_DIR=/tmp/harbour-test harbour list servers
 
 <Note>
   `env` has no CLI flag yet — set it by editing `config.json` directly, then run
-  `harbour add`/`remove` (or restart the daemon) so it re-reads the config.
+  `holm add`/`remove` (or restart the daemon) so it re-reads the config.
 </Note>
 
 ### Agent fields

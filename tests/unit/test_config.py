@@ -2,7 +2,7 @@
 
 import sys
 import pytest
-from mcp_harbour.models import Server, Agent, AgentPolicy, ToolPermission, ServerType
+from steerholm.models import Server, Agent, AgentPolicy, ToolPermission, ServerType
 
 
 class TestConfigManagerServers:
@@ -53,7 +53,7 @@ class TestConfigManagerServers:
     def test_persistence(self, config_manager, tmp_config_dir, monkeypatch):
         config_manager.add_server("filesystem", command="echo hello")
 
-        import mcp_harbour.config as config_mod
+        import steerholm.config as config_mod
 
         cm2 = config_mod.ConfigManager()
         assert cm2.get_server("filesystem") is not None
@@ -226,15 +226,15 @@ class TestConfigPlatformDir:
 
     def test_unix_config_dir(self, monkeypatch):
         monkeypatch.setattr(sys, "platform", "linux")
-        from mcp_harbour.config import _get_config_dir
-        assert ".mcp-harbour" in str(_get_config_dir())
+        from steerholm.config import _get_config_dir
+        assert ".steerholm" in str(_get_config_dir())
 
     def test_windows_config_dir(self, monkeypatch):
         monkeypatch.setattr(sys, "platform", "win32")
         monkeypatch.setenv("APPDATA", "/fake/appdata")
-        from mcp_harbour.config import _get_config_dir
+        from steerholm.config import _get_config_dir
         path = _get_config_dir()
-        assert "mcp-harbour" in str(path)
+        assert "steerholm" in str(path)
         assert "appdata" in str(path).lower()
 
 
@@ -245,11 +245,11 @@ from unittest.mock import MagicMock as _MM
 
 import pytest as _pytest
 
-from mcp_harbour import config as _cfg
+from steerholm import config as _cfg
 
 
 def test_get_config_dir_override(monkeypatch, tmp_path):
-    monkeypatch.setenv("MCP_HARBOUR_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("STEERHOLM_CONFIG_DIR", str(tmp_path))
     assert _cfg._get_config_dir() == tmp_path
 
 
@@ -259,7 +259,7 @@ def test_get_or_create_control_token_creates_then_reuses(monkeypatch):
     monkeypatch.setattr(_cfg.keyring, "set_password",
                         lambda svc, acc, v: store.__setitem__((svc, acc), v))
     t1 = _cfg.get_or_create_control_token()
-    assert t1.startswith("harbour_ctl_")
+    assert t1.startswith("steer_ctl_")
     assert _cfg.get_or_create_control_token() == t1  # reused, not regenerated
 
 
@@ -315,7 +315,7 @@ def test_load_policy_corrupt_returns_none(config_manager):
 def test_legacy_config_identities_key_migrates_to_agents(config_manager):
     _cfg.CONFIG_FILE.write_text(
         '{"servers": {}, "identities": '
-        '{"bob": {"name": "bob", "key_prefix": "harbour_sk_x..."}}}'
+        '{"bob": {"name": "bob", "key_prefix": "steer_sk_x..."}}}'
     )
     config_manager.reload()
     assert "bob" in config_manager.config.agents

@@ -2,9 +2,9 @@
 
 import pytest
 from mcp.shared.exceptions import McpError
-from mcp_harbour.models import AgentPolicy, ToolPermission, ArgumentPolicy
-from mcp_harbour.permissions import PermissionEngine
-from mcp_harbour.errors import AUTHORIZATION_DENIED_CODE
+from steerholm.models import AgentPolicy, ToolPermission, ArgumentPolicy
+from steerholm.permissions import PermissionEngine
+from steerholm.errors import AUTHORIZATION_DENIED_CODE
 
 
 # ─── Fixtures ───────────────────────────────────────────────────────

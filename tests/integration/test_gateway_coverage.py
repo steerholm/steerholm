@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from mcp_harbour.process_manager import ServerHealth
+from steerholm.process_manager import ServerHealth
 from tests.conftest import make_gateway, make_mock_process
 
 
@@ -26,7 +26,7 @@ def test_auth_cache_evicts_oldest_over_cap(config_manager):
 
 
 def test_auth_cache_hit_returns_without_rebcrypt(config_manager, monkeypatch):
-    import mcp_harbour.gateway as gw
+    import steerholm.gateway as gw
     token = config_manager.add_agent("a")
     gateway = make_gateway(config_manager)
 
@@ -38,7 +38,7 @@ def test_auth_cache_hit_returns_without_rebcrypt(config_manager, monkeypatch):
 
 
 def test_auth_cache_hit_keyring_error_invalidates(config_manager, monkeypatch):
-    import mcp_harbour.gateway as gw
+    import steerholm.gateway as gw
     token = config_manager.add_agent("a")
     gateway = make_gateway(config_manager)
     assert gateway._resolve_agent_from_token(token) == "a"  # populate cache
@@ -70,7 +70,7 @@ async def test_reconcile_restarts_on_spec_change(config_manager):
     assert gateway.daemon.start_shared_server.await_count == 1
 
     # Change the server's command -> reconcile must stop + restart it.
-    from mcp_harbour.models import Server, ServerType
+    from steerholm.models import Server, ServerType
     config_manager.config.servers["srv"] = Server(
         name="srv", command="echo TWO", server_type=ServerType.stdio
     )
@@ -118,7 +118,7 @@ async def test_health_check_leaves_slow_server_alone(config_manager):
     gateway.daemon.stop_shared_server = AsyncMock()
 
     # Patch the timeout so the test doesn't actually wait 10s.
-    import mcp_harbour.gateway as gw
+    import steerholm.gateway as gw
     orig_wait_for = gw.asyncio.wait_for
 
     async def fast_wait_for(coro, timeout):
@@ -133,7 +133,7 @@ async def test_health_check_leaves_slow_server_alone(config_manager):
 
 @pytest.mark.asyncio
 async def test_reconcile_loop_runs_and_survives_errors(config_manager, monkeypatch):
-    import mcp_harbour.gateway as gw
+    import steerholm.gateway as gw
     gateway = make_gateway(config_manager)
     gateway._restart_unhealthy_servers = AsyncMock()
     gateway.reconcile_servers = AsyncMock(side_effect=RuntimeError("transient"))
@@ -161,7 +161,7 @@ async def test_serve_runs_and_cancels_supervisor(config_manager, monkeypatch):
     import uvicorn
     gateway = make_gateway(config_manager)
     monkeypatch.setattr(gateway, "reconcile_servers", AsyncMock())
-    monkeypatch.setattr("mcp_harbour.gateway.get_or_create_control_token", lambda: "tok")
+    monkeypatch.setattr("steerholm.gateway.get_or_create_control_token", lambda: "tok")
     monkeypatch.setattr(gateway, "create_asgi_app", lambda host, port: MagicMock())
 
     async def hang(interval=30.0):
@@ -182,8 +182,8 @@ async def test_serve_runs_and_cancels_supervisor(config_manager, monkeypatch):
 
 
 def test_gateway_real_init(config_manager):
-    from mcp_harbour.gateway import HarbourGateway
-    gw = HarbourGateway()
+    from steerholm.gateway import SteerholmGateway
+    gw = SteerholmGateway()
     assert gw._auth_cache_max == 4096
     assert gw.session_server is not None
 
@@ -288,7 +288,7 @@ async def test_restart_unhealthy_stop_failure_is_logged(config_manager):
 
 def test_check_control_token_returns_false_on_error(config_manager, monkeypatch):
     gateway = make_gateway(config_manager)
-    monkeypatch.setattr("mcp_harbour.gateway.get_or_create_control_token",
+    monkeypatch.setattr("steerholm.gateway.get_or_create_control_token",
                         MagicMock(side_effect=RuntimeError("keyring down")))
     assert gateway._check_control_token("anytoken") is False
 
@@ -311,7 +311,7 @@ async def test_serve_control_token_init_error_is_logged(config_manager, monkeypa
     import uvicorn
     gateway = make_gateway(config_manager)
     monkeypatch.setattr(gateway, "reconcile_servers", AsyncMock())
-    monkeypatch.setattr("mcp_harbour.gateway.get_or_create_control_token",
+    monkeypatch.setattr("steerholm.gateway.get_or_create_control_token",
                         MagicMock(side_effect=RuntimeError("keyring")))
     monkeypatch.setattr(gateway, "create_asgi_app", lambda host, port: MagicMock())
 
@@ -331,7 +331,7 @@ async def test_serve_control_token_init_error_is_logged(config_manager, monkeypa
 async def test_serve_port_in_use_exits(config_manager, monkeypatch):
     gateway = make_gateway(config_manager)
     monkeypatch.setattr(gateway, "reconcile_servers", AsyncMock())
-    monkeypatch.setattr("mcp_harbour.gateway.get_or_create_control_token", lambda: "t")
+    monkeypatch.setattr("steerholm.gateway.get_or_create_control_token", lambda: "t")
     monkeypatch.setattr("socket.socket", lambda *a, **k: _mock_bind_socket(98))
     with pytest.raises(SystemExit):
         await gateway.serve("127.0.0.1", 4767)
@@ -341,7 +341,7 @@ async def test_serve_port_in_use_exits(config_manager, monkeypatch):
 async def test_serve_other_bind_error_reraises(config_manager, monkeypatch):
     gateway = make_gateway(config_manager)
     monkeypatch.setattr(gateway, "reconcile_servers", AsyncMock())
-    monkeypatch.setattr("mcp_harbour.gateway.get_or_create_control_token", lambda: "t")
+    monkeypatch.setattr("steerholm.gateway.get_or_create_control_token", lambda: "t")
     monkeypatch.setattr("socket.socket", lambda *a, **k: _mock_bind_socket(13))
     with pytest.raises(OSError):
         await gateway.serve("127.0.0.1", 4767)
@@ -352,7 +352,7 @@ async def test_serve_other_bind_error_reraises(config_manager, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_session_agent_binding_evicts_oldest(config_manager):
-    from mcp_harbour.gateway import HarbourAuthenticatedStreamableHTTPApp
+    from steerholm.gateway import SteerholmAuthenticatedStreamableHTTPApp
     from mcp.server.streamable_http import MCP_SESSION_ID_HEADER
 
     gateway = make_gateway(config_manager)
@@ -367,7 +367,7 @@ async def test_session_agent_binding_evicts_oldest(config_manager):
 
     manager = MagicMock()
     manager.handle_request = AsyncMock(side_effect=handle_request)
-    app = HarbourAuthenticatedStreamableHTTPApp(gateway, manager)
+    app = SteerholmAuthenticatedStreamableHTTPApp(gateway, manager)
     app._max_sessions = 1
 
     async def recv():

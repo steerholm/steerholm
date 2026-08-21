@@ -14,23 +14,23 @@ function Emit($name, $suite, $status) {
     python tests/smoke/scenario.py emit --alluredir $AR `
         --allure-os $env:OSNAME --allure-suite $suite --allure-name $name --status $status
 }
-function HarbourUp {
-    try { return ((Invoke-RestMethod -Uri 'http://127.0.0.1:4767/healthz' -TimeoutSec 1 -ErrorAction Stop).service -eq 'mcp-harbour') }
+function SteerholmUp {
+    try { return ((Invoke-RestMethod -Uri 'http://127.0.0.1:4767/healthz' -TimeoutSec 1 -ErrorAction Stop).service -eq 'steerholm') }
     catch { return $false }
 }
 
 # ── Build: the freshly built binary runs ───────────────────────────
-$tmp = Join-Path $env:TEMP 'harbour-e2e'
+$tmp = Join-Path $env:TEMP 'holm-e2e'
 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 Expand-Archive -Path $env:ARCHIVE -DestinationPath $tmp -Force
-$binTmp = Join-Path $tmp 'harbour.exe'
+$binTmp = Join-Path $tmp 'holm.exe'
 & $binTmp version *> $null
 if ($LASTEXITCODE -eq 0) { Emit "built binary runs ($env:PLATFORM)" Build passed }
 else { Emit "built binary runs ($env:PLATFORM)" Build failed }
 
 # ── Configure before the daemon starts (the service reads this config) ──
-$out = python tests/smoke/scenario.py configure --harbour $binTmp
+$out = python tests/smoke/scenario.py configure --holm $binTmp
 $token = ($out | Select-String -Pattern '^TOKEN=(.+)$').Matches.Groups[1].Value
 
 $env:PYTHON_KEYRING_BACKEND = 'keyrings.alt.file.PlaintextKeyring'
@@ -41,20 +41,20 @@ $env:PYTHON_KEYRING_BACKEND = 'keyrings.alt.file.PlaintextKeyring'
 [Environment]::SetEnvironmentVariable('PYTHON_KEYRING_BACKEND', 'keyrings.alt.file.PlaintextKeyring', 'User')
 
 # ── Install via the real script, WITH service (logon task) registration ──
-$env:MCP_HARBOUR_LOCAL_ARCHIVE = $env:ARCHIVE
+$env:STEERHOLM_LOCAL_ARCHIVE = $env:ARCHIVE
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
 
 # ── Verify the daemon is answering. On a hosted (non-interactive) runner the
 # Interactive logon task may not fire; if so, run the identical binary the task
-# launches (harbourd.exe) so usage is still tested against the real daemon. ──
+# launches (holmd.exe) so usage is still tested against the real daemon. ──
 $up = $false
-for ($i = 0; $i -lt 20; $i++) { if (HarbourUp) { $up = $true; break }; Start-Sleep -Seconds 1 }
+for ($i = 0; $i -lt 20; $i++) { if (SteerholmUp) { $up = $true; break }; Start-Sleep -Seconds 1 }
 $triggerFired = $up
 if (-not $up) {
-    Write-Host "logon task did not fire on this non-interactive runner; starting harbourd.exe directly (same daemon)"
-    $daemon = Join-Path $env:LOCALAPPDATA 'mcp-harbour\bin\harbourd.exe'
+    Write-Host "logon task did not fire on this non-interactive runner; starting holmd.exe directly (same daemon)"
+    $daemon = Join-Path $env:LOCALAPPDATA 'steerholm\bin\holmd.exe'
     if (Test-Path $daemon) { Start-Process $daemon }
-    for ($i = 0; $i -lt 20; $i++) { if (HarbourUp) { $up = $true; break }; Start-Sleep -Seconds 1 }
+    for ($i = 0; $i -lt 20; $i++) { if (SteerholmUp) { $up = $true; break }; Start-Sleep -Seconds 1 }
 }
 if ($up) { Emit "service-managed daemon up ($env:PLATFORM)" Install passed }
 else { Emit "service-managed daemon up ($env:PLATFORM)" Install failed }
@@ -74,7 +74,7 @@ if ($up) {
 
 # ── Uninstall + removal verification ────────────────────────────────
 powershell -ExecutionPolicy Bypass -File scripts/uninstall.ps1
-$bin = Join-Path $env:LOCALAPPDATA 'mcp-harbour\bin\harbour.exe'
+$bin = Join-Path $env:LOCALAPPDATA 'steerholm\bin\holm.exe'
 $removed = -not (Test-Path $bin)
 if ($removed) { Emit "binary removed ($env:PLATFORM)" Uninstall passed }
 else { Emit "binary still present after uninstall ($env:PLATFORM)" Uninstall failed }

@@ -3,7 +3,7 @@ title: The control plane
 description: The mental model — agents, servers, and the governed access between them.
 ---
 
-MCP Harbour is one surface with two faces. To your **agents** it's an **action
+Steerholm is one surface with two faces. To your **agents** it's an **action
 plane** — the single place they connect to and act through. To **you** it's a
 **control plane** — where you register the agents and the MCP servers they might
 use, then grant each agent policy-scoped access to exactly the capabilities it
@@ -37,11 +37,11 @@ draw between them (a grant). That's the whole model.
 Every command reads as *manage an agent* or *control its access*:
 
 ```bash
-harbour add server filesystem --command "..."   # register a capability
-harbour add agent coding-agent                  # register an agent
-harbour grant coding-agent filesystem --tool "read_*" --args "path=/home/**"
-harbour show agent coding-agent                 # what can it reach?
-harbour revoke coding-agent filesystem          # take access away
+holm add server filesystem --command "..."   # register a capability
+holm add agent coding-agent                  # register an agent
+holm grant coding-agent filesystem --tool "read_*" --args "path=/home/**"
+holm show agent coding-agent                 # what can it reach?
+holm revoke coding-agent filesystem          # take access away
 ```
 
 Grants are additive and default-deny: an agent starts with zero access and only
@@ -51,9 +51,9 @@ and argument syntax.
 ## A grant is a governed connection
 
 When you grant an agent access to a server, you're wiring a **connection routed
-through Harbour**. The agent never talks to the server directly — it connects to
-Harbour, and Harbour forwards each call to the server *only where the grant and
-its policy allow*. The grant is the edge; Harbour is what the traffic flows
+through Steerholm**. The agent never talks to the server directly — it connects to
+Steerholm, and Steerholm forwards each call to the server *only where the grant and
+its policy allow*. The grant is the edge; Steerholm is what the traffic flows
 through and gets checked at. (See [Architecture](/concepts/architecture) for how
 that boundary is enforced.)
 
@@ -61,14 +61,14 @@ that boundary is enforced.)
 
 Registering an agent and connecting the tool it runs in are two steps today:
 
-1. `harbour add agent <name>` registers the agent and issues its access key.
-2. You configure the tool with that key so it opens its connection to Harbour —
+1. `holm add agent <name>` registers the agent and issues its access key.
+2. You configure the tool with that key so it opens its connection to Steerholm —
    see [Connect an agent](/guides/connect-an-agent).
-3. `harbour grant ...` gives the agent access to the servers it should reach.
+3. `holm grant ...` gives the agent access to the servers it should reach.
 
 <Note>
   Step 2 is the current **manual** last mile. It's part of *adding an agent* —
-  just not yet automated. We're working toward Harbour setting up that connection
+  just not yet automated. We're working toward Steerholm setting up that connection
   for you (and launching agent sessions directly), so the copy-the-key step goes
   away while the model above stays exactly the same.
 </Note>

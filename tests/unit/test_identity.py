@@ -19,18 +19,18 @@ class TestResolveAgentFromToken:
         config_manager.add_agent("agent-a")
 
         gateway = make_gateway(config_manager)
-        assert gateway._resolve_agent_from_token("harbour_sk_wrong_token_here") is None
+        assert gateway._resolve_agent_from_token("steer_sk_wrong_token_here") is None
 
     def test_returns_none_when_no_agents(self, config_manager):
         gateway = make_gateway(config_manager)
-        assert gateway._resolve_agent_from_token("harbour_sk_any") is None
+        assert gateway._resolve_agent_from_token("steer_sk_any") is None
 
     def test_handles_keyring_error_gracefully(self, config_manager):
         config_manager.add_agent("agent")
         gateway = make_gateway(config_manager)
 
-        with patch("mcp_harbour.gateway.keyring.get_password", side_effect=Exception("keyring broke")):
-            assert gateway._resolve_agent_from_token("harbour_sk_test") is None
+        with patch("steerholm.gateway.keyring.get_password", side_effect=Exception("keyring broke")):
+            assert gateway._resolve_agent_from_token("steer_sk_test") is None
 
     def test_does_not_match_partial_token(self, config_manager):
         token = config_manager.add_agent("agent")

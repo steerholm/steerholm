@@ -37,36 +37,36 @@ jobs:
       # keyrings.alt is collected so a file-based keyring backend is available
       # in headless environments (no OS Secret Service). It is only used when
       # PYTHON_KEYRING_BACKEND is set; real users still get the native backend.
-      - name: Build harbour
-        run: pyinstaller --onefile --name harbour --collect-all keyrings.alt entry_harbour.py
+      - name: Build holm
+        run: pyinstaller --onefile --name holm --collect-all keyrings.alt entry_holm.py
 
       # Windowless daemon used by the per-user logon task so no console window
-      # appears. Same gateway as `harbour serve`; --windowed = GUI subsystem.
-      - name: Build harbourd (Windows, windowless daemon)
+      # appears. Same gateway as `holm serve`; --windowed = GUI subsystem.
+      - name: Build holmd (Windows, windowless daemon)
         if: runner.os == 'Windows'
-        run: pyinstaller --onefile --windowed --name harbourd --collect-all keyrings.alt entry_harbourd.py
+        run: pyinstaller --onefile --windowed --name holmd --collect-all keyrings.alt entry_holmd.py
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |
           mkdir -p release
-          cp dist/harbour release/
+          cp dist/holm release/
           cp scripts/install.sh release/
           cp scripts/uninstall.sh release/
-          tar -czf mcp-harbour-${{ matrix.platform }}.tar.gz -C release .
+          tar -czf steerholm-${{ matrix.platform }}.tar.gz -C release .
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           mkdir release
-          copy dist\harbour.exe release\
-          copy dist\harbourd.exe release\
+          copy dist\holm.exe release\
+          copy dist\holmd.exe release\
           copy scripts\install.ps1 release\
           copy scripts\uninstall.ps1 release\
-          Compress-Archive -Path release\* -DestinationPath mcp-harbour-${{ matrix.platform }}.zip
+          Compress-Archive -Path release\* -DestinationPath steerholm-${{ matrix.platform }}.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: mcp-harbour-${{ matrix.platform }}
-          path: mcp-harbour-${{ matrix.platform }}.*
+          name: steerholm-${{ matrix.platform }}
+          path: steerholm-${{ matrix.platform }}.*

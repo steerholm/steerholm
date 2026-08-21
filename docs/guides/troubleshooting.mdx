@@ -7,9 +7,9 @@ Most problems fall into one of a few buckets. Start with the two commands that
 tell you the most:
 
 ```bash
-harbour status                 # is the daemon running?
-harbour show server <name>     # is the server running, and what tools does it expose?
-harbour show agent <name>      # what is this agent actually allowed to do?
+holm status                 # is the daemon running?
+holm show server <name>     # is the server running, and what tools does it expose?
+holm show agent <name>      # what is this agent actually allowed to do?
 ```
 
 ## My tool connects but shows no tools
@@ -19,19 +19,19 @@ This is the most common first-run issue. Work through it in order:
 <Steps>
   <Step title="Check the agent has grants">
     A brand-new agent is default-deny — it sees nothing until you grant it.
-    Run `harbour show agent <name>`; if it says **none granted**, add access
-    with `harbour grant <agent> <server>`.
+    Run `holm show agent <name>`; if it says **none granted**, add access
+    with `holm grant <agent> <server>`.
   </Step>
   <Step title="Check the server is running">
-    Run `harbour show server <name>`. If the status is **stopped** or the daemon
-    is down, start it with `harbour start` (or `harbour status` to check). Adding
+    Run `holm show server <name>`. If the status is **stopped** or the daemon
+    is down, start it with `holm start` (or `holm status` to check). Adding
     a server tells a running daemon to start it automatically, so if it isn't
     running, the daemon is probably down.
   </Step>
   <Step title="Check the server didn't fail to start">
-    If `harbour show server <name>` reports **failed**, it prints the error —
+    If `holm show server <name>` reports **failed**, it prints the error —
     usually a bad `--command` (wrong path, missing `npx`, etc.). Fix the command:
-    `harbour remove server <name>` then `harbour add server <name> --command "..."`.
+    `holm remove server <name>` then `holm add server <name> --command "..."`.
   </Step>
   <Step title="Reconnect the tool">
     Some tools only fetch the tool list when they first connect. If you granted access
@@ -43,10 +43,10 @@ This is the most common first-run issue. Work through it in order:
 
 The Bearer token is missing, malformed, or not a valid access key.
 
-- Use the **full** access key (`harbour_sk_...`), not the truncated prefix shown
-  by `harbour show agent`. The full key is only printed once, by
-  `harbour add agent` / `harbour rotate agent` — if you lost it, rotate to get a
-  new one: `harbour rotate agent <name>`.
+- Use the **full** access key (`steer_sk_...`), not the truncated prefix shown
+  by `holm show agent`. The full key is only printed once, by
+  `holm add agent` / `holm rotate agent` — if you lost it, rotate to get a
+  new one: `holm rotate agent <name>`.
 - If you **rotated** the key, the old one stops working immediately — update the
   tool with the new key.
 - If you **removed and re-created** the agent, its old key is dead even if the
@@ -55,31 +55,31 @@ The Bearer token is missing, malformed, or not a valid access key.
 ## The daemon isn't running
 
 ```bash
-harbour status
-harbour start
+holm status
+holm start
 ```
 
 The daemon runs as a per-user service that starts at login. On a **headless or
 SSH-only** box where you never log in graphically, it may not start on its own —
-run `harbour start`, or run it in the foreground for debugging with
-`harbour serve` (logs go to stderr).
+run `holm start`, or run it in the foreground for debugging with
+`holm serve` (logs go to stderr).
 
 ## Port already in use
 
-If `harbour serve` reports the port is taken, another Harbour instance (or some
+If `holm serve` reports the port is taken, another Steerholm instance (or some
 other process) is on `127.0.0.1:4767`. Stop the other one, or bind a different
-port with `harbour serve --port <port>` (and point your tool at the new port).
+port with `holm serve --port <port>` (and point your tool at the new port).
 
 ## "Server 'X' is not currently added" when granting
 
-`harbour grant` warns when the server name isn't registered yet. Grants are
+`holm grant` warns when the server name isn't registered yet. Grants are
 allowed to reference a not-yet-added server, but usually this means a typo or a
-missing `harbour add server`. Check `harbour list servers`.
+missing `holm add server`. Check `holm list servers`.
 
 ## A tool call returns SERVER_UNAVAILABLE (-31002)
 
 The downstream MCP server crashed or is unreachable. Check
-`harbour show server <name>` for a **failed** state and its error, then fix the
+`holm show server <name>` for a **failed** state and its error, then fix the
 command and re-add it. The daemon also retries failed servers periodically, so a
 transient failure may clear on its own. See [Error codes](/concepts/error-codes)
 for the full list.

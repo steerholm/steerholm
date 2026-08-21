@@ -1,11 +1,11 @@
 ---
-title: harbour CLI
+title: holm CLI
 description: Control-plane commands for managing servers, agents, and access.
 ---
 
-The `harbour` CLI is the admin interface for your MCP servers, agents, and their
-access. Commands read verb-first — `harbour <verb> <resource> [name]` — because
-Harbour is your control plane — you add agents and servers to it and govern their access. Agents themselves connect to
+The `holm` CLI is the admin interface for your MCP servers, agents, and their
+access. Commands read verb-first — `holm <verb> <resource> [name]` — because
+Steerholm is your control plane — you add agents and servers to it and govern their access. Agents themselves connect to
 the daemon's Streamable HTTP MCP endpoint; they never run the admin CLI.
 
 The verbs are `add`, `remove`, `list`, `show`, `grant`, `revoke`, and `rotate`;
@@ -14,22 +14,22 @@ the resources are `server` and `agent`. Daemon lifecycle (`start`, `stop`,
 
 ## Servers
 
-Servers are the MCP servers you want agents to reach through Harbour. Adding a
+Servers are the MCP servers you want agents to reach through Steerholm. Adding a
 server registers it with the daemon, which handles starting and stopping the
 server processes.
 
-### harbour add server
+### holm add server
 
 Register a new MCP server. Provide `--command` for stdio servers or `--url` for
 HTTP servers (not both); the server type is inferred.
 
 ```bash
 # Stdio server
-harbour add server filesystem \
+holm add server filesystem \
   --command "npx -y @modelcontextprotocol/server-filesystem /home/user"
 
 # HTTP server
-harbour add server remote-api --url "http://localhost:8000/mcp"
+holm add server remote-api --url "http://localhost:8000/mcp"
 ```
 
 | Argument / Option | Required | Description |
@@ -38,80 +38,80 @@ harbour add server remote-api --url "http://localhost:8000/mcp"
 | `--command` | One of | Full command to launch a stdio server |
 | `--url` | One of | URL of a streamable HTTP server |
 
-### harbour remove server
+### holm remove server
 
-Remove a server from Harbour.
+Remove a server from Steerholm.
 
 ```bash
-harbour remove server filesystem
+holm remove server filesystem
 ```
 
-### harbour list servers
+### holm list servers
 
 Show all servers with their transport type and live status (state, uptime, and
 tool count when the daemon is running).
 
 ```bash
-harbour list servers
+holm list servers
 ```
 
-### harbour show server
+### holm show server
 
 Show a server's configuration, its live status, the tools it provides, and which
 agents have been granted access to it.
 
 ```bash
-harbour show server filesystem
+holm show server filesystem
 ```
 
 ## Agents
 
 An agent has a name and an **access key**. The access key is what the agent uses
-to authenticate — Harbour resolves the agent from the key, so agents cannot
+to authenticate — Steerholm resolves the agent from the key, so agents cannot
 impersonate each other.
 
-### harbour add agent
+### holm add agent
 
 Add an agent and generate its access key. The key is shown once and cannot be
 retrieved later — store it when it's printed.
 
 ```bash
-harbour add agent my-agent
+holm add agent my-agent
 ```
 
-### harbour list agents
+### holm list agents
 
 Show all agents and their access-key prefixes.
 
 ```bash
-harbour list agents
+holm list agents
 ```
 
-### harbour show agent
+### holm show agent
 
 Show an agent: its access-key prefix, everything it can reach (server → tools →
 argument constraints), and how to connect it with its key.
 
 ```bash
-harbour show agent my-agent
+holm show agent my-agent
 ```
 
-### harbour rotate agent
+### holm rotate agent
 
 Generate a new access key for an agent, keeping all of its grants. The previous
 key stops working immediately — update the agent's config in its tool with the new
 key.
 
 ```bash
-harbour rotate agent my-agent
+holm rotate agent my-agent
 ```
 
-### harbour remove agent
+### holm remove agent
 
 Remove an agent, its access key, and its policy. The key is revoked immediately.
 
 ```bash
-harbour remove agent my-agent
+holm remove agent my-agent
 ```
 
 ## Access (grants)
@@ -119,42 +119,42 @@ harbour remove agent my-agent
 An agent's policy is default-deny: with no grants it has zero access. Grants are
 additive — each `grant` adds a rule.
 
-### harbour grant
+### holm grant
 
 Grant an agent access to a server's tools.
 
 ```bash
-harbour grant <agent> <server> [--tool PATTERN] [--args POLICIES...]
+holm grant <agent> <server> [--tool PATTERN] [--args POLICIES...]
 ```
 
 **Allow all tools on a server:**
 
 ```bash
-harbour grant my-agent filesystem
+holm grant my-agent filesystem
 ```
 
 **Allow a specific tool:**
 
 ```bash
-harbour grant my-agent filesystem --tool "read_text_file"
+holm grant my-agent filesystem --tool "read_text_file"
 ```
 
 **Restrict by argument value (glob):**
 
 ```bash
-harbour grant my-agent filesystem --tool "read_text_file" --args "path=/home/user/projects/**"
+holm grant my-agent filesystem --tool "read_text_file" --args "path=/home/user/projects/**"
 ```
 
 **Restrict by argument value (regex):**
 
 ```bash
-harbour grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*"
+holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*"
 ```
 
 **Multiple argument restrictions on one tool:**
 
 ```bash
-harbour grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*" "db=production"
+holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*" "db=production"
 ```
 
 | Option | Default | Description |
@@ -165,7 +165,7 @@ harbour grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*" "db=p
 A glob pattern without wildcards is an exact match. An argument policy applies
 only when the tool call actually provides that argument.
 
-### harbour revoke
+### holm revoke
 
 Remove an agent's access to a server. With `--tool` it removes only that tool
 grant; without it, the agent's entire access to the server is removed. `--tool`
@@ -174,10 +174,10 @@ it — so revoke the same pattern you used in `grant`.
 
 ```bash
 # Remove one tool grant
-harbour revoke my-agent filesystem --tool "read_text_file"
+holm revoke my-agent filesystem --tool "read_text_file"
 
 # Remove all access to the server
-harbour revoke my-agent filesystem
+holm revoke my-agent filesystem
 ```
 
 | Option | Default | Description |
@@ -191,39 +191,39 @@ endpoint, manages server connections, and enforces policies. Installation
 registers it as a per-user background daemon that runs as you (no admin required)
 and starts automatically at login.
 
-### harbour start
+### holm start
 
 Start the daemon via the platform's per-user service manager (systemd `--user`, a
 launchd agent, or a Windows logon Scheduled Task).
 
 ```bash
-harbour start
+holm start
 ```
 
-### harbour stop
+### holm stop
 
 Stop the daemon. All active agent sessions are disconnected.
 
 ```bash
-harbour stop
+holm stop
 ```
 
-### harbour status
+### holm status
 
 Check whether the daemon is currently running.
 
 ```bash
-harbour status
+holm status
 ```
 
-### harbour serve
+### holm serve
 
 Run the daemon in the foreground instead of as a service. Useful for debugging —
 logs go to stderr.
 
 ```bash
-harbour serve
-harbour serve --host 0.0.0.0 --port 5000
+holm serve
+holm serve --host 0.0.0.0 --port 5000
 ```
 
 | Option | Default | Description |
@@ -232,7 +232,7 @@ harbour serve --host 0.0.0.0 --port 5000
 | `--port` | `4767` | Port to bind |
 
 <Warning>
-  Harbour binds to loopback (`127.0.0.1`) by default. Binding to a non-loopback
+  Steerholm binds to loopback (`127.0.0.1`) by default. Binding to a non-loopback
   host like `0.0.0.0` exposes the endpoint — and its tool access — to your
   network, and access keys travel as Bearer tokens over plain HTTP. Only do this
   on a trusted network, ideally behind a TLS-terminating reverse proxy.
@@ -240,25 +240,25 @@ harbour serve --host 0.0.0.0 --port 5000
 
 ## Version & updates
 
-### harbour version
+### holm version
 
-Print the installed Harbour version. `harbour --version` does the same.
+Print the installed Steerholm version. `holm --version` does the same.
 
 ```bash
-harbour version
+holm version
 ```
 
-### harbour update
+### holm update
 
-Update Harbour in place from a GitHub release (the latest by default). It
+Update Steerholm in place from a GitHub release (the latest by default). It
 downloads the release for your platform, verifies it against the published
 checksums, and runs the official install script.
 
 ```bash
-harbour update               # install the latest release
-harbour update --check       # report whether an update is available, without installing
-harbour update --tag vX.Y.Z  # install a specific release tag
-harbour update --yes         # install without the confirmation prompt
+holm update               # install the latest release
+holm update --check       # report whether an update is available, without installing
+holm update --tag vX.Y.Z  # install a specific release tag
+holm update --yes         # install without the confirmation prompt
 ```
 
 | Option | Description |

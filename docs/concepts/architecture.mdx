@@ -1,11 +1,11 @@
 ---
 title: Architecture
-description: How MCP Harbour sits between agents and servers and enforces policy.
+description: How Steerholm sits between agents and servers and enforces policy.
 ---
 
 ## Overview
 
-MCP Harbour is the port authority for your MCP servers. It aggregates multiple servers into a single endpoint, manages their lifecycle, and enforces per-agent security policies. Agents never talk to MCP servers directly — every request goes through the daemon, which authenticates the agent and checks its policy before forwarding.
+Steerholm is the helm for your MCP servers — the single place you steer them from. It aggregates multiple servers into a single endpoint, manages their lifecycle, and enforces per-agent security policies. Agents never talk to MCP servers directly — every request goes through the daemon, which authenticates the agent and checks its policy before forwarding.
 
 This page is the technical view of [the control plane](/concepts/control-plane): how a grant becomes a governed connection, and how the boundary is enforced on every request.
 
@@ -35,10 +35,10 @@ This page is the technical view of [the control plane](/concepts/control-plane):
   {/* Arrow: agents → daemon */}
   <div style={{ textAlign: 'center', margin: '6px 0', color: '#6366f1', fontSize: '12px' }}>▼ <span style={{ color: '#525280' }}>Streamable HTTP + Bearer token</span></div>
 
-  {/* Harbour Daemon */}
+  {/* Steerholm daemon */}
   <div style={{ background: '#1a1a35', border: '2px solid #4a4dae', borderRadius: '12px', padding: '18px', margin: '10px 0' }}>
     <div style={{ textAlign: 'center', marginBottom: '14px' }}>
-      <span style={{ color: '#9196d4', fontSize: '12px', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Harbour Daemon</span>
+      <span style={{ color: '#9196d4', fontSize: '12px', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Steerholm daemon</span>
       <span style={{ color: '#9196d4', fontSize: '12px', fontWeight: 600, letterSpacing: '0.08em'}}> /mcp</span>
     </div>
 
@@ -100,7 +100,7 @@ This page is the technical view of [the control plane](/concepts/control-plane):
 
 sequenceDiagram
     participant Agent
-    participant Daemon as ⚓ Harbour /mcp
+    participant Daemon as 🧭 Steerholm /mcp
     participant Server as MCP Server
 
     Agent->>Daemon: MCP request (Streamable HTTP + Bearer token)
@@ -120,7 +120,7 @@ sequenceDiagram
 ## Entry points
 
 <CardGroup cols={2}>
-  <Card title="harbour — control plane" icon="terminal" color="#10b981">
+  <Card title="holm — control plane" icon="terminal" color="#10b981">
     Your governance surface. Manage servers, agents, policies, and the daemon — this is where you control what every agent can do.
   </Card>
   <Card title="/mcp — action plane" icon="globe" color="#10b981">
@@ -128,7 +128,7 @@ sequenceDiagram
   </Card>
 </CardGroup>
 
-Agents connect to `/mcp`; they do not run the `harbour` admin CLI.
+Agents connect to `/mcp`; they do not run the `holm` admin CLI.
 
 ## Server processes
 
@@ -150,19 +150,19 @@ Servers are shared by all agents — the daemon runs one set of server processes
     The agent connects to `http://127.0.0.1:4767/mcp` over Streamable HTTP.
   </Step>
   <Step title="Authentication">
-    The agent sends `Authorization: Bearer harbour_sk_...`. The daemon resolves the agent by checking the access key against stored hashes. The access key determines the agent — it cannot be self-declared.
+    The agent sends `Authorization: Bearer steer_sk_...`. The daemon resolves the agent by checking the access key against stored hashes. The access key determines the agent — it cannot be self-declared.
   </Step>
   <Step title="Request authorized">
     The shared MCP server resolves the agent's policy and filters or routes tools through daemon-managed servers.
   </Step>
   <Step title="MCP traffic flows">
-    Standard MCP traffic flows through the harbour. Every `call_tool` is checked against the policy before forwarding.
+    Standard MCP traffic flows through Steerholm. Every `call_tool` is checked against the policy before forwarding.
   </Step>
 </Steps>
 
 ## Summary
 
-| Aspect | How Harbour handles it |
+| Aspect | How Steerholm handles it |
 |---|---|
 | Boundary | Agents reach servers only through the daemon's `/mcp` endpoint |
 | Authentication | Bearer access key → agent lookup (the key determines the agent) |

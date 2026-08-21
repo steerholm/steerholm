@@ -1,12 +1,12 @@
-"""Coverage for the CLI commands and helpers in mcp_harbour.main."""
+"""Coverage for the CLI commands and helpers in steerholm.main."""
 import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
-import mcp_harbour.main as m
-from mcp_harbour.main import app, _format_uptime, _status_markup
+import steerholm.main as m
+from steerholm.main import app, _format_uptime, _status_markup
 
 runner = CliRunner()
 
@@ -16,7 +16,7 @@ def cli(config_manager, monkeypatch):
     """CliRunner bound to a temp-config CLI, with the daemon reported down by
     default (no network) so command output is deterministic."""
     monkeypatch.setattr(m, "config_manager", config_manager)
-    monkeypatch.setattr(m, "_harbour_up", lambda *a, **k: False)
+    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: False)
     return config_manager
 
 
@@ -40,7 +40,7 @@ def test_status_markup(state, needle):
     assert needle in _status_markup(state)
 
 
-# ─── _harbour_up ────────────────────────────────────────────────────
+# ─── _daemon_up ────────────────────────────────────────────────────
 
 
 def _fake_urlopen(payload):
@@ -51,39 +51,39 @@ def _fake_urlopen(payload):
     return resp
 
 
-def test_harbour_up_true_on_signature(monkeypatch):
-    with patch("urllib.request.urlopen", return_value=_fake_urlopen({"service": "mcp-harbour"})):
-        assert m._harbour_up("127.0.0.1", 4767) is True
+def test_daemon_up_true_on_signature(monkeypatch):
+    with patch("urllib.request.urlopen", return_value=_fake_urlopen({"service": "steerholm"})):
+        assert m._daemon_up("127.0.0.1", 4767) is True
 
 
-def test_harbour_up_false_on_wrong_service(monkeypatch):
+def test_daemon_up_false_on_wrong_service(monkeypatch):
     with patch("urllib.request.urlopen", return_value=_fake_urlopen({"service": "something-else"})):
-        assert m._harbour_up("127.0.0.1", 4767) is False
+        assert m._daemon_up("127.0.0.1", 4767) is False
 
 
-def test_harbour_up_false_on_error(monkeypatch):
+def test_daemon_up_false_on_error(monkeypatch):
     with patch("urllib.request.urlopen", side_effect=OSError("refused")):
-        assert m._harbour_up("127.0.0.1", 4767) is False
+        assert m._daemon_up("127.0.0.1", 4767) is False
 
 
 # ─── _daemon_server_status ──────────────────────────────────────────
 
 
 def test_daemon_server_status_none_when_down(monkeypatch):
-    monkeypatch.setattr(m, "_harbour_up", lambda *a, **k: False)
+    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: False)
     assert m._daemon_server_status() is None
 
 
 def test_daemon_server_status_returns_dict_when_up(monkeypatch):
-    monkeypatch.setattr(m, "_harbour_up", lambda *a, **k: True)
-    monkeypatch.setattr("mcp_harbour.config.get_or_create_control_token", lambda: "tok")
+    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
+    monkeypatch.setattr("steerholm.config.get_or_create_control_token", lambda: "tok")
     with patch("urllib.request.urlopen", return_value=_fake_urlopen({"srv": {"state": "running"}})):
         assert m._daemon_server_status() == {"srv": {"state": "running"}}
 
 
 def test_daemon_server_status_none_on_error(monkeypatch):
-    monkeypatch.setattr(m, "_harbour_up", lambda *a, **k: True)
-    monkeypatch.setattr("mcp_harbour.config.get_or_create_control_token", lambda: "tok")
+    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
+    monkeypatch.setattr("steerholm.config.get_or_create_control_token", lambda: "tok")
     with patch("urllib.request.urlopen", side_effect=OSError("boom")):
         assert m._daemon_server_status() is None
 
@@ -92,14 +92,14 @@ def test_daemon_server_status_none_on_error(monkeypatch):
 
 
 def test_notify_reconcile_noop_when_down(monkeypatch, capsys):
-    monkeypatch.setattr(m, "_harbour_up", lambda *a, **k: False)
+    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: False)
     m._notify_daemon_reconcile()
     assert "not running" in capsys.readouterr().out
 
 
 def test_notify_reconcile_reports_started_stopped(monkeypatch, capsys):
-    monkeypatch.setattr(m, "_harbour_up", lambda *a, **k: True)
-    monkeypatch.setattr("mcp_harbour.config.get_or_create_control_token", lambda: "tok")
+    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
+    monkeypatch.setattr("steerholm.config.get_or_create_control_token", lambda: "tok")
     payload = {"started": ["a"], "stopped": ["b"], "failed": ["c"]}
     with patch("urllib.request.urlopen", return_value=_fake_urlopen(payload)):
         m._notify_daemon_reconcile()
@@ -108,8 +108,8 @@ def test_notify_reconcile_reports_started_stopped(monkeypatch, capsys):
 
 
 def test_notify_reconcile_reports_unreachable(monkeypatch, capsys):
-    monkeypatch.setattr(m, "_harbour_up", lambda *a, **k: True)
-    monkeypatch.setattr("mcp_harbour.config.get_or_create_control_token", lambda: "tok")
+    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
+    monkeypatch.setattr("steerholm.config.get_or_create_control_token", lambda: "tok")
     with patch("urllib.request.urlopen", side_effect=OSError("nope")):
         m._notify_daemon_reconcile()
     assert "Could not reach the daemon" in capsys.readouterr().out
@@ -150,7 +150,7 @@ def test_remove_server(cli, monkeypatch):
 def test_add_agent_shows_key(cli):
     result = runner.invoke(app, ["add", "agent", "agent"])
     assert result.exit_code == 0
-    assert "harbour_sk_" in result.output
+    assert "steer_sk_" in result.output
     assert "agent" in cli.config.agents
 
 
@@ -185,7 +185,7 @@ def test_rotate_agent_shows_new_key(cli):
     first = cli.add_agent("agent")
     result = runner.invoke(app, ["rotate", "agent", "agent"])
     assert result.exit_code == 0
-    new_key = re.search(r"harbour_sk_\w+", result.output).group(0)
+    new_key = re.search(r"steer_sk_\w+", result.output).group(0)
     # compare full keys, not the 15-char display prefix (only 4 random chars)
     assert new_key != first
 
@@ -370,7 +370,7 @@ def test_start_win32_up(monkeypatch):
     monkeypatch.setattr("sys.platform", "win32")
     monkeypatch.setattr("subprocess.run", MagicMock(return_value=MagicMock(returncode=0)))
     monkeypatch.setattr("time.sleep", lambda *_: None)
-    monkeypatch.setattr(m, "_harbour_up", lambda *a, **k: True)
+    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
     assert "started" in runner.invoke(app, ["start"]).output.lower()
 
 
@@ -378,7 +378,7 @@ def test_start_win32_never_comes_up(monkeypatch):
     monkeypatch.setattr("sys.platform", "win32")
     monkeypatch.setattr("subprocess.run", MagicMock(return_value=MagicMock(returncode=0)))
     monkeypatch.setattr("time.sleep", lambda *_: None)
-    monkeypatch.setattr(m, "_harbour_up", lambda *a, **k: False)
+    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: False)
     result = runner.invoke(app, ["start"])
     assert result.exit_code == 1
 
@@ -414,7 +414,7 @@ def test_stop_win32_goes_down(monkeypatch):
     monkeypatch.setattr("sys.platform", "win32")
     monkeypatch.setattr("subprocess.run", MagicMock())
     monkeypatch.setattr("time.sleep", lambda *_: None)
-    monkeypatch.setattr(m, "_harbour_up", lambda *a, **k: False)
+    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: False)
     assert "stopped" in runner.invoke(app, ["stop"]).output.lower()
 
 
@@ -422,7 +422,7 @@ def test_stop_win32_still_listening(monkeypatch):
     monkeypatch.setattr("sys.platform", "win32")
     monkeypatch.setattr("subprocess.run", MagicMock())
     monkeypatch.setattr("time.sleep", lambda *_: None)
-    monkeypatch.setattr(m, "_harbour_up", lambda *a, **k: True)
+    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
     assert runner.invoke(app, ["stop"]).exit_code == 1
 
 
@@ -457,13 +457,13 @@ def test_status_darwin_not_running(monkeypatch):
 
 def test_status_win32_up(monkeypatch):
     monkeypatch.setattr("sys.platform", "win32")
-    monkeypatch.setattr(m, "_harbour_up", lambda *a, **k: True)
+    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
     assert "running" in runner.invoke(app, ["status"]).output.lower()
 
 
 def test_status_win32_down(monkeypatch):
     monkeypatch.setattr("sys.platform", "win32")
-    monkeypatch.setattr(m, "_harbour_up", lambda *a, **k: False)
+    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: False)
     assert "not running" in runner.invoke(app, ["status"]).output.lower()
 
 
@@ -477,7 +477,7 @@ def test_status_unsupported(monkeypatch):
 
 def test_serve_constructs_and_runs(monkeypatch):
     gw = MagicMock()
-    monkeypatch.setattr("mcp_harbour.gateway.HarbourGateway", lambda: gw)
+    monkeypatch.setattr("steerholm.gateway.SteerholmGateway", lambda: gw)
     ran = {}
     monkeypatch.setattr("asyncio.run", lambda coro: ran.setdefault("called", True))
     result = runner.invoke(app, ["serve", "--port", "5001"])
@@ -501,11 +501,11 @@ def test_root_callback_branches():
 
 
 def test_notify_update_falls_back_to_cache_on_fetch_error(tmp_path, monkeypatch):
-    from mcp_harbour import config
-    monkeypatch.delenv("MCP_HARBOUR_NO_UPDATE_CHECK", raising=False)
+    from steerholm import config
+    monkeypatch.delenv("STEERHOLM_NO_UPDATE_CHECK", raising=False)
     monkeypatch.setattr(config, "CONFIG_DIR", tmp_path)
     (tmp_path / "update-check.json").write_text(json.dumps({"checked_at": 0, "latest": "9.9.9"}))
-    monkeypatch.setattr("mcp_harbour.updater.fetch_latest_tag",
+    monkeypatch.setattr("steerholm.updater.fetch_latest_tag",
                         MagicMock(side_effect=OSError("offline")))
     mock_console = MagicMock()
     monkeypatch.setattr(m, "err_console", mock_console)
@@ -514,20 +514,20 @@ def test_notify_update_falls_back_to_cache_on_fetch_error(tmp_path, monkeypatch)
 
 
 def test_notify_update_cache_write_failure_is_silent(tmp_path, monkeypatch):
-    from mcp_harbour import config
-    monkeypatch.delenv("MCP_HARBOUR_NO_UPDATE_CHECK", raising=False)
+    from steerholm import config
+    monkeypatch.delenv("STEERHOLM_NO_UPDATE_CHECK", raising=False)
     not_a_dir = tmp_path / "afile"
     not_a_dir.write_text("x")  # CONFIG_DIR is a file -> cache read + write both fail, swallowed
     monkeypatch.setattr(config, "CONFIG_DIR", not_a_dir)
-    monkeypatch.setattr("mcp_harbour.updater.fetch_latest_tag", lambda timeout=2.0: "v9.9.9")
+    monkeypatch.setattr("steerholm.updater.fetch_latest_tag", lambda timeout=2.0: "v9.9.9")
     monkeypatch.setattr(m, "err_console", MagicMock())
     m._maybe_notify_update()  # must not raise
 
 
 def test_update_check_up_to_date(monkeypatch):
-    from mcp_harbour.updater import ReleaseAsset, ReleaseInfo
+    from steerholm.updater import ReleaseAsset, ReleaseInfo
     info = ReleaseInfo(tag="v0.0.1", asset=ReleaseAsset("a", "b"), update_available=False)
-    monkeypatch.setattr("mcp_harbour.main.update_binary", MagicMock(return_value=info))
+    monkeypatch.setattr("steerholm.main.update_binary", MagicMock(return_value=info))
     result = runner.invoke(app, ["update", "--check"])
     assert "up to date" in result.output.lower()
 

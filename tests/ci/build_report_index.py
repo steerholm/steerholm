@@ -18,7 +18,7 @@ PAGE = """<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MCP Harbour — Test Reports</title>
+  <title>Steerholm — Test Reports</title>
   <style>
     body {{ font-family: -apple-system, Segoe UI, Roboto, sans-serif; margin: 2rem auto; max-width: 1100px; color: #1b1f24; padding: 0 1rem; }}
     h1 {{ font-size: 1.4rem; }}
@@ -36,7 +36,7 @@ PAGE = """<!doctype html>
   </style>
 </head>
 <body>
-  <h1>MCP Harbour — Test Reports</h1>
+  <h1>Steerholm — Test Reports</h1>
   <p class="sub">Allure 3 reports per CI run. Newest first.</p>
   <table>
     <thead>

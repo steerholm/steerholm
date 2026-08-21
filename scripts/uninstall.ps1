@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
-$TaskName = "MCPHarbour"
-$installDir = Join-Path $env:LOCALAPPDATA "mcp-harbour\bin"
+$TaskName = "Steerholm"
+$installDir = Join-Path $env:LOCALAPPDATA "steerholm\bin"
 
 function Info($msg) { Write-Host "[+] $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "[!] $msg" -ForegroundColor Yellow }
@@ -17,16 +17,16 @@ if ($task) {
 
 # Make sure the daemon process has exited before deleting its binary
 for ($i = 0; $i -lt 15; $i++) {
-    $proc = Get-Process -Name 'harbour','harbourd' -ErrorAction SilentlyContinue
+    $proc = Get-Process -Name 'holm','holmd' -ErrorAction SilentlyContinue
     if (-not $proc) { break }
-    Stop-Process -Name 'harbour','harbourd' -Force -ErrorAction SilentlyContinue
+    Stop-Process -Name 'holm','holmd' -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 1
 }
 
 # ── 2. Remove binary ───────────────────────────────────────────────
 
 # Legacy service-binary directory from pre-task installs.
-$svcDir = Join-Path $env:LOCALAPPDATA "mcp-harbour\svc"
+$svcDir = Join-Path $env:LOCALAPPDATA "steerholm\svc"
 if (Test-Path $svcDir) { Remove-Item $svcDir -Recurse -Force -ErrorAction SilentlyContinue }
 
 if (Test-Path $installDir) {
@@ -48,4 +48,4 @@ if ($userPath -and $userPath -like "*$installDir*") {
 }
 
 Info "Uninstall complete."
-Info "Config files remain at $env:APPDATA\mcp-harbour - delete manually if desired."
+Info "Config files remain at $env:APPDATA\steerholm - delete manually if desired."

@@ -27,13 +27,13 @@ from .config import ConfigManager, get_or_create_control_token
 from .errors import authorization_denied, server_unavailable
 from .models import AgentPolicy
 from .permissions import PermissionEngine
-from .process_manager import HarbourDaemon
+from .process_manager import SteerholmDaemon
 
-logger = logging.getLogger("mcp_harbour")
+logger = logging.getLogger("steerholm")
 
 
-class HarbourAuthenticatedStreamableHTTPApp:
-    def __init__(self, gateway: "HarbourGateway", manager: StreamableHTTPSessionManager):
+class SteerholmAuthenticatedStreamableHTTPApp:
+    def __init__(self, gateway: "SteerholmGateway", manager: StreamableHTTPSessionManager):
         self.gateway = gateway
         self.manager = manager
         # Bounded: clients that disconnect without a DELETE never remove their
@@ -72,7 +72,7 @@ class HarbourAuthenticatedStreamableHTTPApp:
                 response_session_id = response_headers.get(MCP_SESSION_ID_HEADER)
             await send(message)
 
-        scope.setdefault("state", {})["harbour_agent"] = agent_name
+        scope.setdefault("state", {})["steerholm_agent"] = agent_name
         await self.manager.handle_request(scope, receive, send_with_session_binding)
 
         if response_session_id:
@@ -92,11 +92,11 @@ class HarbourAuthenticatedStreamableHTTPApp:
         await response(scope, receive, send)
 
 
-class HarbourGateway:
+class SteerholmGateway:
     def __init__(self):
         self.config_manager = ConfigManager()
-        self.daemon = HarbourDaemon()
-        self.session_server = Server("mcp-harbour")
+        self.daemon = SteerholmDaemon()
+        self.session_server = Server("steerholm")
         # token sha256 -> (agent, stored key hash). Lets repeat requests skip the
         # per-request O(agents) bcrypt; invalidated when the stored hash changes.
         self._auth_cache: "OrderedDict[str, tuple[str, str]]" = OrderedDict()
@@ -119,7 +119,7 @@ class HarbourGateway:
     def _current_agent_name(self) -> str:
         try:
             request = self.session_server.request_context.request
-            agent_name = request.state.harbour_agent if request else None
+            agent_name = request.state.steerholm_agent if request else None
         except (AttributeError, LookupError):
             agent_name = None
         if not agent_name:
@@ -133,7 +133,7 @@ class HarbourGateway:
         if cached is not None:
             name, cached_key = cached
             try:
-                current_key = keyring.get_password("mcp-harbour", name)
+                current_key = keyring.get_password("steerholm", name)
             except Exception:
                 current_key = None
             # Trust the cache only while the agent is still in config AND its
@@ -151,7 +151,7 @@ class HarbourGateway:
 
         for name in self.config_manager.config.agents:
             try:
-                hashed_key = keyring.get_password("mcp-harbour", name)
+                hashed_key = keyring.get_password("steerholm", name)
                 if hashed_key and bcrypt.checkpw(token.encode(), hashed_key.encode()):
                     self._auth_cache[token_hash] = (name, hashed_key)
                     self._auth_cache.move_to_end(token_hash)
@@ -406,13 +406,13 @@ class HarbourGateway:
             stateless=False,
             security_settings=self._security_settings(host, port),
         )
-        http_app = HarbourAuthenticatedStreamableHTTPApp(self, manager)
+        http_app = SteerholmAuthenticatedStreamableHTTPApp(self, manager)
 
         async def health(_request):
             # Unauthenticated liveness probe. Loopback-only, so exposing the
             # service name + version here is acceptable and lets tooling confirm
-            # it is Harbour answering (not just any open port).
-            return JSONResponse({"service": "mcp-harbour", "version": __version__})
+            # it is Steerholm answering (not just any open port).
+            return JSONResponse({"service": "steerholm", "version": __version__})
 
         async def control_reconcile(request):
             # Control plane: the CLI (add/remove server) calls this so the daemon
@@ -463,9 +463,9 @@ class HarbourGateway:
                 sock.bind((host, port))
             except OSError as e:
                 if e.errno in (98, 48, 10048):
-                    logger.error(f"Port {port} is already in use. Is another harbour instance running?")
-                    logger.error("Check with: harbour status")
-                    logger.error("Or use a different port: harbour serve --port <port>")
+                    logger.error(f"Port {port} is already in use. Is another Steerholm instance running?")
+                    logger.error("Check with: holm status")
+                    logger.error("Or use a different port: holm serve --port <port>")
                     raise SystemExit(1)
                 raise
 

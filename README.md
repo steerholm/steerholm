@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/bf7d955f-c79e-41c8-b517-e05c27bd2203" alt="MCP Harbour" height="256" />
+  <img src="https://github.com/user-attachments/assets/bf7d955f-c79e-41c8-b517-e05c27bd2203" alt="Steerholm" height="256" />
 </p>
 
 <p align="center">
@@ -7,8 +7,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mcpharbour/mcpharbour/releases/latest"><img src="https://img.shields.io/github/v/release/mcpharbour/mcpharbour?color=darkgreen&label=version" alt="Version" /></a>
-  <a href="https://docs.mcpharbour.ai"><img src="https://img.shields.io/badge/docs-latest-indigo" alt="Docs" /></a>
+  <a href="https://github.com/steerholm/steerholm/releases/latest"><img src="https://img.shields.io/github/v/release/steerholm/steerholm?color=darkgreen&label=version" alt="Version" /></a>
+  <a href="https://docs.steerholm.ai"><img src="https://img.shields.io/badge/docs-latest-indigo" alt="Docs" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License"></a>
 </p>
 
@@ -19,31 +19,31 @@
 **Linux / macOS:**
 
 ```bash
-curl -fsSL https://mcpharbour.ai/install.sh | bash
+curl -fsSL https://steerholm.ai/install.sh | bash
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-irm https://mcpharbour.ai/install.ps1 | iex
+irm https://steerholm.ai/install.ps1 | iex
 ```
 
 This downloads the binary, registers a per-user background daemon that runs as you, and starts it. No admin rights, no Python or package manager required.
 
-Or download binaries directly from [GitHub Releases](https://github.com/mcpharbour/mcpharbour/releases).
+Or download binaries directly from [GitHub Releases](https://github.com/steerholm/steerholm/releases).
 
 ## Quick Start
 
 ```bash
 # 1. Add an MCP server
-harbour add server filesystem \
+holm add server filesystem \
   --command "npx -y @modelcontextprotocol/server-filesystem /home/user/projects"
 
 # 2. Add an agent (prints its access key once)
-harbour add agent my-agent
+holm add agent my-agent
 
 # 3. Grant it scoped access
-harbour grant my-agent filesystem --tool "*" --args "path=/home/user/projects/**"
+holm grant my-agent filesystem --tool "*" --args "path=/home/user/projects/**"
 ```
 
 Then configure your MCP client (Claude Code, VS Code, Cursor, OpenCode) with the
@@ -52,10 +52,10 @@ agent's access key as the Bearer token:
 ```json
 {
   "mcpServers": {
-    "harbour": {
+    "steerholm": {
       "url": "http://127.0.0.1:4767/mcp",
       "headers": {
-        "Authorization": "Bearer harbour_sk_..."
+        "Authorization": "Bearer steer_sk_..."
       }
     }
   }
@@ -65,7 +65,7 @@ agent's access key as the Bearer token:
 ## How It Works
 
 ```
-Agent → Streamable HTTP /mcp → Harbour Daemon → MCP Servers
+Agent → Streamable HTTP /mcp → Steerholm daemon → MCP Servers
               │                       │
           Bearer auth          agent verification
                                policy enforcement
@@ -80,7 +80,7 @@ Agent → Streamable HTTP /mcp → Harbour Daemon → MCP Servers
 
 ## Documentation
 
-Read the full docs at [docs.mcpharbour.ai](https://docs.mcpharbour.ai)
+Read the full docs at [docs.steerholm.ai](https://docs.steerholm.ai)
 
 ## Contributing
 

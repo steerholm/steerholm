@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from mcp_harbour.updater import (
+from steerholm.updater import (
     ReleaseAsset,
     ReleaseInfo,
     UpdateError,
@@ -37,10 +37,10 @@ def test_is_newer():
 @pytest.mark.parametrize(
     ("system", "machine", "asset_name"),
     [
-        ("Linux", "x86_64", "mcp-harbour-linux-x64.tar.gz"),
-        ("Darwin", "arm64", "mcp-harbour-darwin-arm64.tar.gz"),
-        ("Darwin", "x86_64", "mcp-harbour-darwin-arm64.tar.gz"),
-        ("Windows", "AMD64", "mcp-harbour-windows-x64.zip"),
+        ("Linux", "x86_64", "steerholm-linux-x64.tar.gz"),
+        ("Darwin", "arm64", "steerholm-darwin-arm64.tar.gz"),
+        ("Darwin", "x86_64", "steerholm-darwin-arm64.tar.gz"),
+        ("Windows", "AMD64", "steerholm-windows-x64.zip"),
     ],
 )
 def test_platform_asset_name(system, machine, asset_name):
@@ -64,23 +64,23 @@ def test_fetch_release_info_selects_platform_asset():
     release = {
         "tag_name": "v0.1.2",
         "assets": [
-            {"name": "mcp-harbour-linux-x64.tar.gz", "browser_download_url": "https://example.com/linux"},
-            {"name": "mcp-harbour-windows-x64.zip", "browser_download_url": "https://example.com/windows"},
+            {"name": "steerholm-linux-x64.tar.gz", "browser_download_url": "https://example.com/linux"},
+            {"name": "steerholm-windows-x64.zip", "browser_download_url": "https://example.com/windows"},
         ],
     }
 
-    with patch("mcp_harbour.updater._github_json", return_value=release):
+    with patch("steerholm.updater._github_json", return_value=release):
         info = fetch_release_info(current_version="0.1.1", system="Linux", machine="x86_64")
 
     assert info.tag == "v0.1.2"
     assert info.update_available is True
-    assert info.asset == ReleaseAsset("mcp-harbour-linux-x64.tar.gz", "https://example.com/linux")
+    assert info.asset == ReleaseAsset("steerholm-linux-x64.tar.gz", "https://example.com/linux")
 
 
 def test_fetch_release_info_missing_asset():
     release = {"tag_name": "v0.1.2", "assets": []}
 
-    with patch("mcp_harbour.updater._github_json", return_value=release):
+    with patch("steerholm.updater._github_json", return_value=release):
         with pytest.raises(UpdateError, match="does not include asset"):
             fetch_release_info(current_version="0.1.1", system="Linux", machine="x86_64")
 
@@ -94,17 +94,17 @@ def test_fetch_installer_asset_selects_platform_installer():
         ],
     }
 
-    with patch("mcp_harbour.updater._github_json", return_value=release):
+    with patch("steerholm.updater._github_json", return_value=release):
         asset = fetch_installer_asset("v0.1.2", system="Linux")
 
     assert asset == ReleaseAsset("install.sh", "https://example.com/install.sh")
 
 
 def test_parse_checksums_supports_common_formats():
-    text = "abc123  mcp-harbour-linux-x64.tar.gz\ndef456 *install.sh\n"
+    text = "abc123  steerholm-linux-x64.tar.gz\ndef456 *install.sh\n"
 
     assert parse_checksums(text) == {
-        "mcp-harbour-linux-x64.tar.gz": "abc123",
+        "steerholm-linux-x64.tar.gz": "abc123",
         "install.sh": "def456",
     }
 
@@ -129,13 +129,13 @@ def test_verify_checksum_failure(tmp_path):
 def test_update_binary_check_only_does_not_run_installer():
     info = ReleaseInfo(
         tag="v0.1.2",
-        asset=ReleaseAsset("mcp-harbour-linux-x64.tar.gz", "https://example.com/release.tar.gz"),
+        asset=ReleaseAsset("steerholm-linux-x64.tar.gz", "https://example.com/release.tar.gz"),
         update_available=True,
     )
     release = {"tag_name": "v0.1.2", "assets": []}
-    with patch("mcp_harbour.updater._fetch_release", return_value=release), \
-         patch("mcp_harbour.updater.fetch_release_info", return_value=info), \
-         patch("mcp_harbour.updater.run_update_installer") as installer:
+    with patch("steerholm.updater._fetch_release", return_value=release), \
+         patch("steerholm.updater.fetch_release_info", return_value=info), \
+         patch("steerholm.updater.run_update_installer") as installer:
         result = update_binary(check_only=True)
 
     assert result is info
@@ -145,7 +145,7 @@ def test_update_binary_check_only_does_not_run_installer():
 def test_update_binary_runs_installer_when_update_available():
     info = ReleaseInfo(
         tag="v0.1.2",
-        asset=ReleaseAsset("mcp-harbour-linux-x64.tar.gz", "https://example.com/release.tar.gz"),
+        asset=ReleaseAsset("steerholm-linux-x64.tar.gz", "https://example.com/release.tar.gz"),
         update_available=True,
     )
     release = {
@@ -154,9 +154,9 @@ def test_update_binary_runs_installer_when_update_available():
             {"name": "install.sh", "browser_download_url": "https://example.com/install.sh"},
         ],
     }
-    with patch("mcp_harbour.updater._fetch_release", return_value=release), \
-         patch("mcp_harbour.updater.fetch_release_info", return_value=info), \
-         patch("mcp_harbour.updater.run_update_installer") as installer:
+    with patch("steerholm.updater._fetch_release", return_value=release), \
+         patch("steerholm.updater.fetch_release_info", return_value=info), \
+         patch("steerholm.updater.run_update_installer") as installer:
         result = update_binary()
 
     assert result is info
@@ -179,9 +179,9 @@ def test_run_update_installer_downloads_verifies_and_runs():
         # exactly — write_text translates \n -> \r\n on Windows.
         dest.write_bytes(installer_bytes)
 
-    with patch("mcp_harbour.updater._download", side_effect=fake_download), \
-         patch("mcp_harbour.updater.download_text", return_value=checksums_text), \
-         patch("mcp_harbour.updater.run_installer") as installer:
+    with patch("steerholm.updater._download", side_effect=fake_download), \
+         patch("steerholm.updater.download_text", return_value=checksums_text), \
+         patch("steerholm.updater.run_installer") as installer:
         run_update_installer("v0.1.2", system="Linux", release=release)
 
     installer.assert_called_once()
@@ -198,11 +198,11 @@ def test_run_installer_passes_version_env():
         captured["command"] = command
         captured["env"] = env
 
-    with patch("mcp_harbour.updater.subprocess.run", side_effect=fake_run), \
+    with patch("steerholm.updater.subprocess.run", side_effect=fake_run), \
          patch("pathlib.Path.chmod"):
         run_installer(Path("/tmp/install.sh"), system="Linux", version="v0.1.2")
 
-    assert captured["env"]["MCP_HARBOUR_VERSION"] == "v0.1.2"
+    assert captured["env"]["STEERHOLM_VERSION"] == "v0.1.2"
     assert captured["command"][0] == "bash"
 
 
@@ -212,7 +212,7 @@ def test_run_installer_without_version_inherits_env():
     def fake_run(command, check, env):
         captured["env"] = env
 
-    with patch("mcp_harbour.updater.subprocess.run", side_effect=fake_run), \
+    with patch("steerholm.updater.subprocess.run", side_effect=fake_run), \
          patch("pathlib.Path.chmod"):
         run_installer(Path("/tmp/install.sh"), system="Linux")
 
@@ -230,9 +230,9 @@ def test_run_update_installer_aborts_on_bad_checksum():
     def fake_download(url, dest):
         dest.write_text("echo hi\n")
 
-    with patch("mcp_harbour.updater._download", side_effect=fake_download), \
-         patch("mcp_harbour.updater.download_text", return_value="deadbeef  install.sh\n"), \
-         patch("mcp_harbour.updater.run_installer") as installer:
+    with patch("steerholm.updater._download", side_effect=fake_download), \
+         patch("steerholm.updater.download_text", return_value="deadbeef  install.sh\n"), \
+         patch("steerholm.updater.run_installer") as installer:
         with pytest.raises(UpdateError, match="Checksum verification failed"):
             run_update_installer("v0.1.2", system="Linux", release=release)
 
@@ -244,7 +244,7 @@ def test_run_installer_translates_subprocess_failure(tmp_path):
     installer_path.write_text("#!/bin/sh\nexit 7\n")
 
     with patch(
-        "mcp_harbour.updater.subprocess.run",
+        "steerholm.updater.subprocess.run",
         side_effect=subprocess.CalledProcessError(7, ["bash"]),
     ):
         with pytest.raises(UpdateError, match="Installer exited with status 7"):
@@ -258,8 +258,8 @@ from unittest.mock import MagicMock as _MM
 
 import pytest as _pytest
 
-from mcp_harbour import updater as _u
-from mcp_harbour import __version__ as _VER
+from steerholm import updater as _u
+from steerholm import __version__ as _VER
 
 
 def _cm(read_bytes):
@@ -335,7 +335,7 @@ def test_run_installer_windows_command(tmp_path, monkeypatch):
     _u.run_installer(p, system="Windows", version="v0.1.3")
     cmd = run.call_args[0][0]
     assert cmd[0] == "powershell" and str(p) in cmd
-    assert run.call_args.kwargs["env"]["MCP_HARBOUR_VERSION"] == "v0.1.3"
+    assert run.call_args.kwargs["env"]["STEERHOLM_VERSION"] == "v0.1.3"
 
 
 def test_run_installer_unsupported(tmp_path):

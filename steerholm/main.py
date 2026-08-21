@@ -9,7 +9,7 @@ from .config import ConfigManager
 from .updater import UpdateError, run_update_installer, update_binary
 
 app = typer.Typer(
-    help="MCP Harbour — the control plane for your MCP servers and agents.",
+    help="Steerholm — the control plane for your MCP servers and agents.",
     no_args_is_help=True,
 )
 console = Console()
@@ -31,7 +31,7 @@ def _root(
     ctx: typer.Context,
     version: bool = typer.Option(
         None, "--version", callback=_version_callback, is_eager=True,
-        help="Show the installed Harbour version and exit.",
+        help="Show the installed Steerholm version and exit.",
     ),
 ):
     """Register a best-effort 'update available' hint after interactive commands."""
@@ -56,7 +56,7 @@ def _maybe_notify_update() -> None:
     import time
     from .updater import fetch_latest_tag, is_newer
 
-    if os.environ.get("MCP_HARBOUR_NO_UPDATE_CHECK"):
+    if os.environ.get("STEERHOLM_NO_UPDATE_CHECK"):
         return
 
     path = _update_cache_path()
@@ -83,13 +83,13 @@ def _maybe_notify_update() -> None:
 
     if latest and is_newer(latest, __version__):
         err_console.print(
-            f"[yellow]A new release of Harbour is available:[/yellow] "
-            f"{__version__} -> {latest}. Run [bold]harbour update[/bold]."
+            f"[yellow]A new release of Steerholm is available:[/yellow] "
+            f"{__version__} -> {latest}. Run [bold]holm update[/bold]."
         )
 
 
-# Verb-first sub-typers: `harbour <verb> <resource>`.
-add_app = typer.Typer(no_args_is_help=True, help="Add an agent or server to Harbour.")
+# Verb-first sub-typers: `holm <verb> <resource>`.
+add_app = typer.Typer(no_args_is_help=True, help="Add an agent or server to Steerholm.")
 app.add_typer(add_app, name="add")
 
 remove_app = typer.Typer(no_args_is_help=True, help="Remove an agent or server.")
@@ -116,7 +116,7 @@ def _handle(fn, *args, **kwargs):
 
 @app.command()
 def version():
-    """Show the installed Harbour version."""
+    """Show the installed Steerholm version."""
     console.print(__version__)
 
 
@@ -127,7 +127,7 @@ def update(
     force: bool = typer.Option(False, "--force", help="Reinstall the selected version even if it is not newer"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Install without confirmation"),
 ):
-    """Update Harbour from a GitHub release (latest by default)."""
+    """Update Steerholm from a GitHub release (latest by default)."""
     import logging
     # Surface updater warnings (e.g. skipped checksum verification) on stderr.
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
@@ -141,17 +141,17 @@ def update(
         if info.update_available:
             console.print(f"[green]Update available:[/green] {__version__} -> {info.tag}")
         else:
-            console.print(f"[green]Harbour is up to date:[/green] {__version__}")
+            console.print(f"[green]Steerholm is up to date:[/green] {__version__}")
         return
 
     # An explicit --tag is a request to install that exact version (a downgrade or
     # reinstall), so only short-circuit "up to date" when no tag was named.
     if not info.update_available and not force and tag is None:
-        console.print(f"[green]Harbour is already up to date:[/green] {__version__}")
+        console.print(f"[green]Steerholm is already up to date:[/green] {__version__}")
         return
 
     if not yes:
-        typer.confirm(f"Install Harbour {info.tag}?", abort=True)
+        typer.confirm(f"Install Steerholm {info.tag}?", abort=True)
 
     try:
         run_update_installer(info.tag)
@@ -159,7 +159,7 @@ def update(
         console.print(f"[bold red]Error:[/bold red] {e}")
         raise typer.Exit(code=1)
 
-    console.print(f"[bold green]Updated Harbour to {info.tag}.[/bold green]")
+    console.print(f"[bold green]Updated Steerholm to {info.tag}.[/bold green]")
 
 
 # ─── Servers ─────────────────────────────────────────────────────────
@@ -172,18 +172,18 @@ def add_server(
     url: Optional[str] = typer.Option(None, help="Server URL (streamable HTTP)"),
 ):
     """
-    Add an MCP server behind Harbour.
+    Add an MCP server behind Steerholm.
 
     Provide --command for stdio servers or --url for HTTP servers (not both).
 
     Examples:
-      harbour add server filesystem --command "npx -y @modelcontextprotocol/server-filesystem /home/user"
-      harbour add server remote-api --url "http://localhost:8000/mcp"
+      holm add server filesystem --command "npx -y @modelcontextprotocol/server-filesystem /home/user"
+      holm add server remote-api --url "http://localhost:8000/mcp"
     """
     _handle(config_manager.add_server, name, command=command, url=url)
     console.print(f"[bold green]Added server '{name}'.[/bold green]")
     _notify_daemon_reconcile()
-    console.print(f"Next: let an agent use it with [bold]harbour grant <agent> {name}[/bold].")
+    console.print(f"Next: let an agent use it with [bold]holm grant <agent> {name}[/bold].")
 
 
 @remove_app.command("server")
@@ -203,7 +203,7 @@ def _notify_daemon_reconcile() -> None:
     import urllib.request
     from .config import DEFAULT_HOST, DEFAULT_PORT, get_or_create_control_token
 
-    if not _harbour_up(DEFAULT_HOST, DEFAULT_PORT):
+    if not _daemon_up(DEFAULT_HOST, DEFAULT_PORT):
         console.print("[yellow]Daemon is not running; the change applies when it starts.[/yellow]")
         return
     try:
@@ -236,7 +236,7 @@ def _daemon_server_status() -> Optional[dict]:
     import urllib.request
     from .config import DEFAULT_HOST, DEFAULT_PORT, get_or_create_control_token
 
-    if not _harbour_up(DEFAULT_HOST, DEFAULT_PORT):
+    if not _daemon_up(DEFAULT_HOST, DEFAULT_PORT):
         return None
     try:
         token = get_or_create_control_token()
@@ -281,7 +281,7 @@ def list_servers():
     """List all servers with their live status."""
     servers = config_manager.list_servers()
     if not servers:
-        console.print("No servers added yet. Add one with [bold]harbour add server <name>[/bold].")
+        console.print("No servers added yet. Add one with [bold]holm add server <name>[/bold].")
         return
 
     status = _daemon_server_status()
@@ -385,8 +385,8 @@ def serve(
     host: str = typer.Option(None, help="Host to bind (default: 127.0.0.1)"),
     port: int = typer.Option(None, help="Port to bind (default: 4767)"),
 ):
-    """Start the Harbour Daemon in the foreground."""
-    from .gateway import HarbourGateway
+    """Start the Steerholm daemon in the foreground."""
+    from .gateway import SteerholmGateway
     from .config import DEFAULT_HOST, DEFAULT_PORT
     import sys
     import logging
@@ -396,19 +396,19 @@ def serve(
     serve_host = host or DEFAULT_HOST
     serve_port = port or DEFAULT_PORT
 
-    gateway = HarbourGateway()
-    sys.stderr.write(f"Starting Harbour Daemon (http://{serve_host}:{serve_port}/mcp)...\n")
+    gateway = SteerholmGateway()
+    sys.stderr.write(f"Starting Steerholm daemon (http://{serve_host}:{serve_port}/mcp)...\n")
     asyncio.run(gateway.serve(serve_host, serve_port))
 
 
 # Windows runs the daemon as a per-user logon Scheduled Task (the mirror of the
 # systemd --user unit on Linux and the LaunchAgent on macOS): it runs as the user
 # in their session, with no admin and no stored password.
-WIN_TASK_NAME = "MCPHarbour"
+WIN_TASK_NAME = "Steerholm"
 
 
-def _harbour_up(host: str, port: int, timeout: float = 1.0) -> bool:
-    """True if a Harbour daemon (not just any listener) answers on host:port.
+def _daemon_up(host: str, port: int, timeout: float = 1.0) -> bool:
+    """True if a Steerholm daemon (not just any listener) answers on host:port.
 
     Probes the unauthenticated /healthz endpoint and checks the service
     signature, so a different process holding the port is not a false positive.
@@ -418,21 +418,21 @@ def _harbour_up(host: str, port: int, timeout: float = 1.0) -> bool:
     try:
         with urllib.request.urlopen(f"http://{host}:{port}/healthz", timeout=timeout) as resp:
             data = json.loads(resp.read() or b"{}")
-        return data.get("service") == "mcp-harbour"
+        return data.get("service") == "steerholm"
     except Exception:
         return False
 
 
 @app.command()
 def start():
-    """Start the Harbour Daemon via the platform service manager."""
+    """Start the Steerholm daemon via the platform service manager."""
     import subprocess
     import sys
 
     if sys.platform == "linux":
-        subprocess.run(["systemctl", "--user", "start", "mcp-harbour"], check=True)
+        subprocess.run(["systemctl", "--user", "start", "steerholm"], check=True)
     elif sys.platform == "darwin":
-        plist = f"{Path.home()}/Library/LaunchAgents/dev.mcp-harbour.daemon.plist"
+        plist = f"{Path.home()}/Library/LaunchAgents/dev.steerholm.daemon.plist"
         subprocess.run(["launchctl", "load", plist], check=True)
     elif sys.platform == "win32":
         import time
@@ -446,7 +446,7 @@ def start():
             raise typer.Exit(1)
         # /Run only triggers the task; confirm the daemon actually came up.
         for _ in range(20):
-            if _harbour_up(DEFAULT_HOST, DEFAULT_PORT):
+            if _daemon_up(DEFAULT_HOST, DEFAULT_PORT):
                 break
             time.sleep(0.5)
         else:
@@ -463,14 +463,14 @@ def start():
 
 @app.command()
 def stop():
-    """Stop the Harbour Daemon via the platform service manager."""
+    """Stop the Steerholm daemon via the platform service manager."""
     import subprocess
     import sys
 
     if sys.platform == "linux":
-        subprocess.run(["systemctl", "--user", "stop", "mcp-harbour"], check=True)
+        subprocess.run(["systemctl", "--user", "stop", "steerholm"], check=True)
     elif sys.platform == "darwin":
-        plist = f"{Path.home()}/Library/LaunchAgents/dev.mcp-harbour.daemon.plist"
+        plist = f"{Path.home()}/Library/LaunchAgents/dev.steerholm.daemon.plist"
         subprocess.run(["launchctl", "unload", plist], check=True)
     elif sys.platform == "win32":
         import time
@@ -482,7 +482,7 @@ def stop():
             capture_output=True, text=True,
         )
         for _ in range(10):
-            if not _harbour_up(DEFAULT_HOST, DEFAULT_PORT):
+            if not _daemon_up(DEFAULT_HOST, DEFAULT_PORT):
                 break
             time.sleep(0.5)
         else:
@@ -498,13 +498,13 @@ def stop():
 
 @app.command()
 def status():
-    """Check if the Harbour Daemon is running."""
+    """Check if the Steerholm daemon is running."""
     import subprocess
     import sys
 
     if sys.platform == "linux":
         result = subprocess.run(
-            ["systemctl", "--user", "is-active", "mcp-harbour"],
+            ["systemctl", "--user", "is-active", "steerholm"],
             capture_output=True, text=True
         )
         state = result.stdout.strip()
@@ -514,7 +514,7 @@ def status():
             console.print(f"[yellow]Daemon is {state}.[/yellow]")
     elif sys.platform == "darwin":
         result = subprocess.run(
-            ["launchctl", "list", "dev.mcp-harbour.daemon"],
+            ["launchctl", "list", "dev.steerholm.daemon"],
             capture_output=True, text=True
         )
         if result.returncode == 0:
@@ -524,7 +524,7 @@ def status():
     elif sys.platform == "win32":
         # Check the daemon directly (locale-proof, unlike parsing schtasks text).
         from .config import DEFAULT_HOST, DEFAULT_PORT
-        if _harbour_up(DEFAULT_HOST, DEFAULT_PORT):
+        if _daemon_up(DEFAULT_HOST, DEFAULT_PORT):
             console.print("[bold green]Daemon is running.[/bold green]")
         else:
             console.print("[yellow]Daemon is not running.[/yellow]")
@@ -543,7 +543,7 @@ def add_agent(name: str):
     console.print(f"[bold green]Added agent '{name}'.[/bold green]")
     console.print(f"[bold]Access key:[/bold] {access_key}")
     console.print("[yellow]Store it now — it is shown only once.[/yellow]")
-    console.print(f"Next: grant it access with [bold]harbour grant {name} <server>[/bold].")
+    console.print(f"Next: grant it access with [bold]holm grant {name} <server>[/bold].")
 
 
 @rotate_app.command("agent")
@@ -560,7 +560,7 @@ def list_agents():
     """List all agents."""
     agents = config_manager.config.agents
     if not agents:
-        console.print("No agents yet. Add one with [bold]harbour add agent <name>[/bold].")
+        console.print("No agents yet. Add one with [bold]holm add agent <name>[/bold].")
         return
 
     table = Table(title="Agents")
@@ -628,9 +628,9 @@ def grant(
     Grant an agent access to a server's tools.
 
     Examples:
-      harbour grant my-agent filesystem
-      harbour grant my-agent filesystem --tool "read_*" --args "path=/home/user/**"
-      harbour grant my-agent db --tool "query" --args "sql=re:^SELECT.*" "db=production"
+      holm grant my-agent filesystem
+      holm grant my-agent filesystem --tool "read_*" --args "path=/home/user/**"
+      holm grant my-agent db --tool "query" --args "sql=re:^SELECT.*" "db=production"
     """
     if agent not in config_manager.config.agents:
         console.print(f"[bold red]Error:[/bold red] Agent '{agent}' not found.")
@@ -658,8 +658,8 @@ def revoke(
     (e.g. "read_*"), not a glob expansion of it.
 
     Examples:
-      harbour revoke my-agent filesystem
-      harbour revoke my-agent filesystem --tool "read_*"
+      holm revoke my-agent filesystem
+      holm revoke my-agent filesystem --tool "read_*"
     """
     if agent not in config_manager.config.agents:
         console.print(f"[bold red]Error:[/bold red] Agent '{agent}' not found.")

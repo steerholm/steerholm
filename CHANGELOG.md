@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to MCP Harbour are documented here. The format follows
+All notable changes to Steerholm are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
@@ -11,8 +11,15 @@ tagging it.
 ## [Unreleased]
 
 ### Changed
+- **Renamed to Steerholm.** MCP Harbour is now **Steerholm**, and the CLI command
+  is **`holm`** (was `harbour`). The Python package is `steerholm`, config lives
+  in `~/.steerholm` (was `~/.mcp-harbour`), access keys are prefixed `steer_sk_`,
+  the per-user daemon service is `steerholm`, and release assets are
+  `steerholm-<platform>`. There is no migration — existing installs re-add their
+  servers and agents under the new paths. (Historical entries below predate the
+  rename and still refer to the old names.)
 - **CLI overhaul to a verb-first, plain vocabulary.** Commands now read
-  `harbour <verb> <resource>`: `add server` / `add agent` (was `dock` /
+  `holm <verb> <resource>`: `add server` / `add agent` (was `dock` /
   `identity create`), `remove server` / `remove agent` (was `undock` /
   `identity delete`), `list servers` / `list agents`, `show server` (was
   `inspect`) / `show agent` (was `permit show`), and `grant` (was `permit
@@ -23,15 +30,16 @@ tagging it.
   key (was `identities`) and policy files use `agent_name` (was
   `identity_name`). Existing configs and policies load unchanged and are
   migrated to the new schema transparently on the next save.
+- The error response `data` payload now carries an `error_type` field.
 
 ### Added
-- `harbour revoke <agent> <server> [--tool PATTERN]` removes a grant — one tool
+- `holm revoke <agent> <server> [--tool PATTERN]` removes a grant — one tool
   with `--tool`, or all access to the server without it. (Previously access
   could only be added, never removed.)
-- `harbour rotate agent <name>` issues a new access key while keeping the
+- `holm rotate agent <name>` issues a new access key while keeping the
   agent's grants; the previous key stops working immediately.
-- `harbour --version` flag, alongside the existing `harbour version` command.
-- `harbour show server` now also lists which agents have been granted access to
+- `holm --version` flag, alongside the existing `holm version` command.
+- `holm show server` now also lists which agents have been granted access to
   the server.
 
 ## [0.1.3] - 2026-08-17

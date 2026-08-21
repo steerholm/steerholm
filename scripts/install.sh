@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="mcpharbour/mcpharbour"
-SERVICE_NAME="mcp-harbour"
+REPO="steerholm/steerholm"
+SERVICE_NAME="steerholm"
 INSTALL_DIR="${HOME}/.local/bin"
 
 RED='\033[0;31m'
@@ -30,19 +30,19 @@ info "Detected platform: ${PLATFORM}"
 
 # ── 2. Obtain release archive (download, or use a local one) ───────
 
-ASSET="mcp-harbour-${PLATFORM}.tar.gz"
+ASSET="steerholm-${PLATFORM}.tar.gz"
 TMP_DIR=$(mktemp -d)
 trap "rm -rf ${TMP_DIR}" EXIT
 
-if [ -n "${MCP_HARBOUR_LOCAL_ARCHIVE:-}" ]; then
+if [ -n "${STEERHOLM_LOCAL_ARCHIVE:-}" ]; then
     # Local-file mode (used for testing): install from a provided archive,
     # no download and no checksum lookup.
-    [ -f "$MCP_HARBOUR_LOCAL_ARCHIVE" ] || error "Local archive not found: ${MCP_HARBOUR_LOCAL_ARCHIVE}"
-    info "Installing from local archive: ${MCP_HARBOUR_LOCAL_ARCHIVE}"
-    cp "$MCP_HARBOUR_LOCAL_ARCHIVE" "${TMP_DIR}/release.tar.gz"
+    [ -f "$STEERHOLM_LOCAL_ARCHIVE" ] || error "Local archive not found: ${STEERHOLM_LOCAL_ARCHIVE}"
+    info "Installing from local archive: ${STEERHOLM_LOCAL_ARCHIVE}"
+    cp "$STEERHOLM_LOCAL_ARCHIVE" "${TMP_DIR}/release.tar.gz"
 else
-    if [ -n "${MCP_HARBOUR_VERSION:-}" ]; then
-        LATEST="${MCP_HARBOUR_VERSION}"
+    if [ -n "${STEERHOLM_VERSION:-}" ]; then
+        LATEST="${STEERHOLM_VERSION}"
     else
         LATEST=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
     fi
@@ -80,8 +80,8 @@ tar -xzf "${TMP_DIR}/release.tar.gz" -C "$TMP_DIR"
 # ── 3. Install binaries ───────────────────────────────────────────
 
 mkdir -p "$INSTALL_DIR"
-cp "${TMP_DIR}/harbour" "$INSTALL_DIR/"
-chmod +x "${INSTALL_DIR}/harbour"
+cp "${TMP_DIR}/holm" "$INSTALL_DIR/"
+chmod +x "${INSTALL_DIR}/holm"
 
 # Check PATH
 if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
@@ -89,14 +89,14 @@ if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
     echo "  export PATH=\"${INSTALL_DIR}:\$PATH\""
 fi
 
-HARBOUR_BIN="${INSTALL_DIR}/harbour"
-info "Installed harbour at ${HARBOUR_BIN}"
+HOLM_BIN="${INSTALL_DIR}/holm"
+info "Installed holm at ${HOLM_BIN}"
 
 # ── 4. Register service ───────────────────────────────────────────
 
-if [ -n "${MCP_HARBOUR_NO_SERVICE:-}" ]; then
-    info "Skipping service registration (MCP_HARBOUR_NO_SERVICE set)."
-    info "Run the daemon manually with: harbour serve"
+if [ -n "${STEERHOLM_NO_SERVICE:-}" ]; then
+    info "Skipping service registration (STEERHOLM_NO_SERVICE set)."
+    info "Run the daemon manually with: holm serve"
     echo ""
     info "Installation complete."
     exit 0
@@ -110,12 +110,12 @@ if [ "$OS" = "Linux" ]; then
 
     cat > "$UNIT_FILE" <<EOF
 [Unit]
-Description=MCP Harbour Daemon
+Description=Steerholm Daemon
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=${HARBOUR_BIN} serve
+ExecStart=${HOLM_BIN} serve
 Restart=on-failure
 RestartSec=5
 
@@ -132,11 +132,11 @@ EOF
 
 elif [ "$OS" = "Darwin" ]; then
     PLIST_DIR="${HOME}/Library/LaunchAgents"
-    PLIST_FILE="${PLIST_DIR}/dev.mcp-harbour.daemon.plist"
+    PLIST_FILE="${PLIST_DIR}/dev.steerholm.daemon.plist"
 
     mkdir -p "$PLIST_DIR"
 
-    LOG_DIR="${HOME}/.mcp-harbour"
+    LOG_DIR="${HOME}/.steerholm"
     mkdir -p "$LOG_DIR"
 
     cat > "$PLIST_FILE" <<EOF
@@ -145,10 +145,10 @@ elif [ "$OS" = "Darwin" ]; then
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>dev.mcp-harbour.daemon</string>
+    <string>dev.steerholm.daemon</string>
     <key>ProgramArguments</key>
     <array>
-        <string>${HARBOUR_BIN}</string>
+        <string>${HOLM_BIN}</string>
         <string>serve</string>
     </array>
     <key>RunAtLoad</key>
@@ -172,8 +172,8 @@ fi
 
 echo ""
 info "Manage with:"
-echo "  harbour status"
-echo "  harbour stop"
-echo "  harbour start"
+echo "  holm status"
+echo "  holm stop"
+echo "  holm start"
 echo ""
 info "Installation complete."

@@ -10,17 +10,17 @@ import bcrypt
 import keyring
 from .models import Config, Server, Agent, AgentPolicy, ToolPermission, ArgumentPolicy, ServerType
 
-logger = logging.getLogger("mcp_harbour.config")
+logger = logging.getLogger("steerholm.config")
 
 
 def _get_config_dir() -> Path:
-    override = os.environ.get("MCP_HARBOUR_CONFIG_DIR")
+    override = os.environ.get("STEERHOLM_CONFIG_DIR")
     if override:
         return Path(override)
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-        return base / "mcp-harbour"
-    return Path.home() / ".mcp-harbour"
+        return base / "steerholm"
+    return Path.home() / ".steerholm"
 
 
 CONFIG_DIR = _get_config_dir()
@@ -31,9 +31,9 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 4767
 
 # The control token lives under its OWN keyring service, separate from the
-# "mcp-harbour" service used for agent access keys, so no agent name can ever
+# "steerholm" service used for agent access keys, so no agent name can ever
 # collide with it.
-CONTROL_SERVICE = "mcp-harbour-control"
+CONTROL_SERVICE = "steerholm-control"
 CONTROL_ACCOUNT = "token"
 
 
@@ -46,7 +46,7 @@ def get_or_create_control_token() -> str:
     """
     token = keyring.get_password(CONTROL_SERVICE, CONTROL_ACCOUNT)
     if not token:
-        token = "harbour_ctl_" + "".join(
+        token = "steer_ctl_" + "".join(
             secrets.choice(string.ascii_letters + string.digits) for _ in range(32)
         )
         keyring.set_password(CONTROL_SERVICE, CONTROL_ACCOUNT, token)
@@ -129,9 +129,9 @@ class ConfigManager:
         Returns the raw key — only available at creation/rotation time."""
         alphabet = string.ascii_letters + string.digits
         token = "".join(secrets.choice(alphabet) for _ in range(32))
-        access_key = f"harbour_sk_{token}"
+        access_key = f"steer_sk_{token}"
         hashed = bcrypt.hashpw(access_key.encode(), bcrypt.gensalt())
-        keyring.set_password("mcp-harbour", name, hashed.decode())
+        keyring.set_password("steerholm", name, hashed.decode())
         return access_key
 
     def add_agent(self, name: str) -> str:
@@ -162,7 +162,7 @@ class ConfigManager:
         if name not in self.config.agents:
             raise ValueError(f"Agent '{name}' not found.")
         try:
-            keyring.delete_password("mcp-harbour", name)
+            keyring.delete_password("steerholm", name)
         except keyring.errors.PasswordDeleteError:
             pass  # entry already absent — nothing to remove
         except Exception as e:

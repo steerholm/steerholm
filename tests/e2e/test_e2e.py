@@ -1,6 +1,6 @@
 """
 End-to-end tests that start a real daemon, connect over Streamable HTTP,
-and exercise the full MCP protocol through Harbour.
+and exercise the full MCP protocol through Steerholm.
 
 Uses @modelcontextprotocol/server-everything as the downstream MCP server.
 Requires `npx` to be available.
@@ -17,8 +17,8 @@ import pytest_asyncio
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-from mcp_harbour.config import ConfigManager
-from mcp_harbour.gateway import HarbourGateway
+from steerholm.config import ConfigManager
+from steerholm.gateway import SteerholmGateway
 
 
 # ─── Helpers ────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ class MCPHTTPClient:
 
 @pytest.fixture
 def e2e_dir(tmp_path):
-    config_dir = tmp_path / "harbour-config"
+    config_dir = tmp_path / "holm-config"
     config_dir.mkdir()
     (config_dir / "policies").mkdir()
     return {"config_dir": config_dir}
@@ -80,7 +80,7 @@ def e2e_dir(tmp_path):
 
 @pytest.fixture
 def e2e_config(e2e_dir, monkeypatch):
-    import mcp_harbour.config as config_mod
+    import steerholm.config as config_mod
 
     monkeypatch.setattr(config_mod, "CONFIG_DIR", e2e_dir["config_dir"])
     monkeypatch.setattr(config_mod, "CONFIG_FILE", e2e_dir["config_dir"] / "config.json")
@@ -126,7 +126,7 @@ def e2e_setup(e2e_config, e2e_dir, e2e_port):
 
 @pytest_asyncio.fixture
 async def e2e_daemon(e2e_setup):
-    gateway = HarbourGateway()
+    gateway = SteerholmGateway()
     port = e2e_setup["port"]
 
     daemon_task = asyncio.create_task(gateway.serve("127.0.0.1", port))
@@ -167,7 +167,7 @@ class TestE2EAuthentication:
             result = await client.initialize()
 
             assert client.session_id()
-            assert result.serverInfo.name == "mcp-harbour"
+            assert result.serverInfo.name == "steerholm"
             assert result.capabilities.tools is not None
         finally:
             await client.close()
@@ -177,7 +177,7 @@ class TestE2EAuthentication:
         async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{e2e_daemon['port']}") as client:
             response = await client.post(
                 "/mcp",
-                headers={"Authorization": "Bearer harbour_sk_bogus_token_that_doesnt_exist"},
+                headers={"Authorization": "Bearer steer_sk_bogus_token_that_doesnt_exist"},
                 json={
                     "jsonrpc": "2.0",
                     "id": 1,
@@ -252,9 +252,9 @@ class TestE2ECallTool:
             await client.connect(e2e_daemon["tokens"]["full-access"])
             await client.initialize()
 
-            result = await client.call_tool("echo", {"message": "hello harbour"})
+            result = await client.call_tool("echo", {"message": "hello holm"})
             result_str = json.dumps(result.model_dump())
-            assert "hello harbour" in result_str
+            assert "hello holm" in result_str
         finally:
             await client.close()
 

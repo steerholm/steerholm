@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SERVICE_NAME="mcp-harbour"
+SERVICE_NAME="steerholm"
 INSTALL_DIR="${HOME}/.local/bin"
 
 RED='\033[0;31m'
@@ -25,7 +25,7 @@ if [ "$OS" = "Linux" ]; then
     fi
 
 elif [ "$OS" = "Darwin" ]; then
-    PLIST_FILE="${HOME}/Library/LaunchAgents/dev.mcp-harbour.daemon.plist"
+    PLIST_FILE="${HOME}/Library/LaunchAgents/dev.steerholm.daemon.plist"
     if [ -f "$PLIST_FILE" ]; then
         launchctl unload "$PLIST_FILE" 2>/dev/null || true
         rm -f "$PLIST_FILE"
@@ -35,8 +35,8 @@ fi
 
 # ── 2. Remove binaries ────────────────────────────────────────────
 
-rm -f "${INSTALL_DIR}/harbour"
+rm -f "${INSTALL_DIR}/holm"
 info "Removed binaries."
 
 info "Uninstall complete."
-info "Config files remain at ~/.mcp-harbour — delete manually if desired."
+info "Config files remain at ~/.steerholm — delete manually if desired."

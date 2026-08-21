@@ -1,14 +1,14 @@
-"""Portable end-to-end usability scenario for MCP Harbour.
+"""Portable end-to-end usability scenario for Steerholm.
 
-Drives an *external* harbour (source CLI, frozen binary, or installed binary)
+Drives an *external* holm (source CLI, frozen binary, or installed binary)
 and validates real MCP behavior. Reused by every layer of the test framework,
 on every OS.
 
 Modes:
   serve-check   Self-contained: isolated config, add server/add agent/grant,
-                start `harbour serve`, connect, assert, tear down. (binary smoke, L5)
+                start `holm serve`, connect, assert, tear down. (binary smoke, L5)
   configure     Write servers/agents/policies into the ambient config dir
-                (MCP_HARBOUR_CONFIG_DIR or the installed default) and print
+                (STEERHOLM_CONFIG_DIR or the installed default) and print
                 `TOKEN=<access key>`. Used before starting the real service. (L8)
   check         Connect to an already-running daemon at --url with --token and
                 run the client assertions only. (L8, against the service)
@@ -71,7 +71,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
 DOWNSTREAM = Path(__file__).resolve().parent / "downstream_server.py"
-TOKEN_RE = re.compile(r"harbour_sk_[A-Za-z0-9]+")
+TOKEN_RE = re.compile(r"steer_sk_[A-Za-z0-9]+")
 
 
 def free_port() -> int:
@@ -80,17 +80,17 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
-def harbour_command(arg: str | None) -> list[str]:
+def holm_command(arg: str | None) -> list[str]:
     if arg:
         return shlex.split(arg, posix=(os.name != "nt"))
-    return [sys.executable, "-m", "mcp_harbour.main"]
+    return [sys.executable, "-m", "steerholm.main"]
 
 
 def run_cli(cmd: list[str], env: dict, *step: str) -> subprocess.CompletedProcess:
     result = subprocess.run([*cmd, *step], env=env, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(
-            f"`harbour {' '.join(step)}` failed ({result.returncode}):\n{result.stdout}\n{result.stderr}"
+            f"`holm {' '.join(step)}` failed ({result.returncode}):\n{result.stdout}\n{result.stderr}"
         )
     return result
 
@@ -154,7 +154,7 @@ def write_allure(checks: Checks, alluredir: str, name: str,
             ([{"name": "parentSuite", "value": os_label}] if os_label else [])
             + [
                 {"name": "suite", "value": suite or "Smoke scenario"},
-                {"name": "framework", "value": "harbour-scenario"},
+                {"name": "framework", "value": "holm-scenario"},
                 {"name": "language", "value": "python"},
             ]
         ),
@@ -165,31 +165,31 @@ def write_allure(checks: Checks, alluredir: str, name: str,
 
 
 def downstream_command() -> str:
-    # Forward-slash paths survive Harbour's posix shlex.split on every OS.
+    # Forward-slash paths survive Steerholm's posix shlex.split on every OS.
     return f"{Path(sys.executable).as_posix()} {DOWNSTREAM.as_posix()}"
 
 
-def setup_config(harbour: list[str], env: dict, checks: Checks) -> str:
+def setup_config(holm: list[str], env: dict, checks: Checks) -> str:
     """Add the downstream server, add an agent, grant a scoped policy, and assert
     the surrounding CLI surface (list servers/show server/show agent/list agents).
     Returns the access key."""
-    run_cli(harbour, env, "add", "server", "smoke", "--command", downstream_command())
-    created = run_cli(harbour, env, "add", "agent", "agent")
+    run_cli(holm, env, "add", "server", "smoke", "--command", downstream_command())
+    created = run_cli(holm, env, "add", "agent", "agent")
     match = TOKEN_RE.search(created.stdout)
     if not match:
         raise RuntimeError(f"could not parse access key from:\n{created.stdout}")
     token = match.group(0)
-    run_cli(harbour, env, "grant", "agent", "smoke", "--tool", "echo")
-    run_cli(harbour, env, "grant", "agent", "smoke", "--tool", "add", "--args", "a=re:^\\d+$")
+    run_cli(holm, env, "grant", "agent", "smoke", "--tool", "echo")
+    run_cli(holm, env, "grant", "agent", "smoke", "--tool", "add", "--args", "a=re:^\\d+$")
 
     # L9 — CLI surface assertions against the same binary.
-    listed = run_cli(harbour, env, "list", "servers").stdout
+    listed = run_cli(holm, env, "list", "servers").stdout
     checks.check("smoke" in listed, "`list servers` shows the server")
-    inspected = run_cli(harbour, env, "show", "server", "smoke").stdout
+    inspected = run_cli(holm, env, "show", "server", "smoke").stdout
     checks.check("smoke" in inspected, "`show server` shows server details")
-    agents = run_cli(harbour, env, "list", "agents").stdout
+    agents = run_cli(holm, env, "list", "agents").stdout
     checks.check("agent" in agents, "`list agents` shows the agent")
-    policy = run_cli(harbour, env, "show", "agent", "agent").stdout
+    policy = run_cli(holm, env, "show", "agent", "agent").stdout
     checks.check("echo" in policy and "add" in policy, "`show agent` lists granted tools")
 
     return token
@@ -206,7 +206,7 @@ async def run_client_checks(url: str, token: str, checks: Checks) -> None:
         session = await stack.enter_async_context(ClientSession(read, write))
 
         init = await session.initialize()
-        checks.check(init.serverInfo.name == "mcp-harbour", "initialize returns mcp-harbour")
+        checks.check(init.serverInfo.name == "steerholm", "initialize returns steerholm")
 
         tools = {t.name for t in (await session.list_tools()).tools}
         checks.check(tools == {"echo", "add"}, f"list_tools is policy-filtered (got {sorted(tools)})")
@@ -233,7 +233,7 @@ def check_unauthenticated(url: str, checks: Checks) -> None:
         urllib.request.urlopen(
             urllib.request.Request(
                 url, method="POST", data=b"{}",
-                headers={"Authorization": "Bearer harbour_sk_bogus"},
+                headers={"Authorization": "Bearer steer_sk_bogus"},
             ),
             timeout=5,
         )
@@ -244,7 +244,7 @@ def check_unauthenticated(url: str, checks: Checks) -> None:
         checks.check(False, f"unauthenticated request rejected (transport error: {e})")
 
 
-def finish(checks: Checks, args=None, name: str = "MCP Harbour scenario") -> int:
+def finish(checks: Checks, args=None, name: str = "Steerholm scenario") -> int:
     alluredir = getattr(args, "alluredir", None) if args else None
     if alluredir:
         write_allure(
@@ -261,12 +261,12 @@ def finish(checks: Checks, args=None, name: str = "MCP Harbour scenario") -> int
 
 
 def cmd_serve_check(args) -> int:
-    harbour = harbour_command(args.harbour)
+    holm = holm_command(args.holm)
     checks = Checks()
-    with tempfile.TemporaryDirectory(prefix="harbour-smoke-") as tmp:
-        env = {**os.environ, "MCP_HARBOUR_CONFIG_DIR": tmp}
-        print(f"harbour: {' '.join(harbour)}\nconfig:  {tmp}")
-        token = setup_config(harbour, env, checks)
+    with tempfile.TemporaryDirectory(prefix="holm-smoke-") as tmp:
+        env = {**os.environ, "STEERHOLM_CONFIG_DIR": tmp}
+        print(f"holm: {' '.join(holm)}\nconfig:  {tmp}")
+        token = setup_config(holm, env, checks)
 
         port = free_port()
         url = f"http://127.0.0.1:{port}/mcp"
@@ -275,7 +275,7 @@ def cmd_serve_check(args) -> int:
         # that a surviving child still holds open.
         logf = open(log_path, "w")
         daemon = subprocess.Popen(
-            [*harbour, "serve", "--port", str(port)],
+            [*holm, "serve", "--port", str(port)],
             env=env, stdout=logf, stderr=subprocess.STDOUT, **_popen_kwargs(),
         )
         try:
@@ -293,10 +293,10 @@ def cmd_serve_check(args) -> int:
 
 
 def cmd_configure(args) -> int:
-    harbour = harbour_command(args.harbour)
+    holm = holm_command(args.holm)
     checks = Checks()
     env = dict(os.environ)  # ambient config dir (installed default or override)
-    token = setup_config(harbour, env, checks)
+    token = setup_config(holm, env, checks)
     if getattr(args, "alluredir", None):
         write_allure(
             checks, args.alluredir, getattr(args, "allure_name", None) or "configure",
@@ -344,16 +344,16 @@ def _add_allure_args(p) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="MCP Harbour usability scenario")
+    parser = argparse.ArgumentParser(description="Steerholm usability scenario")
     sub = parser.add_subparsers(dest="mode")
 
     sc = sub.add_parser("serve-check", help="self-contained serve + assert (L5)")
-    sc.add_argument("--harbour")
+    sc.add_argument("--holm")
     _add_allure_args(sc)
     sc.set_defaults(func=cmd_serve_check)
 
     cf = sub.add_parser("configure", help="write config into ambient config dir, print TOKEN (L8)")
-    cf.add_argument("--harbour")
+    cf.add_argument("--holm")
     _add_allure_args(cf)
     cf.set_defaults(func=cmd_configure)
 
@@ -369,14 +369,14 @@ def main() -> int:
     em.set_defaults(func=cmd_emit)
 
     # Backward-compatible default: no subcommand behaves like serve-check.
-    parser.add_argument("--harbour", dest="root_harbour", help=argparse.SUPPRESS)
+    parser.add_argument("--holm", dest="root_holm", help=argparse.SUPPRESS)
     parser.add_argument("--alluredir", dest="root_alluredir", help=argparse.SUPPRESS)
     parser.add_argument("--allure-name", dest="root_allure_name", help=argparse.SUPPRESS)
     parser.add_argument("--allure-os", dest="root_allure_os", help=argparse.SUPPRESS)
     parser.add_argument("--allure-suite", dest="root_allure_suite", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.mode is None:
-        args.harbour = args.root_harbour
+        args.holm = args.root_holm
         args.alluredir = args.root_alluredir
         args.allure_name = args.root_allure_name
         args.allure_os = args.root_allure_os

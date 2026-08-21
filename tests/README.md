@@ -42,7 +42,7 @@ pytest tests/e2e        # needs npx
 **[test_process_manager.py](unit/test_process_manager.py)** — Command parsing & daemon
 
 - shlex split: simple, multi-arg, quoted paths, single word, uvx
-- HarbourDaemon: init, nonexistent lookup, stop all shared
+- SteerholmDaemon: init, nonexistent lookup, stop all shared
 
 **[test_identity.py](unit/test_identity.py)** — Agent resolution from tokens
 

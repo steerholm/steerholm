@@ -11,7 +11,7 @@ from mcp.client.streamable_http import streamable_http_client
 from .models import Server, ServerType
 from contextlib import AsyncExitStack
 
-logger = logging.getLogger("mcp_harbour")
+logger = logging.getLogger("steerholm")
 
 
 @dataclass
@@ -105,7 +105,7 @@ class ServerProcess:
             return await self.session.call_tool(name, arguments)
 
 
-class HarbourDaemon:
+class SteerholmDaemon:
     def __init__(self):
         self.shared_processes: Dict[str, ServerProcess] = {}
         self.server_health: Dict[str, ServerHealth] = {}

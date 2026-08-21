@@ -14,9 +14,9 @@ from typing import Optional
 
 from . import __version__
 
-logger = logging.getLogger("mcp_harbour.updater")
+logger = logging.getLogger("steerholm.updater")
 
-REPO = "mcpharbour/mcpharbour"
+REPO = "steerholm/steerholm"
 GITHUB_API = f"https://api.github.com/repos/{REPO}"
 GITHUB_RELEASES = f"https://github.com/{REPO}/releases/download"
 
@@ -65,14 +65,14 @@ def platform_asset_name(system: Optional[str] = None, machine: Optional[str] = N
     machine = (machine or platform.machine()).lower()
 
     if system == "Linux" and machine in {"x86_64", "amd64"}:
-        return "mcp-harbour-linux-x64.tar.gz"
+        return "steerholm-linux-x64.tar.gz"
     # Only an arm64 macOS build is published. x86_64/amd64 here means an x86_64
     # Python on Apple Silicon (e.g. under Rosetta), whose hardware runs the arm64
     # binary natively; genuine Intel Macs are not supported.
     if system == "Darwin" and machine in {"arm64", "aarch64", "x86_64", "amd64"}:
-        return "mcp-harbour-darwin-arm64.tar.gz"
+        return "steerholm-darwin-arm64.tar.gz"
     if system == "Windows" and machine in {"amd64", "x86_64"}:
-        return "mcp-harbour-windows-x64.zip"
+        return "steerholm-windows-x64.zip"
 
     raise UpdateError(f"Unsupported platform: {system}-{machine}")
 
@@ -87,13 +87,13 @@ def installer_asset_name(system: Optional[str] = None) -> str:
 
 
 def _github_json(url: str) -> dict:
-    request = urllib.request.Request(url, headers={"User-Agent": "mcp-harbour"})
+    request = urllib.request.Request(url, headers={"User-Agent": "steerholm"})
     with urllib.request.urlopen(request, timeout=30) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
 def _download(url: str, destination: Path) -> None:
-    request = urllib.request.Request(url, headers={"User-Agent": "mcp-harbour"})
+    request = urllib.request.Request(url, headers={"User-Agent": "steerholm"})
     with urllib.request.urlopen(request, timeout=120) as response, destination.open("wb") as output:
         shutil.copyfileobj(response, output)
 
@@ -118,7 +118,7 @@ def fetch_latest_tag(timeout: float = 3.0) -> str:
     """Lightweight fetch of the latest release tag, for the update-available hint.
     Short timeout, no asset validation. Raises on network error."""
     request = urllib.request.Request(
-        f"{GITHUB_API}/releases/latest", headers={"User-Agent": "mcp-harbour"}
+        f"{GITHUB_API}/releases/latest", headers={"User-Agent": "steerholm"}
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:
         data = json.loads(response.read().decode("utf-8"))
@@ -185,7 +185,7 @@ def verify_checksum(path: Path, checksums_text: str) -> None:
 
 
 def download_text(url: str) -> str:
-    request = urllib.request.Request(url, headers={"User-Agent": "mcp-harbour"})
+    request = urllib.request.Request(url, headers={"User-Agent": "steerholm"})
     with urllib.request.urlopen(request, timeout=30) as response:
         return response.read().decode("utf-8")
 
@@ -233,7 +233,7 @@ def run_installer(installer_path: Path, system: Optional[str] = None, version: O
 
     env = None
     if version:
-        env = {**os.environ, "MCP_HARBOUR_VERSION": version}
+        env = {**os.environ, "STEERHOLM_VERSION": version}
 
     try:
         subprocess.run(command, check=True, env=env)
@@ -246,7 +246,7 @@ def run_update_installer(
     system: Optional[str] = None,
     release: Optional[dict] = None,
 ) -> None:
-    with tempfile.TemporaryDirectory(prefix="mcp-harbour-update-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="steerholm-update-") as tmp:
         installer = download_installer(tag, Path(tmp), system=system, release=release)
         run_installer(installer, system, version=tag)
 

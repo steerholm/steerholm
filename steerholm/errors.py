@@ -1,7 +1,7 @@
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData
 
-# Harbour error codes (outside the JSON-RPC reserved range)
+# Steerholm error codes (outside the JSON-RPC reserved range)
 AUTHORIZATION_DENIED_CODE = -31001
 SERVER_UNAVAILABLE_CODE = -31002
 

@@ -1,7 +1,7 @@
 [project]
-name = "mcp-harbour"
+name = "steerholm"
 dynamic = ["version"]
-description = "The port authority for your MCP servers"
+description = "The control plane for your agents — steer what they can access."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
-harbour = "mcp_harbour.main:app"
+holm = "steerholm.main:app"
 
 [project.optional-dependencies]
 dev = [
@@ -30,8 +30,8 @@ dev = [
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
-# Single source of truth for the version: mcp_harbour/__init__.py __version__.
+# Single source of truth for the version: steerholm/__init__.py __version__.
 # Read at build time (AST, no import), so the frozen binary has no runtime
 # importlib.metadata dependency.
 [tool.setuptools.dynamic]
-version = {attr = "mcp_harbour.__version__"}
+version = {attr = "steerholm.__version__"}

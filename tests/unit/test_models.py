@@ -2,7 +2,7 @@
 
 import pytest
 from pydantic import ValidationError
-from mcp_harbour.models import (
+from steerholm.models import (
     Server,
     ServerType,
     Agent,
@@ -44,9 +44,9 @@ class TestServer:
 
 class TestAgent:
     def test_create(self):
-        i = Agent(name="agent", key_prefix="harbour_sk_a...")
+        i = Agent(name="agent", key_prefix="steer_sk_a...")
         assert i.name == "agent"
-        assert i.key_prefix.startswith("harbour_sk_")
+        assert i.key_prefix.startswith("steer_sk_")
 
     def test_missing_fields_raises(self):
         with pytest.raises(ValidationError):
@@ -110,7 +110,7 @@ class TestConfig:
     def test_with_data(self):
         c = Config(
             servers={"fs": Server(name="fs", command="echo")},
-            agents={"a": Agent(name="a", key_prefix="harbour_sk_x")},
+            agents={"a": Agent(name="a", key_prefix="steer_sk_x")},
         )
         assert "fs" in c.servers
         assert "a" in c.agents

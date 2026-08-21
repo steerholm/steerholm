@@ -32,9 +32,9 @@ jobs:
           cp scripts/uninstall.sh .
           cp scripts/uninstall.ps1 .
           sha256sum \
-            mcp-harbour-linux-x64.tar.gz \
-            mcp-harbour-darwin-arm64.tar.gz \
-            mcp-harbour-windows-x64.zip \
+            steerholm-linux-x64.tar.gz \
+            steerholm-darwin-arm64.tar.gz \
+            steerholm-windows-x64.zip \
             install.sh \
             install.ps1 \
             uninstall.sh \
@@ -68,9 +68,9 @@ jobs:
           body_path: notes.md
           generate_release_notes: ${{ steps.notes.outputs.generate }}
           files: |
-            mcp-harbour-linux-x64.tar.gz
-            mcp-harbour-darwin-arm64.tar.gz
-            mcp-harbour-windows-x64.zip
+            steerholm-linux-x64.tar.gz
+            steerholm-darwin-arm64.tar.gz
+            steerholm-windows-x64.zip
             install.sh
             install.ps1
             uninstall.sh

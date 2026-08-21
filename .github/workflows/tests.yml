@@ -4,7 +4,7 @@ name: Tests
 #   1. tests    — unit + integration on all three OSes (+ npx protocol e2e)
 #   2. build    — build the binaries on all three OSes
 #   3. e2e      — run the real install script on those binaries and live-test the
-#                 installed Harbour and its service-managed daemon, then uninstall
+#                 installed Steerholm and its service-managed daemon, then uninstall
 # All stages gate PRs. Allure results are grouped parentSuite=OS, suite=phase.
 # The report publishes only on manual dispatch.
 
@@ -21,7 +21,7 @@ env:
   PYTHON_KEYRING_BACKEND: keyrings.alt.file.PlaintextKeyring
   # The CLI's update-available check would call the GitHub API on every command;
   # disable it in CI (shared-runner IPs get rate-limited, and it adds latency).
-  MCP_HARBOUR_NO_UPDATE_CHECK: "1"
+  STEERHOLM_NO_UPDATE_CHECK: "1"
 
 jobs:
   actionlint:
@@ -118,12 +118,12 @@ jobs:
         run: pip install -e ".[dev]"
       - uses: actions/download-artifact@v4
         with:
-          name: mcp-harbour-${{ matrix.platform }}
+          name: steerholm-${{ matrix.platform }}
       - name: Install + live test + uninstall (Unix)
         if: runner.os != 'Windows'
         shell: bash
         env:
-          ARCHIVE: ${{ github.workspace }}/mcp-harbour-${{ matrix.platform }}.${{ matrix.ext }}
+          ARCHIVE: ${{ github.workspace }}/steerholm-${{ matrix.platform }}.${{ matrix.ext }}
           OSNAME: ${{ matrix.osname }}
           PLATFORM: ${{ matrix.platform }}
         run: bash tests/ci/e2e_installed.sh
@@ -131,7 +131,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         env:
-          ARCHIVE: ${{ github.workspace }}\mcp-harbour-${{ matrix.platform }}.${{ matrix.ext }}
+          ARCHIVE: ${{ github.workspace }}\steerholm-${{ matrix.platform }}.${{ matrix.ext }}
           OSNAME: ${{ matrix.osname }}
           PLATFORM: ${{ matrix.platform }}
         run: pwsh tests/ci/e2e_installed.ps1
@@ -215,12 +215,12 @@ jobs:
       - name: Install previous release then update (Unix)
         if: runner.os != 'Windows'
         run: |
-          MCP_HARBOUR_NO_SERVICE=1 bash scripts/install.sh
-          BIN="$HOME/.local/bin/harbour"
-          # The latest published release must itself expose `harbour update`;
+          STEERHOLM_NO_SERVICE=1 bash scripts/install.sh
+          BIN="$HOME/.local/bin/holm"
+          # The latest published release must itself expose `holm update`;
           # releases before the updater shipped cannot be self-update-tested.
           if ! "$BIN" --help 2>&1 | grep -qw update; then
-            echo "SKIP: the latest published release predates 'harbour update'; self-update E2E is pending an updater-capable release."
+            echo "SKIP: the latest published release predates 'holm update'; self-update E2E is pending an updater-capable release."
             exit 0
           fi
           "$BIN" version
@@ -231,11 +231,11 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $env:MCP_HARBOUR_NO_SERVICE = "1"
+          $env:STEERHOLM_NO_SERVICE = "1"
           powershell -ExecutionPolicy Bypass -File scripts/install.ps1
-          $bin = Join-Path $env:LOCALAPPDATA "mcp-harbour\bin\harbour.exe"
+          $bin = Join-Path $env:LOCALAPPDATA "steerholm\bin\holm.exe"
           if ((& $bin --help 2>&1 | Out-String) -notmatch '\bupdate\b') {
-            Write-Host "SKIP: the latest published release predates 'harbour update'; self-update E2E is pending an updater-capable release."
+            Write-Host "SKIP: the latest published release predates 'holm update'; self-update E2E is pending an updater-capable release."
             exit 0
           }
           & $bin version

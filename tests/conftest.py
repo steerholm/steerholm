@@ -4,7 +4,7 @@ import pytest
 from collections import OrderedDict
 
 # Never let the CLI's "update available" check hit the network during tests.
-os.environ.setdefault("MCP_HARBOUR_NO_UPDATE_CHECK", "1")
+os.environ.setdefault("STEERHOLM_NO_UPDATE_CHECK", "1")
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -35,9 +35,9 @@ from mcp.server.lowlevel.server import request_ctx
 from mcp.shared.context import RequestContext
 from mcp.types import Tool, ListToolsResult, CallToolResult, TextContent, ListToolsRequest, CallToolRequest, CallToolRequestParams
 
-from mcp_harbour.gateway import HarbourGateway
-from mcp_harbour.models import Server
-from mcp_harbour.process_manager import HarbourDaemon, ServerProcess
+from steerholm.gateway import SteerholmGateway
+from steerholm.models import Server
+from steerholm.process_manager import SteerholmDaemon, ServerProcess
 
 
 class HTTPDownstreamFixture:
@@ -165,7 +165,7 @@ def http_call_tool(http_gateway, http_agent):
 
 @pytest.fixture
 def tmp_config_dir(tmp_path):
-    config_dir = tmp_path / ".mcp-harbour"
+    config_dir = tmp_path / ".steerholm"
     config_dir.mkdir()
     (config_dir / "policies").mkdir()
     return config_dir
@@ -173,7 +173,7 @@ def tmp_config_dir(tmp_path):
 
 @pytest.fixture
 def config_manager(tmp_config_dir, monkeypatch):
-    import mcp_harbour.config as config_mod
+    import steerholm.config as config_mod
 
     monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_config_dir)
     monkeypatch.setattr(config_mod, "CONFIG_FILE", tmp_config_dir / "config.json")
@@ -181,7 +181,7 @@ def config_manager(tmp_config_dir, monkeypatch):
     monkeypatch.setattr(config_mod, "DEFAULT_HOST", "127.0.0.1")
     monkeypatch.setattr(config_mod, "DEFAULT_PORT", 0)
 
-    from mcp_harbour.config import ConfigManager
+    from steerholm.config import ConfigManager
 
     return ConfigManager()
 
@@ -196,12 +196,12 @@ def sample_http_server(config_manager):
     return config_manager.add_server("test-http-server", url="http://localhost:3001/mcp")
 
 
-def make_gateway(config_manager) -> HarbourGateway:
+def make_gateway(config_manager) -> SteerholmGateway:
     """Create a gateway with mocked internals pointing at the test config."""
-    gateway = HarbourGateway.__new__(HarbourGateway)
+    gateway = SteerholmGateway.__new__(SteerholmGateway)
     gateway.config_manager = config_manager
-    gateway.daemon = HarbourDaemon()
-    gateway.session_server = MCPServer("mcp-harbour")
+    gateway.daemon = SteerholmDaemon()
+    gateway.session_server = MCPServer("steerholm")
     gateway._auth_cache = OrderedDict()
     gateway._auth_cache_max = 4096
     gateway._reconcile_lock = asyncio.Lock()
@@ -211,7 +211,7 @@ def make_gateway(config_manager) -> HarbourGateway:
 
 def _set_request_agent(agent_name: str):
     request = SimpleNamespace(
-        state=SimpleNamespace(harbour_agent=agent_name)
+        state=SimpleNamespace(steerholm_agent=agent_name)
     )
     return request_ctx.set(
         RequestContext(

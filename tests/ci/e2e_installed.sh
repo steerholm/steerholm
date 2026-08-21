@@ -19,7 +19,7 @@ emit() { # name suite status
 # ── Build: the freshly built binary runs ───────────────────────────
 TMP="$(mktemp -d)"
 tar -xzf "$ARCHIVE" -C "$TMP"
-BIN_TMP="$TMP/harbour"
+BIN_TMP="$TMP/holm"
 chmod +x "$BIN_TMP"
 if "$BIN_TMP" version >/dev/null 2>&1; then
   emit "built binary runs ($PLATFORM)" Build passed
@@ -28,7 +28,7 @@ else
 fi
 
 # ── Configure before the daemon starts (the service reads this config) ──
-TOKEN="$(python tests/smoke/scenario.py configure --harbour "$BIN_TMP" | sed -n 's/^TOKEN=//p')"
+TOKEN="$(python tests/smoke/scenario.py configure --holm "$BIN_TMP" | sed -n 's/^TOKEN=//p')"
 
 export PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring
 # The service-managed daemon must use the SAME (file) keyring backend as the
@@ -48,13 +48,13 @@ elif [ "$OSNAME" = "macOS" ]; then
 fi
 
 # ── Install via the real script, WITH service registration ──────────
-MCP_HARBOUR_LOCAL_ARCHIVE="$ARCHIVE" bash scripts/install.sh || true
-BIN="$HOME/.local/bin/harbour"
+STEERHOLM_LOCAL_ARCHIVE="$ARCHIVE" bash scripts/install.sh || true
+BIN="$HOME/.local/bin/holm"
 
-# ── Verify the installed, service-managed daemon is answering as Harbour ──
+# ── Verify the installed, service-managed daemon is answering as Steerholm ──
 up=0
 for _ in $(seq 1 30); do
-  if curl -fsS http://127.0.0.1:4767/healthz 2>/dev/null | grep -q '"service":"mcp-harbour"'; then
+  if curl -fsS http://127.0.0.1:4767/healthz 2>/dev/null | grep -q '"service":"steerholm"'; then
     up=1; break
   fi
   sleep 1

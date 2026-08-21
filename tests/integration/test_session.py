@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, call
 
 import pytest
 
-from mcp_harbour.process_manager import ServerHealth
+from steerholm.process_manager import ServerHealth
 from tests.conftest import call_tool, get_tools, make_gateway, make_mock_process
 
 

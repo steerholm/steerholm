@@ -34,19 +34,19 @@ Runners (match what `release.yml` builds):
 2. **Frozen-binary smoke** — build the PyInstaller binary per OS, run the
    shared scenario against the *binary* (what users actually run).
 3. **Install + service lifecycle** — run `install.sh` / `install.ps1`,
-   then `harbour start` → `status` → scenario → `stop`, exercising the
+   then `holm start` → `status` → scenario → `stop`, exercising the
    real platform service manager.
-4. **Self-update** — `harbour update` end-to-end, including the Windows
+4. **Self-update** — `holm update` end-to-end, including the Windows
    running-exe replacement that unit tests cannot reach.
 
 ## Shared scenario runner
 
 One script, `tests/smoke/scenario.py`, is the single definition of "is
-Harbour usable," runnable against either the source CLI or an
+Steerholm usable," runnable against either the source CLI or an
 installed/frozen binary:
 
 - add a downstream MCP server, add an agent, grant a scoped policy,
-- reach the daemon (started either via the service or `harbour serve`),
+- reach the daemon (started either via the service or `holm serve`),
 - connect with a **real MCP Streamable HTTP client** (`/mcp` needs session
   negotiation; raw curl is misleading),
 - assert: allowed tool listed + callable, denied tool hidden + rejected,
@@ -68,13 +68,13 @@ pretend they "just work":
   a non-login CI shell lacks. Mitigation: `loginctl enable-linger`, set
   `XDG_RUNTIME_DIR`, and/or wrap in `dbus-run-session`. If that proves too
   flaky, fall back to a system unit for the test, or verify unit-file
-  install + `harbour serve` and mark the `--user` path lower-fidelity.
+  install + `holm serve` and mark the `--user` path lower-fidelity.
 - **macOS** — user LaunchAgents in a headless runner may not fully start
   without an Aqua/login session; `launchctl bootstrap gui/$(id -u)` +
   `kickstart` is the modern path. If start is unreliable, assert the plist
-  is installed and the daemon runs via `harbour serve`, and flag the gap.
+  is installed and the daemon runs via `holm serve`, and flag the gap.
 - **Windows** — runner is admin, so `sc.exe` install/start/stop and
-  `harbour-service.exe` should work directly. Highest-fidelity of the
+  `holm-service.exe` should work directly. Highest-fidelity of the
   three.
 
 Principle: prefer real service start/stop; where a runner genuinely can't,
@@ -83,12 +83,12 @@ output** rather than silently skipping.
 
 ### Self-update without a chicken-and-egg
 
-`harbour update` resolves a release from GitHub, downloads the install
+`holm update` resolves a release from GitHub, downloads the install
 script + `checksums.txt`, runs the installer, which downloads the archive.
 Pre-release there is nothing to update from. Two complementary strategies:
 
 - **High-fidelity, post-release (recommended):** on each OS, install the
-  previous real release, then `harbour update` to the latest real release.
+  previous real release, then `holm update` to the latest real release.
   Zero mocking — exercises the true network path, real checksum
   verification, and the running-binary replacement (this is where the
   Windows lock surfaces). Requires only that releases exist and ship
@@ -97,7 +97,7 @@ Pre-release there is nothing to update from. Two complementary strategies:
 - **Pre-merge, staged:** add a base-override hook so CI can point the
   updater + install scripts at a locally staged "release" (tarball +
   `checksums.txt` + install script). Needs a small code change
-  (`MCP_HARBOUR_UPDATE_REPO` or a base-URL env in `updater.py`, mirrored
+  (`STEERHOLM_UPDATE_REPO` or a base-URL env in `updater.py`, mirrored
   in the install scripts). Lower fidelity but gateable on every PR.
 
 Start with the post-release real-update test (no code change, highest
@@ -105,11 +105,11 @@ signal); add the staged hook only if we want update coverage on every PR.
 
 ## Required code changes (small, enabling)
 
-1. **`install.sh` local-file mode** (approved) — `MCP_HARBOUR_LOCAL_ARCHIVE`
+1. **`install.sh` local-file mode** (approved) — `STEERHOLM_LOCAL_ARCHIVE`
    to install a provided artifact without downloading; mirrors
-   `install.ps1`'s `$HarbourBinaryPath`. Lets Layer 3 install freshly
+   `install.ps1`'s `$SteerholmBinaryPath`. Lets Layer 3 install freshly
    built binaries pre-release.
-2. **Skip-service mode** — `MCP_HARBOUR_NO_SERVICE=1` for environments
+2. **Skip-service mode** — `STEERHOLM_NO_SERVICE=1` for environments
    where service registration isn't wanted (e.g. the binary-smoke layer).
 3. **(Optional) update base-override** — only if we want pre-merge staged
    update tests (see above).

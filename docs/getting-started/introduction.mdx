@@ -1,9 +1,9 @@
 ---
 title: Introduction
-description: What MCP Harbour is and why it exists.
+description: What Steerholm is and why it exists.
 ---
 
-MCP Harbour is one surface with two faces: an **action plane** for your agents — the single place they connect to and act through — and a **control plane** for you, where you register the MCP servers they use and grant each one policy-scoped access to exactly the tools it needs. You decide what every agent can reach.
+Steerholm is one surface with two faces: an **action plane** for your agents — the single place they connect to and act through — and a **control plane** for you, where you register the MCP servers they use and grant each one policy-scoped access to exactly the tools it needs. You decide what every agent can reach.
 
 New here? Start with [the control plane](/concepts/control-plane) for the mental model, then the [quickstart](/getting-started/quickstart).
 
@@ -34,9 +34,9 @@ New here? Start with [the control plane](/concepts/control-plane) for the mental
 
 Today, each AI agent (Claude Code, VS Code, Cursor, OpenCode) configures its own MCP servers independently. There's no shared management, no centralized policy, and no way to control what an agent can do once it has access to a server.
 
-## How Harbour solves it
+## How Steerholm solves it
 
-Like a port authority inspects and controls what enters and leaves a harbour, MCP Harbour inspects and controls all MCP traffic between agents and servers. Agents check in with an access key, the harbour verifies the agent, and every request is checked against the user's policy before reaching any server.
+Steerholm is the helm you steer your agents from: it sits on the path of all MCP traffic between agents and servers and directs what each one can do. Agents connect with an access key, Steerholm verifies the agent, and every request is checked against the user's policy before reaching any server.
 
 This gives the user a single control point for:
 

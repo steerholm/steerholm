@@ -1,7 +1,7 @@
 """Tests for the structured error code factories."""
 
 from mcp.shared.exceptions import McpError
-from mcp_harbour.errors import (
+from steerholm.errors import (
     authorization_denied,
     server_unavailable,
     AUTHORIZATION_DENIED_CODE,
