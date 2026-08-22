@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/bf7d955f-c79e-41c8-b517-e05c27bd2203" alt="Steerholm" height="256" />
+  <img src="docs/logo/badge.svg" alt="Steerholm" height="84" />
 </p>
 
 <p align="center">
