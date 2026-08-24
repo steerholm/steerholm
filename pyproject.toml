@@ -30,6 +30,11 @@ dev = [
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
+# Package only the steerholm library; don't let setuptools flat-layout discovery
+# pick up other top-level dirs (design/, tests/, scripts/) as packages.
+[tool.setuptools.packages.find]
+include = ["steerholm*"]
+
 # Single source of truth for the version: steerholm/__init__.py __version__.
 # Read at build time (AST, no import), so the frozen binary has no runtime
 # importlib.metadata dependency.
