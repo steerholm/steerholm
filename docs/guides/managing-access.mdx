@@ -1,13 +1,49 @@
 ---
-title: Managing agents & access
-description: Audit, grant, revoke, and rotate after the initial setup.
+title: Managing access
+description: Grant, revoke, and audit which servers and tools each agent can reach.
 ---
 
-The [quickstart](/getting-started/quickstart) gets one agent connected to one
-server. This guide covers the day-to-day tasks after that: seeing who can do
-what, changing access, rotating a key, and running more than one server.
+Access in Steerholm is the set of **grants** connecting an agent to the servers and
+tools it may use. An agent starts with none — it can reach nothing until you grant
+it. This guide covers wiring and auditing those connections, once an agent and a
+server both exist ([add an agent](/guides/add-an-agent),
+[add a server](/guides/add-a-server)).
 
-## See what an agent can do
+## Grant access
+
+Grants are additive — each `grant` adds a rule to the agent's policy. Grant a whole
+server, a specific tool, or a tool constrained by its arguments:
+
+```bash
+# every tool on the server
+holm grant my-agent git
+
+# one tool
+holm grant my-agent git --tool "git_log"
+
+# one tool, constrained by argument
+holm grant my-agent git --tool "git_diff" --args "repo_path=/home/user/projects/**"
+```
+
+See [Permissions](/concepts/permissions) for the full glob/regex argument syntax.
+
+## Revoke access
+
+```bash
+# remove one tool grant
+holm revoke my-agent git --tool "git_log"
+
+# remove all of the agent's access to a server
+holm revoke my-agent git
+```
+
+<Note>
+  `--tool` matches the **exact pattern you granted**, not a glob expansion of it.
+  If you granted `--tool "git_diff*"`, revoke it with `--tool "git_diff*"`, not
+  `--tool "git_diff"`.
+</Note>
+
+## See what an agent can reach
 
 `show agent` lists an agent's access-key prefix and every grant it holds
 (server → tools → argument constraints):
@@ -18,80 +54,9 @@ holm show agent my-agent
 
 ## See who can reach a server
 
-The reverse view — `show server` includes the agents that have been granted
-access, alongside the server's live status and tools:
+The reverse view — `show server` includes the agents that have been granted access,
+alongside the server's live status and tools:
 
 ```bash
-holm show server filesystem
+holm show server git
 ```
-
-## Grant more access
-
-Grants are additive — each `grant` adds a rule to the agent's policy. Grant a
-whole server, a specific tool, or a tool with argument constraints:
-
-```bash
-# every tool on the server
-holm grant my-agent git
-
-# one tool
-holm grant my-agent filesystem --tool "read_text_file"
-
-# one tool, constrained by argument
-holm grant my-agent filesystem --tool "write_file" --args "path=/home/user/projects/**"
-```
-
-See [Permissions](/concepts/permissions) for the full glob/regex argument syntax.
-
-## Revoke access
-
-```bash
-# remove one tool grant
-holm revoke my-agent filesystem --tool "read_text_file"
-
-# remove all of the agent's access to a server
-holm revoke my-agent filesystem
-```
-
-<Note>
-  `--tool` matches the **exact pattern you granted**, not a glob expansion of it.
-  If you granted `--tool "read_*"`, revoke it with `--tool "read_*"`, not
-  `--tool "read_text_file"`.
-</Note>
-
-## Rotate a leaked or lost key
-
-Rotating issues a new access key and **keeps all of the agent's grants**. The
-previous key stops working immediately, so update the agent's config in its tool with
-the new key afterward:
-
-```bash
-holm rotate agent my-agent
-```
-
-## Remove an agent
-
-Removes the agent, revokes its access key, and deletes its policy:
-
-```bash
-holm remove agent my-agent
-```
-
-## Run more than one server
-
-Steerholm aggregates any number of servers behind the one endpoint. Add each
-server, then grant an agent access to the ones it should reach:
-
-```bash
-holm add server filesystem --command "npx -y @modelcontextprotocol/server-filesystem /home/user/projects"
-holm add server git --command "npx -y @modelcontextprotocol/server-git"
-
-holm grant my-agent filesystem --tool "read_*" --args "path=/home/user/projects/**"
-holm grant my-agent git --tool "*"
-
-holm list servers        # all servers + live status
-holm show agent my-agent # everything my-agent can now reach
-```
-
-The agent still connects to the single endpoint; it sees the union of the tools
-its policy allows across every server.

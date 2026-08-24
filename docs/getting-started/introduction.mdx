@@ -1,45 +1,183 @@
 ---
 title: Introduction
-description: What Steerholm is and why it exists.
+description: An action plane for your agents. A control plane for you.
 ---
 
-Steerholm is one surface with two faces: an **action plane** for your agents — the single place they connect to and act through — and a **control plane** for you, where you register the MCP servers they use and grant each one policy-scoped access to exactly the tools it needs. You decide what every agent can reach.
+Steerholm is one surface with two faces. To your AI agents it's an **action
+plane** — the single place they connect to and act. To you it's a **control
+plane** — where you decide what every agent can reach and do, down to the
+individual action and its arguments. Nothing runs that you didn't allow.
 
-New here? Start with [the control plane](/concepts/control-plane) for the mental model, then the [quickstart](/getting-started/quickstart).
+New here? [Install Steerholm](/getting-started/installation), then the
+[quickstart](/getting-started/quickstart) gets you to a scoped agent in minutes.
+For the full mental model, see [the control plane](/concepts/control-plane).
 
-## What it does
+<div style={{ maxWidth: '720px', margin: '28px auto 10px', borderRadius: '18px', overflow: 'hidden', boxShadow: '0 0 0 1px rgba(120,124,220,0.25), 0 20px 44px -24px rgba(0,0,0,0.6)', background: 'linear-gradient(180deg,#0d0d22,#141433)' }} role="img" aria-label="Agents and their MCP servers on the Steerholm plane, joined by governed connections; one connection's scoped policy is shown below.">
+  <div style={{ position: 'relative', aspectRatio: '960 / 468' }}>
+    <svg viewBox="0 0 960 468" preserveAspectRatio="xMidYMid meet" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} aria-hidden="true">
+      <defs>
+        <pattern id="ipgrid" width="34" height="34" patternUnits="userSpaceOnUse">
+          <path d="M34 0H0V34" fill="none" stroke="#ffffff" strokeOpacity="0.04" />
+        </pattern>
 
-<CardGroup cols={2}>
-  <Card title="Aggregation" icon="layer-group" color="#10b981">
-    Add multiple MCP servers and expose them as a single unified endpoint. Each agent sees one connection with tools allowed by its policy.
+        <radialGradient id="iphalo" cx="0.5" cy="0.5" r="0.6">
+          <stop offset="0" stopColor="#4a4dae" stopOpacity="0.24" />
+
+          <stop offset="1" stopColor="#4a4dae" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+
+      <rect width="960" height="468" fill="url(#ipgrid)" />
+
+      <ellipse cx="480" cy="234" rx="430" ry="220" fill="url(#iphalo)" />
+
+      <g stroke="#34d399" strokeWidth="2" fill="none" opacity="0.8">
+        <path d="M16 32V16h18" />
+
+        <path d="M944 16h-18M944 16v18" />
+
+        <path d="M16 436V452H34" />
+
+        <path d="M944 436V452H926" />
+      </g>
+
+      <g fill="none" strokeLinecap="round">
+        <path d="M150 106 C 375.1 106 460.9 120 686 120" stroke="#34d399" strokeWidth="1.5" opacity="0.4" />
+
+        <path d="M150 106 C 429.7 106 536.3 232 816 232" stroke="#34d399" strokeWidth="1.5" opacity="0.4" />
+
+        <path d="M150 106 C 396.96 106 491.04 352 738 352" stroke="#34d399" strokeWidth="2.6" />
+
+        <path d="M120 232 C 357.7 232 448.3 120 686 120" stroke="#34d399" strokeWidth="1.5" opacity="0.4" />
+
+        <path d="M120 232 C 412.3 232 523.7 232 816 232" stroke="#34d399" strokeWidth="1.5" opacity="0.4" />
+
+        <path d="M158 344 C 326.84 344 391.16 418 560 418" stroke="#34d399" strokeWidth="1.5" opacity="0.4" />
+
+        <path d="M158 344 C 401.6 344 494.4 352 738 352" stroke="#34d399" strokeWidth="1.5" opacity="0.4" />
+
+        <path d="M258 420 C 384.84 420 433.16 418 560 418" stroke="#34d399" strokeWidth="1.5" opacity="0.4" />
+      </g>
+
+      <g>
+        <circle cx="418" cy="113" r="4.4" fill="#0e1f1a" stroke="#34d399" strokeWidth="1.6" />
+
+        <circle cx="483" cy="169" r="4.4" fill="#0e1f1a" stroke="#34d399" strokeWidth="1.6" />
+
+        <circle cx="403" cy="176" r="4.4" fill="#0e1f1a" stroke="#34d399" strokeWidth="1.6" />
+
+        <circle cx="468" cy="232" r="4.4" fill="#0e1f1a" stroke="#34d399" strokeWidth="1.6" />
+
+        <circle cx="359" cy="381" r="4.4" fill="#0e1f1a" stroke="#34d399" strokeWidth="1.6" />
+
+        <circle cx="409" cy="419" r="4.4" fill="#0e1f1a" stroke="#34d399" strokeWidth="1.6" />
+
+        <circle cx="444" cy="229" r="11" fill="#0e1f1a" stroke="#34d399" strokeWidth="2" />
+
+        <path d="M439.4 229l3.1 3.1 6.2-6.2" fill="none" stroke="#34d399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </g>
+    </svg>
+
+    <div style={{ position: 'absolute', left: '2.6%', top: '1%', display: 'flex', alignItems: 'center', gap: '10px', fontFamily: 'ui-monospace, monospace', fontSize: '11px' }}>
+      <img src="/logo/dark.svg" alt="Steerholm" width="75" height="20" style={{ display: 'block' }} /><span style={{ color: '#7f82c4', letterSpacing: '1.3px' }}>// ACTION PLANE</span>
+    </div>
+
+    {/* agents */}
+
+    <div style={{ position: 'absolute', left: '15.6%', top: '22.6%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: '8px', width: '132px', padding: '8px 10px', borderRadius: '10px', background: '#191937', border: '1px solid #6f74e6', fontFamily: 'ui-monospace, monospace', fontSize: '12px', fontWeight: 600, color: '#e9eafc' }}><span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#8f93f0', flex: 'none' }} />Claude Code</div>
+    <div style={{ position: 'absolute', left: '12.5%', top: '49.6%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: '8px', width: '132px', padding: '8px 10px', borderRadius: '10px', background: '#191937', border: '1px solid #6f74e6', fontFamily: 'ui-monospace, monospace', fontSize: '12px', fontWeight: 600, color: '#e9eafc' }}><span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#8f93f0', flex: 'none' }} />Cursor</div>
+    <div style={{ position: 'absolute', left: '16.5%', top: '73.5%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: '8px', width: '132px', padding: '8px 10px', borderRadius: '10px', background: '#191937', border: '1px solid #6f74e6', fontFamily: 'ui-monospace, monospace', fontSize: '12px', fontWeight: 600, color: '#e9eafc' }}><span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#8f93f0', flex: 'none' }} />Zed</div>
+    <div style={{ position: 'absolute', left: '26.9%', top: '89.7%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: '8px', width: '132px', padding: '8px 10px', borderRadius: '10px', background: '#191937', border: '1px solid #6f74e6', fontFamily: 'ui-monospace, monospace', fontSize: '12px', fontWeight: 600, color: '#e9eafc' }}><span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#8f93f0', flex: 'none' }} />VS Code</div>
+
+    {/* tools */}
+
+    <div style={{ position: 'absolute', left: '71.5%', top: '25.6%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: '8px', width: '132px', padding: '8px 10px', borderRadius: '10px', background: '#0f2622', border: '1px solid #2ea882', fontFamily: 'ui-monospace, monospace', fontSize: '12px', fontWeight: 600, color: '#d7f5ea' }}><span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#34d399', flex: 'none' }} />filesystem</div>
+    <div style={{ position: 'absolute', left: '85%', top: '49.6%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: '8px', width: '132px', padding: '8px 10px', borderRadius: '10px', background: '#0f2622', border: '1px solid #2ea882', fontFamily: 'ui-monospace, monospace', fontSize: '12px', fontWeight: 600, color: '#d7f5ea' }}><span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#34d399', flex: 'none' }} />git</div>
+    <div style={{ position: 'absolute', left: '76.9%', top: '75.2%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: '8px', width: '132px', padding: '8px 10px', borderRadius: '10px', background: '#0f2622', border: '1px solid #2ea882', fontFamily: 'ui-monospace, monospace', fontSize: '12px', fontWeight: 600, color: '#d7f5ea' }}><span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#34d399', flex: 'none' }} />database</div>
+    <div style={{ position: 'absolute', left: '58.3%', top: '89.3%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: '8px', width: '132px', padding: '8px 10px', borderRadius: '10px', background: '#0f2622', border: '1px solid #2ea882', fontFamily: 'ui-monospace, monospace', fontSize: '12px', fontWeight: 600, color: '#d7f5ea' }}><span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#34d399', flex: 'none' }} />shell</div>
+  </div>
+
+  {/* selected connection's policy */}
+
+  <div style={{ borderTop: '1px solid rgba(255,255,255,0.09)', padding: '13px 16px 16px', fontFamily: 'ui-monospace, monospace' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <span style={{ color: '#34d399' }}>▸</span><span style={{ color: '#e9eafc', fontWeight: 700, fontSize: '13px' }}>Claude Code</span><span style={{ color: '#6f72b0' }}>→</span><span style={{ color: '#8fe6c8', fontWeight: 700, fontSize: '13px' }}>database</span>
+    </div>
+
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+      <span style={{ color: '#8f92cc', fontSize: '11px', letterSpacing: '1.3px' }}>ACCESS POLICY</span><span style={{ color: '#9db8ad', fontSize: '11.5px' }}>(reaches 2/3 available tools)</span>
+    </div>
+
+    <div style={{ marginTop: '9px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '11px', padding: '5px 2px', fontSize: '12.5px' }}><span style={{ color: '#34d399', fontWeight: 700, fontSize: '9px', background: 'rgba(52,211,153,0.14)', borderRadius: '4px', padding: '1px 6px' }}>R</span><span style={{ color: '#e9eafc' }}>{"query"}</span><span style={{ color: '#7fb0d8' }}>{"sql=re:^SELECT"}</span></div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '11px', padding: '5px 2px', fontSize: '12.5px' }}><span style={{ color: '#f0b45a', fontWeight: 700, fontSize: '9px', background: 'rgba(240,180,90,0.14)', borderRadius: '4px', padding: '1px 6px' }}>W</span><span style={{ color: '#e9eafc' }}>{"execute"}</span><span style={{ color: '#7fb0d8' }}>{"sql=re:^INSERT"}</span></div>
+    </div>
+  </div>
+</div>
+
+<p style={{ textAlign: 'center', fontSize: '13.5px', opacity: 0.72, margin: '0 auto 8px', maxWidth: '58ch' }}>
+  Agents and their servers connect through Steerholm. Every connection carries a
+  policy you set — which tools, which arguments — and defaults to deny.
+</p>
+
+## Why it exists
+
+Today each agent configures its own MCP servers, with no shared management and no
+way to limit what an agent can do once it's connected. Steerholm brings them onto one
+plane you control: agents act in one place, and every action is checked against
+your policy before it reaches a server.
+
+## Agents, servers, and grants
+
+<CardGroup cols={3}>
+  <Card title="Agents" icon="robot" color="#10b981">
+    The AI tools you govern — Claude Code, Cursor, VS Code, OpenCode. Each has a
+    name, an access key, and a policy.
   </Card>
-  <Card title="Server Management" icon="server" color="#10b981">
-    Register, start, and manage MCP server processes from the daemon.
+
+  <Card title="Servers" icon="server" color="#10b981">
+    The MCP servers you add. Each one exposes tools — the capabilities an agent
+    might use.
   </Card>
-  <Card title="Per-Agent Policies" icon="shield" color="#10b981">
-    Define what each agent can access — which servers, which tools, which arguments. No policy means no access.
-  </Card>
-  <Card title="Agent & Auth" icon="key" color="#10b981">
-    Each agent gets an access key. The daemon resolves the agent from the access key — agents cannot self-declare who they are.
-  </Card>
-  <Card title="Centralized Config" icon="gear" color="#10b981">
-    One place to manage all your MCP servers, agents, and policies. No per-tool configuration.
-  </Card>
-  <Card title="Cross-Platform" icon="desktop" color="#10b981">
-    Works on Windows, macOS, and Linux. Streamable HTTP transport, platform-native service management.
+
+  <Card title="Grants" icon="key" color="#10b981">
+    Scoped access from an agent to a server's tools — per tool, per argument.
+    No grant means no access.
   </Card>
 </CardGroup>
 
-## The problem
+Two things you **add** — agents and servers — and one governed connection you
+**grant** between them. See [Permissions](/concepts/permissions) for the tool and
+argument syntax.
 
-Today, each AI agent (Claude Code, VS Code, Cursor, OpenCode) configures its own MCP servers independently. There's no shared management, no centralized policy, and no way to control what an agent can do once it has access to a server.
+## Set it up in three moves
 
-## How Steerholm solves it
+<Steps>
+  <Step title="Add a server">
+    Register an MCP server once; the daemon starts and supervises it.
 
-Steerholm is the helm you steer your agents from: it sits on the path of all MCP traffic between agents and servers and directs what each one can do. Agents connect with an access key, Steerholm verifies the agent, and every request is checked against the user's policy before reaching any server.
+    ```bash
+    holm add server git --command "uvx mcp-server-git"
+    ```
+  </Step>
 
-This gives the user a single control point for:
+  <Step title="Add an agent">
+    Register an agent and get its access key — the credential it connects with.
 
-- **What servers exist** — add once, grant access per-agent
-- **Who can access what** — per-agent policies with tool and argument-level control
-- **How servers run** — process lifecycle managed by the daemon, not by individual tools
+    ```bash
+    holm add agent coding-agent
+    ```
+  </Step>
+
+  <Step title="Grant scoped access">
+    Give the agent exactly the tools it needs, down to the argument.
+
+    ```bash
+    holm grant coding-agent database --tool "query" --args "sql=re:^SELECT"
+    ```
+  </Step>
+</Steps>
+
+Then point the agent at `http://127.0.0.1:4767/mcp` with its access key — see
+[Add an agent](/guides/add-an-agent). It sees only the tools its policy
+allows.

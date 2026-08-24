@@ -1,37 +1,37 @@
 ---
-title: Connect an agent
-description: Connect an MCP-capable agent — Claude Code, VS Code, Cursor, or OpenCode — to Steerholm.
+title: Add an agent
+description: Register an agent, point it at Steerholm, and verify it's connected.
 ---
 
-Agents reach the action plane over MCP. The daemon's endpoint —
-`http://127.0.0.1:4767/mcp` — is the gateway they connect to, and anything that
-can open an MCP connection connects there as an agent: Claude Code, VS Code, Cursor,
-OpenCode.
-
-You've already registered the agent with `holm add agent` — it has an access
-key and a policy. Connecting it is the other half: point one of these MCP-capable
-tools at the gateway with the agent's access key. They all send the same two
-things — the URL `http://127.0.0.1:4767/mcp` and the header
-`Authorization: Bearer steer_sk_...` — so the only differences below are
-*where* each keeps its config and *what* it names the entry. From then on it
-operates in the action plane as that agent: Steerholm resolves the agent from the
-key on every request and checks it against the policy before forwarding.
+Adding an MCP-capable agent (Claude Code, VS Code, Cursor, OpenCode, etc.) to
+Steerholm is two steps: **register it** to get its access key, then **point it at
+Steerholm**. From then on it acts on the action plane as that agent, and every
+request is checked against its policy before anything reaches a server.
 
 <Note>
-  Get the access key from `holm add agent <name>` — it's printed once, when
-  the agent is created. `holm show agent <name>` shows only the key *prefix*,
-  not the full key. Lost it? Issue a new one with `holm rotate agent <name>`
-  (the old key stops working immediately).
+  An agent sees no tools until you also **grant** it access — that's a separate
+  step, covered in [Managing access](/guides/managing-access).
 </Note>
 
-<Note>
-  Copying the key into your tool is the current **manual** step of adding an
-  agent. A future release will have Steerholm set up this connection for you (and
-  launch agent sessions directly) — the model stays the same, the copy-paste
-  goes away.
-</Note>
+## 1. Register the agent
 
-## Configure the connection
+```bash
+holm add agent my-agent
+```
+
+This prints an **access key** (`steer_sk_…`) once — save it now; it's the only time
+the full key is shown. `holm show agent my-agent` shows only the key prefix. Lost
+it? Issue a new one with `holm rotate agent my-agent` (the old key stops working
+immediately).
+
+## 2. Point the agent at Steerholm
+
+Every agent connects the same way, with two things:
+
+- **Endpoint** — `http://127.0.0.1:4767/mcp`
+- **Header** — `Authorization: Bearer steer_sk_...`
+
+The rest is just *where* each agent keeps its config and *what* it names the entry.
 
 <Tabs>
   <Tab title="Claude Code">
@@ -147,17 +147,42 @@ key on every request and checks it against the policy before forwarding.
   `holm serve` if you changed the defaults.
 </Note>
 
-## Verify it worked
+<Note>
+  Copying the key into the agent is the current **manual** step. A future release
+  will set this connection up for you (and launch agent sessions directly) — the
+  model stays the same, the copy-paste goes away.
+</Note>
 
-Once connected, the agent lists only the tools its policy allows. If it has no
-grants yet, it sees nothing — add access with `holm grant <agent> <server>`.
+## 3. Verify
 
-From Steerholm's side, confirm the server is up and reachable:
+From Steerholm's side, confirm the agent is registered and holds a key:
 
 ```bash
-holm show server <name>
+holm show agent my-agent
 ```
 
-You should see the server `running` with the tools it provides. If your tool
-shows no tools even though the server is `running`, head to
+In the agent itself, the Steerholm connection should come up **connected**, with no
+auth error. It lists only the tools its policy allows — so a freshly added agent
+with no grants connects successfully but sees nothing yet. Grant it a server (see
+[Managing access](/guides/managing-access)) and its tools appear.
+
+If the agent reports an authentication or connection error, head to
 [Troubleshooting](/guides/troubleshooting).
+
+## Rotate a key
+
+Rotating issues a new access key and **keeps all of the agent's grants**. The old
+key stops working immediately, so update the agent's config with the new key
+afterward:
+
+```bash
+holm rotate agent my-agent
+```
+
+## Remove an agent
+
+Removes the agent, revokes its key, and deletes its policy:
+
+```bash
+holm remove agent my-agent
+```

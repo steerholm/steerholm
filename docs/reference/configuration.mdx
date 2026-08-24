@@ -39,9 +39,9 @@ STEERHOLM_CONFIG_DIR=/tmp/steerholm-test holm list servers
 ```json
 {
   "servers": {
-    "filesystem": {
-      "name": "filesystem",
-      "command": "npx -y @modelcontextprotocol/server-filesystem /home/user",
+    "git": {
+      "name": "git",
+      "command": "uvx mcp-server-git",
       "server_type": "stdio"
     },
     "remote-api": {
@@ -58,12 +58,6 @@ STEERHOLM_CONFIG_DIR=/tmp/steerholm-test holm list servers
   }
 }
 ```
-
-<Note>
-  A config written before the agent rename stored agents under an `identities`
-  key. It still loads unchanged — the key is migrated to `agents` on the next
-  save.
-</Note>
 
 ### Server fields
 

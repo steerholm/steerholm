@@ -5,7 +5,7 @@ description: How the policy engine controls what agents can do.
 
 ## Default deny
 
-Steerholm uses a **whitelist-based** permission model. An agent with no policy gets zero tools — Steerholm creates an empty policy that denies everything.
+Steerholm uses an **allowlist** permission model. An agent with no policy gets zero tools — Steerholm creates an empty policy that denies everything.
 
 ## How policy evaluation works
 
@@ -35,7 +35,7 @@ Argument policies restrict the values of specific tool arguments. Two match type
 
 | Type | Syntax | Example |
 |------|--------|---------|
-| **Glob** (default) | `arg=pattern` | `path=/home/user/**` |
+| **Glob** (default) | `arg=pattern` | `repo_path=/home/user/**` |
 | **Regex** | `arg=re:pattern` | `sql=re:^SELECT\s.*` |
 
 A glob pattern without wildcards is an exact match — `mode=readonly` matches only `"readonly"`.
@@ -43,10 +43,10 @@ A glob pattern without wildcards is an exact match — `mode=readonly` matches o
 ### CLI examples
 
 ```bash
-# Glob: allow read_text_file only under /home/user/projects
-holm grant my-agent filesystem --tool "read_text_file" --args "path=/home/user/projects/**"
+# Glob: allow git_log only for repos under /home/user/projects
+holm grant my-agent git --tool "git_log" --args "repo_path=/home/user/projects/**"
 
-# Regex: allow only SELECT queries
+# Regex: allow only SELECT queries on a database server
 holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*"
 
 # Multiple argument policies on one tool

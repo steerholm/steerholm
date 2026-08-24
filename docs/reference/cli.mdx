@@ -3,10 +3,11 @@ title: holm CLI
 description: Control-plane commands for managing servers, agents, and access.
 ---
 
-The `holm` CLI is the admin interface for your MCP servers, agents, and their
-access. Commands read verb-first — `holm <verb> <resource> [name]` — because
-Steerholm is your control plane — you add agents and servers to it and govern their access. Agents themselves connect to
-the daemon's Streamable HTTP MCP endpoint; they never run the admin CLI.
+The `holm` CLI is your **[control plane](/concepts/control-plane)** — where you add
+agents and servers and govern what each agent can reach. Agents don't run it; they
+act on the action plane over the daemon's [MCP endpoint](/reference/mcp-endpoint).
+
+Commands read verb-first — `holm <verb> <resource> [name]`.
 
 The verbs are `add`, `remove`, `list`, `show`, `grant`, `revoke`, and `rotate`;
 the resources are `server` and `agent`. Daemon lifecycle (`start`, `stop`,
@@ -25,8 +26,8 @@ HTTP servers (not both); the server type is inferred.
 
 ```bash
 # Stdio server
-holm add server filesystem \
-  --command "npx -y @modelcontextprotocol/server-filesystem /home/user"
+holm add server git \
+  --command "uvx mcp-server-git"
 
 # HTTP server
 holm add server remote-api --url "http://localhost:8000/mcp"
@@ -43,7 +44,7 @@ holm add server remote-api --url "http://localhost:8000/mcp"
 Remove a server from Steerholm.
 
 ```bash
-holm remove server filesystem
+holm remove server git
 ```
 
 ### holm list servers
@@ -61,7 +62,7 @@ Show a server's configuration, its live status, the tools it provides, and which
 agents have been granted access to it.
 
 ```bash
-holm show server filesystem
+holm show server git
 ```
 
 ## Agents
@@ -130,19 +131,19 @@ holm grant <agent> <server> [--tool PATTERN] [--args POLICIES...]
 **Allow all tools on a server:**
 
 ```bash
-holm grant my-agent filesystem
+holm grant my-agent git
 ```
 
 **Allow a specific tool:**
 
 ```bash
-holm grant my-agent filesystem --tool "read_text_file"
+holm grant my-agent git --tool "git_log"
 ```
 
 **Restrict by argument value (glob):**
 
 ```bash
-holm grant my-agent filesystem --tool "read_text_file" --args "path=/home/user/projects/**"
+holm grant my-agent git --tool "git_log" --args "repo_path=/home/user/projects/**"
 ```
 
 **Restrict by argument value (regex):**
@@ -169,15 +170,15 @@ only when the tool call actually provides that argument.
 
 Remove an agent's access to a server. With `--tool` it removes only that tool
 grant; without it, the agent's entire access to the server is removed. `--tool`
-matches the exact pattern you granted (e.g. `read_*`), not a glob expansion of
+matches the exact pattern you granted (e.g. `git_diff*`), not a glob expansion of
 it — so revoke the same pattern you used in `grant`.
 
 ```bash
 # Remove one tool grant
-holm revoke my-agent filesystem --tool "read_text_file"
+holm revoke my-agent git --tool "git_log"
 
 # Remove all access to the server
-holm revoke my-agent filesystem
+holm revoke my-agent git
 ```
 
 | Option | Default | Description |

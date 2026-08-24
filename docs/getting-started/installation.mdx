@@ -3,6 +3,10 @@ title: Installation
 description: Install Steerholm and start the daemon.
 ---
 
+Steerholm is one CLI and one daemon: the `holm` CLI is your control plane, and the
+daemon is the local endpoint your agents connect to. Installing sets up both and
+starts the daemon running as you.
+
 ## One-line install
 
 The install script downloads pre-built binaries, registers a per-user background daemon that runs as you, and starts it. No admin rights, no Python or package manager required.
@@ -19,7 +23,7 @@ irm https://steerholm.ai/install.ps1 | iex
 
 </CodeGroup>
 
-This installs the `holm` command for server administration and starts the daemon's Streamable HTTP MCP endpoint at `http://127.0.0.1:4767/mcp`.
+This installs the `holm` control-plane CLI and starts the daemon's HTTP MCP endpoint at `http://127.0.0.1:4767/mcp`.
 
 ## What the install script does
 
@@ -40,6 +44,8 @@ You can also download binaries manually from the [GitHub Releases](https://githu
 ```bash
 holm status
 ```
+
+You should see the daemon `running` on `http://127.0.0.1:4767/mcp`.
 
 ## Upgrade
 

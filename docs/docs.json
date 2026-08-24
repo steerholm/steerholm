@@ -42,10 +42,10 @@
       {
         "group": "Guides",
         "pages": [
-          "guides/connect-an-agent",
+          "guides/add-an-agent",
+          "guides/add-a-server",
           "guides/managing-access",
-          "guides/troubleshooting",
-          "guides/migrating-from-mcp-harbour"
+          "guides/troubleshooting"
         ]
       },
       {

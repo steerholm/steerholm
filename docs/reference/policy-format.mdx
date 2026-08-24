@@ -5,30 +5,25 @@ description: JSON schema for per-agent security policies.
 
 Policy files live at `policies/<agent_name>.json` inside the config directory.
 
-<Note>
-  A policy written before the agent rename used an `identity_name` field. It
-  still loads unchanged — the field is mapped to `agent_name` on load.
-</Note>
-
 ## Example
 
 ```json
 {
   "agent_name": "coding-agent",
   "permissions": {
-    "filesystem": [
+    "git": [
       {
-        "name": "read_text_file",
+        "name": "git_log",
         "policies": [
           {
-            "arg_name": "path",
+            "arg_name": "repo_path",
             "match_type": "glob",
             "pattern": "/home/user/projects/**"
           }
         ]
       },
       {
-        "name": "write_file",
+        "name": "git_diff",
         "policies": []
       }
     ],
@@ -61,7 +56,7 @@ Policy files live at `policies/<agent_name>.json` inside the config directory.
 
 | Field | Type | Description |
 |---|---|---|
-| `name` | `string` | Tool name or glob pattern (e.g. `read_*`, `*`) |
+| `name` | `string` | Tool name or glob pattern (e.g. `git_diff*`, `*`) |
 | `policies` | `array` | Argument-level restrictions (empty = no restrictions) |
 
 ### ArgumentPolicy

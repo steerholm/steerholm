@@ -1,0 +1,63 @@
+---
+title: Add a server
+description: Register an MCP server with Steerholm and confirm it's running.
+---
+
+A server is any MCP server you want your agents to reach — a git server, a
+filesystem server, a database, an internal HTTP service. You register it with
+Steerholm once; from then on it lives on the plane, and you decide which agents may
+reach it by [granting access](/guides/managing-access).
+
+<Note>
+  Registering a server exposes nothing on its own. No agent can reach it until you
+  grant access — Steerholm is default-deny.
+</Note>
+
+## Register the server
+
+Steerholm runs two kinds of MCP server: **stdio** servers it launches from a
+command, and **remote** servers it connects to over HTTP. Give `--command` for one
+or `--url` for the other — the type is inferred.
+
+```bash
+# Stdio — Steerholm launches and supervises the process
+holm add server git --command "uvx mcp-server-git"
+
+# Remote — Steerholm connects to an already-running HTTP server
+holm add server remote-api --url "http://localhost:8000/mcp"
+```
+
+## Confirm it's running
+
+`list servers` shows every server with its transport and live status; `show server`
+adds the tools it provides and which agents have been granted access:
+
+```bash
+holm list servers
+holm show server git
+```
+
+A healthy stdio server shows `running` with a tool count. If it never comes up, see
+[Troubleshooting](/guides/troubleshooting).
+
+## Add more than one
+
+Every server you add lives on the same plane — add as many as you need:
+
+```bash
+holm add server filesystem --command "npx -y @modelcontextprotocol/server-filesystem ~/docs"
+holm add server internal-api --url "http://localhost:9000/mcp"
+```
+
+An agent connects to Steerholm in one place and sees only the tools its policy
+allows, across every server it's been granted. Wiring those grants is covered in
+[Managing access](/guides/managing-access).
+
+## Remove a server
+
+Removes the server from Steerholm and stops its process (for stdio servers). Agents
+can no longer reach it:
+
+```bash
+holm remove server git
+```

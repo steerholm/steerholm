@@ -3,7 +3,7 @@ title: MCP Endpoint
 description: Connect an MCP-capable agent to the Steerholm daemon.
 ---
 
-Steerholm exposes a Streamable HTTP MCP endpoint directly from the daemon. An MCP-capable agent — the tool you run, such as Claude Code — connects to `/mcp` and authenticates with an access key in the `Authorization` header. (At the protocol level the tool is the MCP client and Steerholm is the MCP server.)
+Steerholm exposes an MCP endpoint over HTTP — the MCP **Streamable HTTP** transport — directly from the daemon. An MCP-capable agent — the client you run, such as Claude Code — connects to `/mcp` and authenticates with an access key in the `Authorization` header. (At the protocol level the agent is the MCP client and Steerholm is the MCP server.)
 
 ## Endpoint
 
@@ -25,12 +25,13 @@ The daemon resolves the agent from the Bearer token by checking it against store
 
 ## Configuring the connection
 
-Configure your tool to use Steerholm as a Streamable HTTP server:
+Configure your agent to use Steerholm as a Streamable HTTP server:
 
 ```json
 {
   "mcpServers": {
     "steerholm": {
+      "type": "http",
       "url": "http://127.0.0.1:4767/mcp",
       "headers": {
         "Authorization": "Bearer steer_sk_XXXX"
