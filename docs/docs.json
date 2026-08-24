@@ -82,31 +82,38 @@
   "redirects": [
     {
       "source": "/",
-      "destination": "/v0.1/getting-started/introduction"
+      "destination": "/v0.1/getting-started/introduction",
+      "permanent": false
     },
     {
       "source": "/latest",
-      "destination": "/v0.1/getting-started/introduction"
+      "destination": "/v0.1/getting-started/introduction",
+      "permanent": false
     },
     {
       "source": "/latest/:slug*",
-      "destination": "/v0.1/:slug*"
+      "destination": "/v0.1/:slug*",
+      "permanent": false
     },
     {
       "source": "/getting-started/:slug*",
-      "destination": "/v0.1/getting-started/:slug*"
+      "destination": "/v0.1/getting-started/:slug*",
+      "permanent": false
     },
     {
       "source": "/guides/:slug*",
-      "destination": "/v0.1/guides/:slug*"
+      "destination": "/v0.1/guides/:slug*",
+      "permanent": false
     },
     {
       "source": "/concepts/:slug*",
-      "destination": "/v0.1/concepts/:slug*"
+      "destination": "/v0.1/concepts/:slug*",
+      "permanent": false
     },
     {
       "source": "/reference/:slug*",
-      "destination": "/v0.1/reference/:slug*"
+      "destination": "/v0.1/reference/:slug*",
+      "permanent": false
     }
   ]
 }
