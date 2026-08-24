@@ -198,6 +198,33 @@ def main() -> None:
     if primary and isinstance(primary.get("href"), str) and primary["href"].startswith("/"):
         primary["href"] = f"/{default_version}{primary['href']}"
 
+    # 7. alias the bare root and /latest onto the default (highest) version, so
+    #    /..., /latest/..., and /vX.Y/... all reach the newest docs. Recomputed
+    #    every build, so "latest" follows the highest version automatically.
+    def first_leaf(groups: list) -> str | None:
+        for g in groups:
+            for p in g.get("pages", []):
+                if isinstance(p, str):
+                    return p
+                if isinstance(p, dict) and p.get("pages"):
+                    leaf = first_leaf([p])
+                    if leaf:
+                        return leaf
+        return None
+
+    landing = first_leaf(versions[0].get("groups", [])) or f"{default_version}/{CONTENT_DIRS[0]}"
+    redirects = [
+        {"source": "/", "destination": f"/{landing}"},
+        {"source": "/latest", "destination": f"/{landing}"},
+        {"source": "/latest/:slug*", "destination": f"/{default_version}/:slug*"},
+    ]
+    for content_dir in CONTENT_DIRS:
+        redirects.append({
+            "source": f"/{content_dir}/:slug*",
+            "destination": f"/{default_version}/{content_dir}/:slug*",
+        })
+    out["redirects"] = redirects
+
     dest_docs.write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8")
     print(f"snapshotted {version}: {len(entry['groups'])} groups; "
           f"versions now {[v['version'] for v in versions]}")
