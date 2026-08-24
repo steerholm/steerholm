@@ -80,8 +80,14 @@ tar -xzf "${TMP_DIR}/release.tar.gz" -C "$TMP_DIR"
 # ── 3. Install binaries ───────────────────────────────────────────
 
 mkdir -p "$INSTALL_DIR"
-cp "${TMP_DIR}/holm" "$INSTALL_DIR/"
-chmod +x "${INSTALL_DIR}/holm"
+# Atomic replace: write to a temp name in the same dir, then rename over the
+# target. An in-place `cp` fails with "text file busy" on Linux (and can crash
+# the running process on macOS) when the binary is already executing — which it
+# is during `holm update`, where both the daemon and the updater run this file.
+# A rename swaps the directory entry; running processes keep the old inode.
+cp "${TMP_DIR}/holm" "${INSTALL_DIR}/holm.new"
+chmod +x "${INSTALL_DIR}/holm.new"
+mv -f "${INSTALL_DIR}/holm.new" "${INSTALL_DIR}/holm"
 
 # Check PATH
 if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
@@ -125,7 +131,10 @@ EOF
 
     systemctl --user daemon-reload
     systemctl --user enable "$SERVICE_NAME"
-    systemctl --user start "$SERVICE_NAME"
+    # restart (not start): on an update the daemon is already running the old
+    # binary, and `start` is a no-op on an active unit — it must be restarted to
+    # pick up the newly-installed binary.
+    systemctl --user restart "$SERVICE_NAME"
 
     info "Registered systemd user service"
     info "Daemon started on 127.0.0.1:4767"
