@@ -1,0 +1,270 @@
+---
+title: holm CLI
+description: Control-plane commands for managing servers, agents, and access.
+---
+
+The `holm` CLI is your **[control plane](/concepts/control-plane)** — where you add
+agents and servers and govern what each agent can reach. Agents don't run it; they
+act on the action plane over the daemon's [MCP endpoint](/reference/mcp-endpoint).
+
+Commands read verb-first — `holm <verb> <resource> [name]`.
+
+The verbs are `add`, `remove`, `list`, `show`, `grant`, `revoke`, and `rotate`;
+the resources are `server` and `agent`. Daemon lifecycle (`start`, `stop`,
+`status`, `serve`) and `version` / `update` round out the surface.
+
+## Servers
+
+Servers are the MCP servers you want agents to reach through Steerholm. Adding a
+server registers it with the daemon, which handles starting and stopping the
+server processes.
+
+### holm add server
+
+Register a new MCP server. Provide `--command` for stdio servers or `--url` for
+HTTP servers (not both); the server type is inferred.
+
+```bash
+# Stdio server
+holm add server git \
+  --command "uvx mcp-server-git"
+
+# HTTP server
+holm add server remote-api --url "http://localhost:8000/mcp"
+```
+
+| Argument / Option | Required | Description |
+|---|---|---|
+| `<name>` | Yes | Unique name for the server |
+| `--command` | One of | Full command to launch a stdio server |
+| `--url` | One of | URL of a streamable HTTP server |
+
+### holm remove server
+
+Remove a server from Steerholm.
+
+```bash
+holm remove server git
+```
+
+### holm list servers
+
+Show all servers with their transport type and live status (state, uptime, and
+tool count when the daemon is running).
+
+```bash
+holm list servers
+```
+
+### holm show server
+
+Show a server's configuration, its live status, the tools it provides, and which
+agents have been granted access to it.
+
+```bash
+holm show server git
+```
+
+## Agents
+
+An agent has a name and an **access key**. The access key is what the agent uses
+to authenticate — Steerholm resolves the agent from the key, so agents cannot
+impersonate each other.
+
+### holm add agent
+
+Add an agent and generate its access key. The key is shown once and cannot be
+retrieved later — store it when it's printed.
+
+```bash
+holm add agent my-agent
+```
+
+### holm list agents
+
+Show all agents and their access-key prefixes.
+
+```bash
+holm list agents
+```
+
+### holm show agent
+
+Show an agent: its access-key prefix, everything it can reach (server → tools →
+argument constraints), and how to connect it with its key.
+
+```bash
+holm show agent my-agent
+```
+
+### holm rotate agent
+
+Generate a new access key for an agent, keeping all of its grants. The previous
+key stops working immediately — update the agent's config in its tool with the new
+key.
+
+```bash
+holm rotate agent my-agent
+```
+
+### holm remove agent
+
+Remove an agent, its access key, and its policy. The key is revoked immediately.
+
+```bash
+holm remove agent my-agent
+```
+
+## Access (grants)
+
+An agent's policy is default-deny: with no grants it has zero access. Grants are
+additive — each `grant` adds a rule.
+
+### holm grant
+
+Grant an agent access to a server's tools.
+
+```bash
+holm grant <agent> <server> [--tool PATTERN] [--args POLICIES...]
+```
+
+**Allow all tools on a server:**
+
+```bash
+holm grant my-agent git
+```
+
+**Allow a specific tool:**
+
+```bash
+holm grant my-agent git --tool "git_log"
+```
+
+**Restrict by argument value (glob):**
+
+```bash
+holm grant my-agent git --tool "git_log" --args "repo_path=/home/user/projects/**"
+```
+
+**Restrict by argument value (regex):**
+
+```bash
+holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*"
+```
+
+**Multiple argument restrictions on one tool:**
+
+```bash
+holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*" "db=production"
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--tool` | `*` | Tool name or glob pattern |
+| `--args` | — | Argument policies: `arg=pattern` (glob) or `arg=re:pattern` (regex) |
+
+A glob pattern without wildcards is an exact match. An argument policy applies
+only when the tool call actually provides that argument.
+
+### holm revoke
+
+Remove an agent's access to a server. With `--tool` it removes only that tool
+grant; without it, the agent's entire access to the server is removed. `--tool`
+matches the exact pattern you granted (e.g. `git_diff*`), not a glob expansion of
+it — so revoke the same pattern you used in `grant`.
+
+```bash
+# Remove one tool grant
+holm revoke my-agent git --tool "git_log"
+
+# Remove all access to the server
+holm revoke my-agent git
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--tool` | — | Revoke only this tool grant; omit to revoke all access to the server |
+
+## Daemon
+
+The daemon is the long-running process that exposes the Streamable HTTP MCP
+endpoint, manages server connections, and enforces policies. Installation
+registers it as a per-user background daemon that runs as you (no admin required)
+and starts automatically at login.
+
+### holm start
+
+Start the daemon via the platform's per-user service manager (systemd `--user`, a
+launchd agent, or a Windows logon Scheduled Task).
+
+```bash
+holm start
+```
+
+### holm stop
+
+Stop the daemon. All active agent sessions are disconnected.
+
+```bash
+holm stop
+```
+
+### holm status
+
+Check whether the daemon is currently running.
+
+```bash
+holm status
+```
+
+### holm serve
+
+Run the daemon in the foreground instead of as a service. Useful for debugging —
+logs go to stderr.
+
+```bash
+holm serve
+holm serve --host 0.0.0.0 --port 5000
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--host` | `127.0.0.1` | Host to bind |
+| `--port` | `4767` | Port to bind |
+
+<Warning>
+  Steerholm binds to loopback (`127.0.0.1`) by default. Binding to a non-loopback
+  host like `0.0.0.0` exposes the endpoint — and its tool access — to your
+  network, and access keys travel as Bearer tokens over plain HTTP. Only do this
+  on a trusted network, ideally behind a TLS-terminating reverse proxy.
+</Warning>
+
+## Version & updates
+
+### holm version
+
+Print the installed Steerholm version. `holm --version` does the same.
+
+```bash
+holm version
+```
+
+### holm update
+
+Update Steerholm in place from a GitHub release (the latest by default). It
+downloads the release for your platform, verifies it against the published
+checksums, and runs the official install script.
+
+```bash
+holm update               # install the latest release
+holm update --check       # report whether an update is available, without installing
+holm update --tag vX.Y.Z  # install a specific release tag
+holm update --yes         # install without the confirmation prompt
+```
+
+| Option | Description |
+|---|---|
+| `--check` | Report whether a newer version is available without installing |
+| `--tag` | Install a specific release tag instead of the latest |
+| `--force` | Reinstall even if the selected version isn't newer |
+| `--yes`, `-y` | Install without confirmation |

@@ -1,0 +1,68 @@
+---
+title: Permissions
+description: How the policy engine controls what agents can do.
+---
+
+## Default deny
+
+Steerholm uses an **allowlist** permission model. An agent with no policy gets zero tools — Steerholm creates an empty policy that denies everything.
+
+## How policy evaluation works
+
+When an agent calls a tool, Steerholm checks three things in order:
+
+<Steps>
+  <Step title="Tool lookup">
+    Steerholm resolves which server owns the requested tool. If the tool doesn't exist on any server the agent has access to → `AUTHORIZATION_DENIED`.
+  </Step>
+  <Step title="Tool check">
+    Does any tool permission in the policy match the requested tool name? If not → `AUTHORIZATION_DENIED`.
+  </Step>
+  <Step title="Argument check">
+    Each argument policy is checked only when the call actually includes that argument — a tool that doesn't take the argument is unaffected. If a provided argument fails its policy → `AUTHORIZATION_DENIED`. So `--tool "*" --args "path=..."` constrains the `path` argument wherever it appears, without rejecting tools that have no `path`.
+  </Step>
+</Steps>
+
+If all checks pass, the request is forwarded to the MCP server.
+
+## Tool filtering
+
+`list_tools` only returns tools that match at least one entry in the policy. Agents never see tools they aren't allowed to use.
+
+## Argument policies
+
+Argument policies restrict the values of specific tool arguments. Two match types are supported:
+
+| Type | Syntax | Example |
+|------|--------|---------|
+| **Glob** (default) | `arg=pattern` | `repo_path=/home/user/**` |
+| **Regex** | `arg=re:pattern` | `sql=re:^SELECT\s.*` |
+
+A glob pattern without wildcards is an exact match — `mode=readonly` matches only `"readonly"`.
+
+### CLI examples
+
+```bash
+# Glob: allow git_log only for repos under /home/user/projects
+holm grant my-agent git --tool "git_log" --args "repo_path=/home/user/projects/**"
+
+# Regex: allow only SELECT queries on a database server
+holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*"
+
+# Multiple argument policies on one tool
+holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*" "db=production"
+```
+
+## Agents
+
+Agents are created with `holm add agent <name>`. Each gets:
+
+- A **name** (stored in `config.json`)
+- A **key prefix** for display (stored in `config.json`)
+- A **bcrypt-hashed access key** (stored in system keyring — never in config files)
+
+The agent authenticates by sending the access key as `Authorization: Bearer <key>` to the daemon's Streamable HTTP MCP endpoint. The daemon resolves the agent by checking the access key against all stored hashes.
+
+<Warning>
+  The caller does not declare which agent it is. Steerholm resolves the agent from the access key, so the caller cannot influence how it is identified.
+</Warning>

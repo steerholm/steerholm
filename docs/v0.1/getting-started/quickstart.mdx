@@ -1,0 +1,99 @@
+---
+title: Quickstart
+description: Get from zero to a policy-controlled agent in 2 minutes.
+---
+
+These five steps take you from a fresh install to an agent that can only reach what
+you allow — a server to expose, an agent to authorize, and a scoped grant between
+them. [Install Steerholm](/getting-started/installation) first if you haven't.
+
+## 1. Add an MCP server
+
+```bash
+holm add server git --command "uvx mcp-server-git"
+```
+
+This registers the [git MCP server](https://github.com/modelcontextprotocol/servers/tree/main/src/git) —
+structured git tools (history, diffs, commits) your agent can't get from a plain
+shell. It runs via `uvx`, which ships with [uv](https://docs.astral.sh/uv/). For
+remote servers and more, see [Add a server](/guides/add-a-server).
+
+## 2. Add an agent
+
+```bash
+holm add agent my-agent
+```
+
+<Warning>
+  Save the access key — it's shown only once.
+</Warning>
+
+## 3. Grant access
+
+```bash
+holm grant my-agent git \
+  --tool "git_log" --args "repo_path=/home/user/projects/**"
+```
+
+This lets `my-agent` read commit history (`git_log`) — but only for repos under
+`/home/user/projects/`. Every other tool (`git_commit`, `git_reset`, …) is denied
+by default, so the agent can inspect history but structurally cannot change it.
+
+## 4. Connect your agent
+
+Point your agent at the endpoint, with the access key as the Bearer token. For
+example, Claude Code's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "steerholm": {
+      "type": "http",
+      "url": "http://127.0.0.1:4767/mcp",
+      "headers": {
+        "Authorization": "Bearer steer_sk_..."
+      }
+    }
+  }
+}
+```
+
+Each client stores this differently — see [Add an agent](/guides/add-an-agent) for
+VS Code, Cursor, and OpenCode. The agent sees only the servers and tools its policy
+allows.
+
+<Note>
+  Configuring the agent with the key is the current manual step of adding an
+  agent — Steerholm will set this connection up for you in a future release.
+</Note>
+
+## 5. Verify it works
+
+Confirm the server is running and see the tools it exposes:
+
+```bash
+holm show server git
+```
+
+Your agent should now list the tools its policy allows. If none appear,
+see [Troubleshooting](/guides/troubleshooting).
+
+## What happens at runtime
+
+```
+Agent sends: call_tool("git_log", {"repo_path": "/home/user/projects/app"})
+  → the agent sends an HTTP request to http://127.0.0.1:4767/mcp
+  → daemon resolves the agent from the Bearer token
+  → daemon checks policy: git allowed, git_log granted, repo_path matches /home/user/projects/**
+  → forwards to the git MCP server
+  → returns the commit log to the agent
+```
+
+If the agent tries something unauthorized:
+
+```
+Agent sends: call_tool("git_commit", {"repo_path": "/home/user/projects/app", "message": "..."})
+  → policy check fails: git_commit is not granted
+  → returns AUTHORIZATION_DENIED (-31001)
+  → agent receives error, does not retry
+```

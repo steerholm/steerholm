@@ -1,0 +1,79 @@
+---
+title: Policy Format
+description: JSON schema for per-agent security policies.
+---
+
+Policy files live at `policies/<agent_name>.json` inside the config directory.
+
+## Example
+
+```json
+{
+  "agent_name": "coding-agent",
+  "permissions": {
+    "git": [
+      {
+        "name": "git_log",
+        "policies": [
+          {
+            "arg_name": "repo_path",
+            "match_type": "glob",
+            "pattern": "/home/user/projects/**"
+          }
+        ]
+      },
+      {
+        "name": "git_diff",
+        "policies": []
+      }
+    ],
+    "database": [
+      {
+        "name": "query",
+        "policies": [
+          {
+            "arg_name": "sql",
+            "match_type": "regex",
+            "pattern": "^SELECT\\s.*"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+## Schema
+
+### Top level
+
+| Field | Type | Description |
+|---|---|---|
+| `agent_name` | `string` | Must match the agent name |
+| `permissions` | `object` | Map of server name → list of tool permissions |
+
+### ToolPermission
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Tool name or glob pattern (e.g. `git_diff*`, `*`) |
+| `policies` | `array` | Argument-level restrictions (empty = no restrictions) |
+
+### ArgumentPolicy
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `arg_name` | `string` | — | Argument to restrict |
+| `match_type` | `string` | `glob` | `glob` or `regex` |
+| `pattern` | `string` | — | Pattern to match against |
+
+## Match types
+
+<CardGroup cols={2}>
+  <Card title="Glob" icon="asterisk" color="#10b981">
+    Shell-style wildcards. `*` matches within one level, `**` matches across levels. A pattern without wildcards is an exact match.
+  </Card>
+  <Card title="Regex" icon="code" color="#10b981">
+    Full regular expression, matched from the start of the value. Use `re:` prefix in CLI.
+  </Card>
+</CardGroup>

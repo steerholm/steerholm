@@ -1,0 +1,62 @@
+---
+title: Managing access
+description: Grant, revoke, and audit which servers and tools each agent can reach.
+---
+
+Access in Steerholm is the set of **grants** connecting an agent to the servers and
+tools it may use. An agent starts with none — it can reach nothing until you grant
+it. This guide covers wiring and auditing those connections, once an agent and a
+server both exist ([add an agent](/guides/add-an-agent),
+[add a server](/guides/add-a-server)).
+
+## Grant access
+
+Grants are additive — each `grant` adds a rule to the agent's policy. Grant a whole
+server, a specific tool, or a tool constrained by its arguments:
+
+```bash
+# every tool on the server
+holm grant my-agent git
+
+# one tool
+holm grant my-agent git --tool "git_log"
+
+# one tool, constrained by argument
+holm grant my-agent git --tool "git_diff" --args "repo_path=/home/user/projects/**"
+```
+
+See [Permissions](/concepts/permissions) for the full glob/regex argument syntax.
+
+## Revoke access
+
+```bash
+# remove one tool grant
+holm revoke my-agent git --tool "git_log"
+
+# remove all of the agent's access to a server
+holm revoke my-agent git
+```
+
+<Note>
+  `--tool` matches the **exact pattern you granted**, not a glob expansion of it.
+  If you granted `--tool "git_diff*"`, revoke it with `--tool "git_diff*"`, not
+  `--tool "git_diff"`.
+</Note>
+
+## See what an agent can reach
+
+`show agent` lists an agent's access-key prefix and every grant it holds
+(server → tools → argument constraints):
+
+```bash
+holm show agent my-agent
+```
+
+## See who can reach a server
+
+The reverse view — `show server` includes the agents that have been granted access,
+alongside the server's live status and tools:
+
+```bash
+holm show server git
+```

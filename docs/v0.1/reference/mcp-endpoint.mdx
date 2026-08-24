@@ -1,0 +1,53 @@
+---
+title: MCP Endpoint
+description: Connect an MCP-capable agent to the Steerholm daemon.
+---
+
+Steerholm exposes an MCP endpoint over HTTP — the MCP **Streamable HTTP** transport — directly from the daemon. An MCP-capable agent — the client you run, such as Claude Code — connects to `/mcp` and authenticates with an access key in the `Authorization` header. (At the protocol level the agent is the MCP client and Steerholm is the MCP server.)
+
+## Endpoint
+
+```text
+http://127.0.0.1:4767/mcp
+```
+
+Use the host and port configured for `holm serve` if you changed the defaults.
+
+## Authentication
+
+Every request must include a Bearer token:
+
+```http
+Authorization: Bearer steer_sk_XXXX
+```
+
+The daemon resolves the agent from the Bearer token by checking it against stored key hashes. The caller does not declare which agent it is.
+
+## Configuring the connection
+
+Configure your agent to use Steerholm as a Streamable HTTP server:
+
+```json
+{
+  "mcpServers": {
+    "steerholm": {
+      "type": "http",
+      "url": "http://127.0.0.1:4767/mcp",
+      "headers": {
+        "Authorization": "Bearer steer_sk_XXXX"
+      }
+    }
+  }
+}
+```
+
+This keeps the admin CLI separate from agent access. Agents connect only to the MCP endpoint; users manage servers, agents, policies, and daemon lifecycle through the `holm` command.
+
+## HTTP statuses
+
+| Status | Meaning |
+|---|---|
+| `401` | Missing, malformed, or invalid Bearer token |
+| `404` | Unknown MCP session id |
+
+Authenticated policy denials are returned as MCP errors, not HTTP auth failures. Unauthorized tool calls return `AUTHORIZATION_DENIED` (`-31001`). Downstream server failures return `SERVER_UNAVAILABLE` (`-31002`).

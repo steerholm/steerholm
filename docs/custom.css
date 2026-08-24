@@ -1,0 +1,56 @@
+.nav-logo {
+    height: 2.5rem;
+}
+
+/* Mermaid diagram container */
+.mermaid {
+    background: #0f0f1a;
+    border-radius: 12px;
+    padding: 24px;
+    border: 1px solid #2d2d5e;
+}
+
+/* Card borders - indigo accent */
+[class*="card"],
+[class*="Card"] {
+    border-color: #4a4dae !important;
+}
+
+/* CardGroup card children */
+a[class*="block"] {
+    border-color: #4a4dae !important;
+}
+
+/* ── Architecture system diagram: theme-aware palette ──
+   Light values are the base; the .dark class Mintlify sets on the root
+   (Tailwind dark: strategy) swaps in the dark values. The diagram's inline
+   styles read these via var(--token, <dark-fallback>), so if this file ever
+   fails to load it degrades to the dark look rather than breaking. */
+.arch-diagram {
+    --arch-grad-a: #f5f6fd;  --arch-grad-b: #eceefa;
+    --arch-frame: #d8dbf1;   --arch-ink: #2c2d52;
+    --arch-indigo-label: #4b4ec4;
+    --arch-node-bg: #ffffff; --arch-node-border: #c6c9ef; --arch-node-ink: #3d3f8f;
+    --arch-arrow-indigo: #5457d6; --arch-arrow-indigo-soft: #a6aadf;
+    --arch-panel-bg: #ffffff; --arch-panel-border: #c6c9ef; --arch-panel-label: #5b5fb0;
+    --arch-auth-bg: #4a4dae;
+    --arch-session-bg: #f2f3fe; --arch-session-border: #d3d6f4; --arch-session-ink: #3d3f8f; --arch-session-sub: #5457d6;
+    --arch-emerald: #0a8a5f; --arch-teal: #0b7d72; --arch-emerald-label: #077a56; --arch-arrow-emerald-soft: #8ed3ba;
+    --arch-server-bg: #e9f9f2; --arch-server-border: #35b98a; --arch-server-ink: #1c6f51; --arch-server-icon: #0ea472;
+    --arch-on-accent: #ffffff;
+    --arch-shadow: 0 12px 30px -18px rgba(40,42,90,.35);
+}
+.dark .arch-diagram {
+    --arch-grad-a: #0c0c1d;  --arch-grad-b: #111128;
+    --arch-frame: #2d2d5e;   --arch-ink: #e2e8f0;
+    --arch-indigo-label: #818cf8;
+    --arch-node-bg: #1a1a2e; --arch-node-border: #4a4dae; --arch-node-ink: #c7d2fe;
+    --arch-arrow-indigo: #6366f1; --arch-arrow-indigo-soft: #525280;
+    --arch-panel-bg: #1a1a35; --arch-panel-border: #4a4dae; --arch-panel-label: #9196d4;
+    --arch-auth-bg: #4a4dae;
+    --arch-session-bg: #16162a; --arch-session-border: #3b3d8f; --arch-session-ink: #c7d2fe; --arch-session-sub: #818cf8;
+    --arch-emerald: #10b981; --arch-teal: #0d9488; --arch-emerald-label: #10b981; --arch-arrow-emerald-soft: #065f46;
+    --arch-server-bg: #0a2a1e; --arch-server-border: #10b981; --arch-server-ink: #d1fae5; --arch-server-icon: #6ee7b7;
+    --arch-on-accent: #ffffff;
+    --arch-shadow: 0 22px 46px -22px rgba(0,0,0,.55);
+}

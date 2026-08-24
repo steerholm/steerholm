@@ -1,0 +1,82 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Steerholm",
+  "colors": {
+    "primary": "#4a4dae",
+    "light": "#6366f1",
+    "dark": "#3b3d8f"
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "favicon": "/favicon.svg",
+  "appearance": {
+    "default": "dark"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/steerholm/steerholm",
+        "icon": "github"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Install",
+      "href": "/v0.1/getting-started/installation"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/steerholm/steerholm"
+    }
+  },
+  "navigation": {
+    "versions": [
+      {
+        "version": "v0.1",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "v0.1/getting-started/introduction",
+              "v0.1/getting-started/installation",
+              "v0.1/getting-started/quickstart"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "v0.1/guides/add-an-agent",
+              "v0.1/guides/add-a-server",
+              "v0.1/guides/managing-access",
+              "v0.1/guides/troubleshooting"
+            ]
+          },
+          {
+            "group": "Concepts",
+            "pages": [
+              "v0.1/concepts/control-plane",
+              "v0.1/concepts/architecture",
+              "v0.1/concepts/permissions",
+              "v0.1/concepts/error-codes"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "v0.1/reference/cli",
+              "v0.1/reference/mcp-endpoint",
+              "v0.1/reference/configuration",
+              "v0.1/reference/policy-format"
+            ]
+          }
+        ],
+        "default": true
+      }
+    ]
+  }
+}

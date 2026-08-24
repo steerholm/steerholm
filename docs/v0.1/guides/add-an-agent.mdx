@@ -1,0 +1,188 @@
+---
+title: Add an agent
+description: Register an agent, point it at Steerholm, and verify it's connected.
+---
+
+Adding an MCP-capable agent (Claude Code, VS Code, Cursor, OpenCode, etc.) to
+Steerholm is two steps: **register it** to get its access key, then **point it at
+Steerholm**. From then on it acts on the action plane as that agent, and every
+request is checked against its policy before anything reaches a server.
+
+<Note>
+  An agent sees no tools until you also **grant** it access — that's a separate
+  step, covered in [Managing access](/guides/managing-access).
+</Note>
+
+## 1. Register the agent
+
+```bash
+holm add agent my-agent
+```
+
+This prints an **access key** (`steer_sk_…`) once — save it now; it's the only time
+the full key is shown. `holm show agent my-agent` shows only the key prefix. Lost
+it? Issue a new one with `holm rotate agent my-agent` (the old key stops working
+immediately).
+
+## 2. Point the agent at Steerholm
+
+Every agent connects the same way, with two things:
+
+- **Endpoint** — `http://127.0.0.1:4767/mcp`
+- **Header** — `Authorization: Bearer steer_sk_...`
+
+The rest is just *where* each agent keeps its config and *what* it names the entry.
+
+<Tabs>
+  <Tab title="Claude Code">
+    Add the server with the CLI. Run this from your project — it writes to the
+    project's local scope by default; add `--scope user` to make it available in
+    every project:
+
+    ```bash
+    claude mcp add --transport http steerholm http://127.0.0.1:4767/mcp \
+      --header "Authorization: Bearer steer_sk_..."
+    ```
+
+    To share the server with a team, commit an `.mcp.json` at your project root
+    instead:
+
+    ```json
+    {
+      "mcpServers": {
+        "steerholm": {
+          "type": "http",
+          "url": "http://127.0.0.1:4767/mcp",
+          "headers": {
+            "Authorization": "Bearer steer_sk_..."
+          }
+        }
+      }
+    }
+    ```
+
+    <Warning>
+      The `"type": "http"` field is required. Claude Code reads a `url` entry
+      with no `type` as a stdio server and skips it.
+    </Warning>
+  </Tab>
+
+  <Tab title="VS Code (Copilot)">
+    Put the config in `.vscode/mcp.json` in your workspace (or your user profile
+    via the **MCP: Open User Configuration** command). The top-level key is
+    `servers`:
+
+    ```json
+    {
+      "servers": {
+        "steerholm": {
+          "type": "http",
+          "url": "http://127.0.0.1:4767/mcp",
+          "headers": {
+            "Authorization": "Bearer steer_sk_..."
+          }
+        }
+      }
+    }
+    ```
+
+    MCP tools are available in Copilot Chat's **Agent** mode. To avoid committing
+    the key, replace the header value with an input reference such as
+    `Bearer ${input:steerholm-key}` and let VS Code prompt for it once. See the
+    [VS Code MCP docs](https://code.visualstudio.com/docs/copilot/customization/mcp-servers)
+    for the input-prompt syntax.
+  </Tab>
+
+  <Tab title="Cursor">
+    Put the config in `~/.cursor/mcp.json` (global, every project) or
+    `.cursor/mcp.json` at your project root. The top-level key is `mcpServers`:
+
+    ```json
+    {
+      "mcpServers": {
+        "steerholm": {
+          "url": "http://127.0.0.1:4767/mcp",
+          "headers": {
+            "Authorization": "Bearer steer_sk_..."
+          }
+        }
+      }
+    }
+    ```
+
+    Cursor resolves `${env:VAR}` inside `headers`, so you can keep the key out of
+    the file with `"Authorization": "Bearer ${env:STEERHOLM_KEY}"`. See the
+    [Cursor MCP docs](https://cursor.com/docs/mcp).
+  </Tab>
+
+  <Tab title="OpenCode">
+    Put the config in `opencode.json` at your project root (or the global
+    `~/.config/opencode/opencode.json`). Remote servers live under the `mcp` key
+    with `"type": "remote"`:
+
+    ```json
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "mcp": {
+        "steerholm": {
+          "type": "remote",
+          "url": "http://127.0.0.1:4767/mcp",
+          "enabled": true,
+          "headers": {
+            "Authorization": "Bearer steer_sk_..."
+          }
+        }
+      }
+    }
+    ```
+
+    OpenCode supports `{env:VAR}` substitution in `headers`, so you can write
+    `"Authorization": "Bearer {env:STEERHOLM_KEY}"`. See the
+    [OpenCode MCP docs](https://opencode.ai/docs/mcp-servers/).
+  </Tab>
+</Tabs>
+
+<Note>
+  Steerholm binds to loopback over plain HTTP. Use the host and port from
+  `holm serve` if you changed the defaults.
+</Note>
+
+<Note>
+  Copying the key into the agent is the current **manual** step. A future release
+  will set this connection up for you (and launch agent sessions directly) — the
+  model stays the same, the copy-paste goes away.
+</Note>
+
+## 3. Verify
+
+From Steerholm's side, confirm the agent is registered and holds a key:
+
+```bash
+holm show agent my-agent
+```
+
+In the agent itself, the Steerholm connection should come up **connected**, with no
+auth error. It lists only the tools its policy allows — so a freshly added agent
+with no grants connects successfully but sees nothing yet. Grant it a server (see
+[Managing access](/guides/managing-access)) and its tools appear.
+
+If the agent reports an authentication or connection error, head to
+[Troubleshooting](/guides/troubleshooting).
+
+## Rotate a key
+
+Rotating issues a new access key and **keeps all of the agent's grants**. The old
+key stops working immediately, so update the agent's config with the new key
+afterward:
+
+```bash
+holm rotate agent my-agent
+```
+
+## Remove an agent
+
+Removes the agent, revokes its key, and deletes its policy:
+
+```bash
+holm remove agent my-agent
+```

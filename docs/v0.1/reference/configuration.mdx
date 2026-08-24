@@ -1,0 +1,89 @@
+---
+title: Configuration
+description: Config files, directory layout, and platform support.
+---
+
+## Directory layout
+
+<CodeGroup>
+
+```bash Linux / macOS
+~/.steerholm/
+├── config.json
+└── policies/
+    ├── coding-agent.json
+    └── research-agent.json
+```
+
+```bash Windows
+%APPDATA%\steerholm\
+├── config.json
+└── policies\
+    ├── coding-agent.json
+    └── research-agent.json
+```
+
+</CodeGroup>
+
+Access-key hashes are stored in the system keyring, not in config files.
+
+Set `STEERHOLM_CONFIG_DIR` to override the config directory (both the CLI and
+the daemon read it) — useful for isolated setups or testing:
+
+```bash
+STEERHOLM_CONFIG_DIR=/tmp/steerholm-test holm list servers
+```
+
+## config.json
+
+```json
+{
+  "servers": {
+    "git": {
+      "name": "git",
+      "command": "uvx mcp-server-git",
+      "server_type": "stdio"
+    },
+    "remote-api": {
+      "name": "remote-api",
+      "url": "http://localhost:8000/mcp",
+      "server_type": "http"
+    }
+  },
+  "agents": {
+    "coding-agent": {
+      "name": "coding-agent",
+      "key_prefix": "steer_sk_A7x..."
+    }
+  }
+}
+```
+
+### Server fields
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Unique identifier |
+| `command` | `string` | Full launch command (stdio servers) |
+| `url` | `string` | Server URL (HTTP servers) |
+| `env` | `object` | Extra environment variables passed to a stdio server |
+| `server_type` | `"stdio"` or `"http"` | Transport type (inferred from `--command` or `--url`) |
+
+<Note>
+  `env` has no CLI flag yet — set it by editing `config.json` directly, then run
+  `holm add`/`remove` (or restart the daemon) so it re-reads the config.
+</Note>
+
+### Agent fields
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Unique identifier |
+| `key_prefix` | `string` | First 15 chars of the access key (display only) |
+
+## Defaults
+
+| Setting | Value |
+|---|---|
+| Host | `127.0.0.1` |
+| Port | `4767` |
