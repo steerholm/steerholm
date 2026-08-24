@@ -213,15 +213,18 @@ def main() -> None:
         return None
 
     landing = first_leaf(versions[0].get("groups", [])) or f"{default_version}/{CONTENT_DIRS[0]}"
+    # Temporary (307), never permanent (308): these targets move to the next
+    # version on every release, so they must not be hard-cached by browsers/CDNs.
     redirects = [
-        {"source": "/", "destination": f"/{landing}"},
-        {"source": "/latest", "destination": f"/{landing}"},
-        {"source": "/latest/:slug*", "destination": f"/{default_version}/:slug*"},
+        {"source": "/", "destination": f"/{landing}", "permanent": False},
+        {"source": "/latest", "destination": f"/{landing}", "permanent": False},
+        {"source": "/latest/:slug*", "destination": f"/{default_version}/:slug*", "permanent": False},
     ]
     for content_dir in CONTENT_DIRS:
         redirects.append({
             "source": f"/{content_dir}/:slug*",
             "destination": f"/{default_version}/{content_dir}/:slug*",
+            "permanent": False,
         })
     out["redirects"] = redirects
 
