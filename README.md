@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="docs/logo/badge.svg" alt="Steerholm" height="84" />
+  <img src="docs/logo/badge.svg" alt="Steerholm" width="480" />
 </p>
 
 <p align="center">
-  Add your MCP servers once, control which agents can access which tools, and manage everything from a single place.<br/>
+  An action plane for your agents, a control plane for you — every action an agent takes is checked against your policy before it reaches a server.<br/>
 </p>
 
 <p align="center">
@@ -36,14 +36,13 @@ Or download binaries directly from [GitHub Releases](https://github.com/steerhol
 
 ```bash
 # 1. Add an MCP server
-holm add server filesystem \
-  --command "npx -y @modelcontextprotocol/server-filesystem /home/user/projects"
+holm add server git --command "uvx mcp-server-git"
 
 # 2. Add an agent (prints its access key once)
 holm add agent my-agent
 
 # 3. Grant it scoped access
-holm grant my-agent filesystem --tool "*" --args "path=/home/user/projects/**"
+holm grant my-agent git --tool "git_log" --args "repo_path=/home/user/projects/**"
 ```
 
 Then configure your MCP client (Claude Code, VS Code, Cursor, OpenCode) with the
@@ -53,6 +52,7 @@ agent's access key as the Bearer token:
 {
   "mcpServers": {
     "steerholm": {
+      "type": "http",
       "url": "http://127.0.0.1:4767/mcp",
       "headers": {
         "Authorization": "Bearer steer_sk_..."
@@ -65,7 +65,7 @@ agent's access key as the Bearer token:
 ## How It Works
 
 ```
-Agent → Streamable HTTP /mcp → Steerholm daemon → MCP Servers
+Agent → HTTP /mcp → Steerholm daemon → MCP Servers
               │                       │
           Bearer auth          agent verification
                                policy enforcement
@@ -74,7 +74,7 @@ Agent → Streamable HTTP /mcp → Steerholm daemon → MCP Servers
 
 - **Default deny** — no grant means no access
 - **Agent from token** — agents cannot self-assert who they are; the access key determines the agent
-- **Per-agent policies** — whitelist of servers, tools, and argument constraints
+- **Per-agent policies** — allowlist of servers, tools, and argument constraints
 - **Isolation by policy** — one shared daemon; each agent is confined by its policy, not by separate server processes
 - **Structured error codes** — `AUTHORIZATION_DENIED` (-31001) and `SERVER_UNAVAILABLE` (-31002)
 
