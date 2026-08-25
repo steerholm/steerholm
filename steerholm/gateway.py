@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import hmac
 import logging
+import os
 import socket
 import time
 from collections import OrderedDict
@@ -459,6 +460,13 @@ class SteerholmGateway:
             logger.error(f"Could not initialize control token: {e}")
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            # SO_REUSEADDR lets the daemon rebind over a predecessor's TIME_WAIT
+            # sockets after a restart (e.g. `holm update`) — without it this bind
+            # fails EADDRINUSE for ~60s after the old daemon served traffic, even
+            # though nothing is listening. Unix only: on Windows SO_REUSEADDR has
+            # port-hijack semantics (uvicorn's own bind sets it the same way).
+            if os.name != "nt":
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 sock.bind((host, port))
             except OSError as e:
