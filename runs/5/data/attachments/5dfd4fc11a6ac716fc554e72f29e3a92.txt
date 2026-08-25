@@ -1,0 +1,15 @@
+Starting default (STDIO) server...
+INFO:     Started server process [2435]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:39809 (Press CTRL+C to quit)
+ERROR:    Traceback (most recent call last):
+  File "/opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/site-packages/starlette/routing.py", line 655, in lifespan
+    await receive()
+  File "/opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/site-packages/uvicorn/lifespan/on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.12.14/x64/lib/python3.12/asyncio/queues.py", line 158, in get
+    await getter
+asyncio.exceptions.CancelledError
+

@@ -1,0 +1,2 @@
+WARNING  steerholm:gateway.py:356 Server 'broken' failed its health check; will restart: dead
+ERROR    steerholm:gateway.py:366 Failed to stop unhealthy server 'broken': cant stop

@@ -1,0 +1,33 @@
+ERROR    steerholm:gateway.py:466 Port 4767 is already in use. Is another Steerholm instance running?
+ERROR    steerholm:gateway.py:467 Check with: holm status
+ERROR    steerholm:gateway.py:468 Or use a different port: holm serve --port <port>
+ERROR    asyncio:base_events.py:1833 Error on reading from the event loop self pipe
+loop: <ProactorEventLoop running=True closed=False debug=False>
+Traceback (most recent call last):
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\asyncio\proactor_events.py", line 804, in _loop_self_reading
+    f = self._proactor.recv(self._ssock, 4096)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\asyncio\windows_events.py", line 486, in recv
+    if isinstance(conn, socket.socket):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: isinstance() arg 2 must be a type, a tuple of types, or a union
+ERROR    asyncio:base_events.py:1833 Error on reading from the event loop self pipe
+loop: <ProactorEventLoop running=True closed=False debug=False>
+Traceback (most recent call last):
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\asyncio\proactor_events.py", line 804, in _loop_self_reading
+    f = self._proactor.recv(self._ssock, 4096)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\asyncio\windows_events.py", line 486, in recv
+    if isinstance(conn, socket.socket):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: isinstance() arg 2 must be a type, a tuple of types, or a union
+ERROR    asyncio:base_events.py:1833 Error on reading from the event loop self pipe
+loop: <ProactorEventLoop running=True closed=False debug=False>
+Traceback (most recent call last):
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\asyncio\proactor_events.py", line 804, in _loop_self_reading
+    f = self._proactor.recv(self._ssock, 4096)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\asyncio\windows_events.py", line 486, in recv
+    if isinstance(conn, socket.socket):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: isinstance() arg 2 must be a type, a tuple of types, or a union
