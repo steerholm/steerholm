@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Stage 3 (Linux/macOS): simulate the real end-user flow against the built binary.
 #   build check -> configure -> run install.sh WITH service -> verify the
-#   service-managed daemon is answering -> live usage test -> uninstall + verify.
+#   service-managed daemon is answering -> live usage test -> re-run install over
+#   the running daemon (self-update regression) -> uninstall + verify.
 # Each phase is recorded into Allure (parentSuite=OS, suite=phase). The job fails
-# if install, usage, or uninstall fails.
+# if install, usage, update, or uninstall fails.
 #
 # Env: ARCHIVE (path to the release tarball), OSNAME (Linux|macOS), PLATFORM.
 set -uo pipefail
@@ -77,6 +78,34 @@ else
   emit "live usage skipped: daemon not up ($PLATFORM)" Usage failed
 fi
 
+# ── Update: re-run install.sh over the RUNNING daemon. Regression guard for
+#    the self-update path — the binary must be replaced atomically (an in-place
+#    cp is "text file busy" on Linux / crashes the daemon on macOS), and the
+#    service must restart onto the new binary. ────────────────────────
+update_ok=0
+if [ "$up" = 1 ]; then
+  ino_before="$(stat -c %i "$BIN" 2>/dev/null || stat -f %i "$BIN" 2>/dev/null)"
+  STEERHOLM_LOCAL_ARCHIVE="$ARCHIVE" bash scripts/install.sh
+  install_rc=$?
+  ino_after="$(stat -c %i "$BIN" 2>/dev/null || stat -f %i "$BIN" 2>/dev/null)"
+  reup=0
+  for _ in $(seq 1 30); do
+    if curl -fsS http://127.0.0.1:4767/healthz 2>/dev/null | grep -q '"service":"steerholm"'; then
+      reup=1; break
+    fi
+    sleep 1
+  done
+  # inode must change: proves an atomic rename, not an in-place cp (same inode).
+  if [ "$install_rc" = 0 ] && [ -n "$ino_before" ] && [ "$ino_before" != "$ino_after" ] && [ "$reup" = 1 ]; then
+    update_ok=1
+    emit "update over running daemon ($PLATFORM)" Update passed
+  else
+    emit "update over running daemon failed (rc=$install_rc replaced=$([ "$ino_before" != "$ino_after" ] && echo y || echo n) reup=$reup) ($PLATFORM)" Update failed
+  fi
+else
+  emit "update skipped: daemon not up ($PLATFORM)" Update failed
+fi
+
 # ── Uninstall + removal verification ────────────────────────────────
 bash scripts/uninstall.sh || true
 if [ ! -e "$BIN" ]; then
@@ -87,4 +116,4 @@ else
   removed=0
 fi
 
-[ "$up" = 1 ] && [ "$usage_ok" = 1 ] && [ "$removed" = 1 ]
+[ "$up" = 1 ] && [ "$usage_ok" = 1 ] && [ "$update_ok" = 1 ] && [ "$removed" = 1 ]

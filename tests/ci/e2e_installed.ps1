@@ -1,8 +1,9 @@
 # Stage 3 (Windows): simulate the real end-user flow against the built binary.
 #   build check -> configure -> run install.ps1 WITH service -> verify the
-#   service-managed daemon is answering -> live usage test -> uninstall + verify.
+#   service-managed daemon is answering -> live usage test -> re-run install over
+#   the running daemon (self-update regression) -> uninstall + verify.
 # Each phase is recorded into Allure (parentSuite=OS, suite=phase). The job fails
-# if install, usage, or uninstall fails.
+# if install, usage, update, or uninstall fails.
 #
 # Env: ARCHIVE (path to the release zip), OSNAME (Windows), PLATFORM.
 $ErrorActionPreference = 'Continue'
@@ -72,6 +73,35 @@ if ($up) {
     Emit "live usage skipped: daemon not up ($env:PLATFORM)" Usage failed
 }
 
+# ── Update: re-run install.ps1 over the RUNNING daemon. Regression guard for
+#    the self-update path — a running holm.exe/holmd.exe can't be overwritten,
+#    so install.ps1 must rename-aside + restart, and the daemon must come back. ──
+$updateOk = $false
+if ($up) {
+    $env:STEERHOLM_LOCAL_ARCHIVE = $env:ARCHIVE
+    powershell -ExecutionPolicy Bypass -File scripts/install.ps1
+    $installRc = $LASTEXITCODE
+    # daemon back up? (mirror the install-phase fallback for non-interactive runners)
+    $reup = $false
+    for ($i = 0; $i -lt 20; $i++) { if (SteerholmUp) { $reup = $true; break }; Start-Sleep -Seconds 1 }
+    if (-not $reup) {
+        $daemon = Join-Path $env:LOCALAPPDATA 'steerholm\bin\holmd.exe'
+        if (Test-Path $daemon) { Start-Process $daemon }
+        for ($i = 0; $i -lt 20; $i++) { if (SteerholmUp) { $reup = $true; break }; Start-Sleep -Seconds 1 }
+    }
+    # the replaced holm.exe still runs
+    & (Join-Path $env:LOCALAPPDATA 'steerholm\bin\holm.exe') version *> $null
+    $binOk = ($LASTEXITCODE -eq 0)
+    if ($installRc -eq 0 -and $reup -and $binOk) {
+        $updateOk = $true
+        Emit "update over running daemon ($env:PLATFORM)" Update passed
+    } else {
+        Emit "update over running daemon failed (rc=$installRc reup=$reup binOk=$binOk) ($env:PLATFORM)" Update failed
+    }
+} else {
+    Emit "update skipped: daemon not up ($env:PLATFORM)" Update failed
+}
+
 # ── Uninstall + removal verification ────────────────────────────────
 powershell -ExecutionPolicy Bypass -File scripts/uninstall.ps1
 $bin = Join-Path $env:LOCALAPPDATA 'steerholm\bin\holm.exe'
@@ -79,4 +109,4 @@ $removed = -not (Test-Path $bin)
 if ($removed) { Emit "binary removed ($env:PLATFORM)" Uninstall passed }
 else { Emit "binary still present after uninstall ($env:PLATFORM)" Uninstall failed }
 
-if ($up -and $usageOk -and $removed) { exit 0 } else { exit 1 }
+if ($up -and $usageOk -and $updateOk -and $removed) { exit 0 } else { exit 1 }
