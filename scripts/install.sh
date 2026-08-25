@@ -173,6 +173,14 @@ elif [ "$OS" = "Darwin" ]; then
 EOF
 
     launchctl unload "$PLIST_FILE" 2>/dev/null || true
+    # On an update the previous daemon still holds port 4767; wait for launchd to
+    # fully stop it before loading the new one, or the reloaded agent can't bind
+    # and launchd throttles the retries. (No-op on a fresh install — nothing is
+    # listening, so this breaks on the first probe.)
+    for _ in $(seq 1 20); do
+        curl -fsS -o /dev/null "http://127.0.0.1:4767/healthz" 2>/dev/null || break
+        sleep 0.5
+    done
     launchctl load "$PLIST_FILE"
 
     info "Registered launchd agent"
