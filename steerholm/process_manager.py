@@ -15,6 +15,10 @@ from .models import Server, ServerType
 
 logger = logging.getLogger("steerholm")
 
+# A server that hasn't completed its MCP handshake within this budget is treated
+# as failed, so one misbehaving server can't hang reconcile indefinitely.
+CONNECT_TIMEOUT = 120  # seconds
+
 
 @dataclass
 class ServerHealth:
@@ -49,7 +53,18 @@ class ServerProcess:
     async def start(self):
         logger.info(f"Starting server {self.server_config.name}...")
         self._task = asyncio.create_task(self._run())
-        await self._ready.wait()
+        try:
+            await asyncio.wait_for(self._ready.wait(), timeout=CONNECT_TIMEOUT)
+        except asyncio.TimeoutError:
+            logger.error(
+                f"Server {self.server_config.name} did not connect within "
+                f"{CONNECT_TIMEOUT}s."
+            )
+            await self.stop()
+            raise TimeoutError(
+                f"Server {self.server_config.name} did not connect within "
+                f"{CONNECT_TIMEOUT}s"
+            )
         if self._error is not None:
             # _run already unwound its own contexts; just surface the failure.
             with contextlib.suppress(Exception):
@@ -154,8 +169,13 @@ class SteerholmDaemon:
         self.server_health.pop(name, None)
 
     async def stop_all_shared(self):
-        for name in list(self.shared_processes.keys()):
-            await self.stop_shared_server(name)
+        # Stop concurrently so one server with a slow/hung teardown can't
+        # serialize the whole shutdown past the service manager's stop budget.
+        await asyncio.gather(
+            *(self.stop_shared_server(name)
+              for name in list(self.shared_processes.keys())),
+            return_exceptions=True,
+        )
 
     def get_shared_process(self, name: str) -> Optional[ServerProcess]:
         return self.shared_processes.get(name)
