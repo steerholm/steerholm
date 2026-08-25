@@ -98,6 +98,8 @@ if [ "$up" = 1 ]; then
   if [ "$reup" != 1 ]; then
     echo "DIAG: daemon did not rebind 4767 within 60s after the update"
     if [ "$OSNAME" = "Linux" ]; then
+      echo "-- who holds :4767 --"; ss -tlnp 2>/dev/null | grep -E ':4767' || echo "(nothing listening on 4767)"
+      echo "-- holm processes --"; ps -eo pid,ppid,etimes,cmd 2>/dev/null | grep -iE 'holm|steerholm' | grep -v grep || echo "(no holm processes)"
       systemctl --user status steerholm --no-pager -l 2>&1 | tail -20 || true
       journalctl --user -u steerholm --no-pager -n 25 2>&1 | tail -25 || true
     else
