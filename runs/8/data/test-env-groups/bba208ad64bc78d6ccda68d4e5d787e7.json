@@ -1,0 +1,1 @@
+{"id":"bba208ad64bc78d6ccda68d4e5d787e7","fullName":"tests.unit.test_permissions.TestArgumentPolicy#test_wildcard_arg_policy_allows_tools_without_that_arg","name":"test_wildcard_arg_policy_allows_tools_without_that_arg","status":"passed","testResultsByEnv":{"default":"bb22aeeb855a4f295d8573b0574b7de4"}}

@@ -1,0 +1,2 @@
+INFO:     127.0.0.1:56840 - "GET /healthz HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56846 - "POST /mcp HTTP/1.1" 401 Unauthorized
