@@ -89,12 +89,22 @@ if [ "$up" = 1 ]; then
   install_rc=$?
   ino_after="$(stat -c %i "$BIN" 2>/dev/null || stat -f %i "$BIN" 2>/dev/null)"
   reup=0
-  for _ in $(seq 1 30); do
+  for _ in $(seq 1 60); do
     if curl -fsS http://127.0.0.1:4767/healthz 2>/dev/null | grep -q '"service":"steerholm"'; then
       reup=1; break
     fi
     sleep 1
   done
+  if [ "$reup" != 1 ]; then
+    echo "DIAG: daemon did not rebind 4767 within 60s after the update"
+    if [ "$OSNAME" = "Linux" ]; then
+      systemctl --user status steerholm --no-pager -l 2>&1 | tail -20 || true
+      journalctl --user -u steerholm --no-pager -n 25 2>&1 | tail -25 || true
+    else
+      launchctl list 2>&1 | grep -i steerholm || true
+      tail -n 25 "$HOME/.steerholm/daemon.log" 2>&1 || true
+    fi
+  fi
   # inode must change: proves an atomic rename, not an in-place cp (same inode).
   if [ "$install_rc" = 0 ] && [ -n "$ino_before" ] && [ "$ino_before" != "$ino_after" ] && [ "$reup" = 1 ]; then
     update_ok=1
