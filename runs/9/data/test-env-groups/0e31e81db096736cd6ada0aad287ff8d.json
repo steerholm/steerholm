@@ -1,0 +1,1 @@
+{"id":"0e31e81db096736cd6ada0aad287ff8d","fullName":"tests.unit.test_cli_commands#test_daemon_server_status_returns_dict_when_up","name":"test_daemon_server_status_returns_dict_when_up","status":"passed","testResultsByEnv":{"default":"d4408e31defa03383c1ff263763439cb"}}
