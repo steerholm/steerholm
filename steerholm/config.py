@@ -93,7 +93,8 @@ class ConfigManager:
         self.config = self._load_config()
 
     # --- Server Management ---
-    def add_server(self, name: str, command: str = None, url: str = None) -> Server:
+    def add_server(self, name: str, command: str = None, url: str = None,
+                   env: dict = None) -> Server:
         """Dock a server. Provide command (stdio) or url (http), not both."""
         if name in self.config.servers:
             raise ValueError(f"Server '{name}' already exists.")
@@ -101,9 +102,15 @@ class ConfigManager:
             raise ValueError("Provide command or url, not both.")
         if not command and not url:
             raise ValueError("Provide command (stdio) or url (http).")
+        if env and url:
+            raise ValueError(
+                "Environment variables apply to stdio servers (--command), "
+                "not remote (--url) servers."
+            )
 
         if command:
-            server = Server(name=name, command=command, server_type=ServerType.stdio)
+            server = Server(name=name, command=command, env=env or {},
+                            server_type=ServerType.stdio)
         else:
             server = Server(name=name, url=url, server_type=ServerType.http)
 

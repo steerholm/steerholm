@@ -114,6 +114,18 @@ def _handle(fn, *args, **kwargs):
         raise typer.Exit(code=1)
 
 
+def _parse_env(pairs: Optional[List[str]]) -> dict:
+    """Parse repeated 'KEY=VALUE' options into a dict; values may contain '='."""
+    result: dict = {}
+    for item in pairs or []:
+        key, sep, value = item.partition("=")
+        if not sep or not key:
+            console.print(f"[bold red]Error:[/bold red] --env expects KEY=VALUE, got {item!r}")
+            raise typer.Exit(code=1)
+        result[key] = value
+    return result
+
+
 @app.command()
 def version():
     """Show the installed Steerholm version."""
@@ -170,17 +182,22 @@ def add_server(
     name: str,
     command: Optional[str] = typer.Option(None, help="Full command to run the server (stdio)"),
     url: Optional[str] = typer.Option(None, help="Server URL (streamable HTTP)"),
+    env: Optional[List[str]] = typer.Option(
+        None, "--env", help="Env var for a stdio server: 'KEY=VALUE' (repeatable)"
+    ),
 ):
     """
     Add an MCP server behind Steerholm.
 
     Provide --command for stdio servers or --url for HTTP servers (not both).
+    Pass config/secrets to a stdio server with --env (repeatable).
 
     Examples:
-      holm add server filesystem --command "npx -y @modelcontextprotocol/server-filesystem /home/user"
+      holm add server git --command "uvx mcp-server-git"
+      holm add server db --command "uvx postgres-mcp" --env "DATABASE_URI=postgresql://..."
       holm add server remote-api --url "http://localhost:8000/mcp"
     """
-    _handle(config_manager.add_server, name, command=command, url=url)
+    _handle(config_manager.add_server, name, command=command, url=url, env=_parse_env(env))
     console.print(f"[bold green]Added server '{name}'.[/bold green]")
     _notify_daemon_reconcile()
     console.print(f"Next: let an agent use it with [bold]holm grant <agent> {name}[/bold].")
@@ -373,7 +390,9 @@ def show_server(name: str):
         console.print(f"[bold]Command:[/bold] {server.command}")
     if server.url:
         console.print(f"[bold]URL:[/bold] {server.url}")
-    console.print(f"[bold]Env:[/bold] {server.env}")
+    if server.env:
+        # Show which env vars are set, but mask values so secrets don't leak.
+        console.print(f"[bold]Env:[/bold] {', '.join(f'{k}=***' for k in server.env)}")
     console.print(f"[bold]Type:[/bold] {server.server_type.value}")
 
     _print_server_grantees(name)

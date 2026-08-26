@@ -8,6 +8,27 @@ The release workflow publishes the section for the tagged version as its GitHub
 release notes, so update the entry for the version you're about to tag **before**
 tagging it. At tag time, rename `[Unreleased]` to the version and date.
 
+## [Unreleased]
+
+### Added
+
+- `--env KEY=VALUE` on `holm add server` — pass environment variables (config or
+  secrets like a database connection string) to a stdio server. Repeatable;
+  `holm show server` masks the values.
+
+### Fixed
+
+- `holm update` now replaces the running binary atomically (write + rename) and
+  restarts the daemon so it picks up the new binary. It previously failed with
+  "text file busy" on Linux, and on macOS the daemon could fail to come back.
+- The daemon shuts down cleanly: each MCP server's client contexts are opened
+  and closed on a single task, fixing an anyio "cancel scope in a different task"
+  error that corrupted shutdown and could orphan a server subprocess.
+- The daemon rebinds its port with `SO_REUSEADDR` (Unix) so a restart isn't
+  blocked by the previous instance's `TIME_WAIT` sockets ("port already in use").
+- A server that never completes its MCP handshake no longer hangs startup
+  (120s connect timeout), and shutdown stops servers concurrently.
+
 ## [0.1.0] - 2026-08-24
 
 ### Added

@@ -70,8 +70,9 @@ STEERHOLM_CONFIG_DIR=/tmp/steerholm-test holm list servers
 | `server_type` | `"stdio"` or `"http"` | Transport type (inferred from `--command` or `--url`) |
 
 <Note>
-  `env` has no CLI flag yet — set it by editing `config.json` directly, then run
-  `holm add`/`remove` (or restart the daemon) so it re-reads the config.
+  Set `env` from the CLI: `holm add server <name> --command "..." --env KEY=VALUE`
+  (repeatable). It's stored here in `config.json`; `holm show server` masks the
+  values so secrets don't print back.
 </Note>
 
 ### Agent fields

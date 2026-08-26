@@ -135,6 +135,33 @@ def test_add_server_invalid_shows_error(cli):
     assert "Error" in result.output
 
 
+def test_add_server_with_env(cli, monkeypatch):
+    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
+    result = runner.invoke(app, [
+        "add", "server", "db", "--command", "uvx x",
+        "--env", "DATABASE_URI=postgresql://u:p@h/db", "--env", "LOG=debug",
+    ])
+    assert result.exit_code == 0
+    assert cli.get_server("db").env == {
+        "DATABASE_URI": "postgresql://u:p@h/db", "LOG": "debug"
+    }
+
+
+def test_add_server_env_bad_format_errors(cli):
+    result = runner.invoke(app, ["add", "server", "db", "--command", "uvx x", "--env", "NOEQUALS"])
+    assert result.exit_code == 1
+    assert "KEY=VALUE" in result.output
+
+
+def test_show_server_masks_env_values(cli):
+    cli.add_server("db", command="uvx x", env={"DATABASE_URI": "secret://token"})
+    result = runner.invoke(app, ["show", "server", "db"])
+    assert result.exit_code == 0
+    assert "DATABASE_URI" in result.output          # key is shown
+    assert "secret://token" not in result.output    # value is masked
+    assert "***" in result.output
+
+
 def test_remove_server(cli, monkeypatch):
     cli.add_server("fs", command="echo")
     monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())

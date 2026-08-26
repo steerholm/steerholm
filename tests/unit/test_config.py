@@ -26,6 +26,20 @@ class TestConfigManagerServers:
         with pytest.raises(ValueError):
             config_manager.add_server("bad")
 
+    def test_add_server_with_env(self, config_manager):
+        config_manager.add_server("db", command="uvx x",
+                                  env={"DATABASE_URI": "postgresql://u:p@h/db"})
+        assert config_manager.get_server("db").env == {"DATABASE_URI": "postgresql://u:p@h/db"}
+
+    def test_add_server_env_persists_across_reload(self, config_manager):
+        config_manager.add_server("db", command="uvx x", env={"K": "v"})
+        config_manager.reload()
+        assert config_manager.get_server("db").env == {"K": "v"}
+
+    def test_add_server_rejects_env_with_url(self, config_manager):
+        with pytest.raises(ValueError, match="stdio"):
+            config_manager.add_server("bad", url="http://x", env={"K": "v"})
+
     def test_add_duplicate_server_raises(self, config_manager):
         config_manager.add_server("filesystem", command="echo")
         with pytest.raises(ValueError, match="already exists"):
