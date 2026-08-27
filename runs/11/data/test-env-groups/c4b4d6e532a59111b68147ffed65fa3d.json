@@ -1,0 +1,1 @@
+{"id":"c4b4d6e532a59111b68147ffed65fa3d","fullName":"tests.unit.test_config.TestConfigManagerPolicies#test_revoke_permission_no_policy_returns_false","name":"test_revoke_permission_no_policy_returns_false","status":"passed","testResultsByEnv":{"default":"6aea56542b54ba71a1632fdc1edc96b4"}}
