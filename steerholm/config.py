@@ -53,14 +53,30 @@ def get_or_create_control_token() -> str:
     return token
 
 
+def _restrict(path, mode: int) -> None:
+    """Restrict a config file or directory to the owner only. No-op on Windows,
+    where per-user AppData already isolates it via ACLs and POSIX modes don't map."""
+    if os.name == "nt":
+        return
+    try:
+        os.chmod(path, mode)
+    except OSError:
+        pass
+
+
 class ConfigManager:
     def __init__(self):
         self._ensure_dirs()
         self.config = self._load_config()
 
     def _ensure_dirs(self):
+        # The config holds server secrets (--env), agent policies, and grants, so
+        # keep it owner-only. chmod on every run also fixes pre-existing installs
+        # whose dirs were created world-readable.
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         POLICIES_DIR.mkdir(parents=True, exist_ok=True)
+        _restrict(CONFIG_DIR, 0o700)
+        _restrict(POLICIES_DIR, 0o700)
 
     def _load_config(self) -> Config:
         if not CONFIG_FILE.exists():
@@ -88,6 +104,7 @@ class ConfigManager:
     def save_config(self):
         with open(CONFIG_FILE, "w") as f:
             f.write(self.config.model_dump_json(indent=2))
+        _restrict(CONFIG_FILE, 0o600)
 
     def reload(self):
         self.config = self._load_config()
@@ -202,6 +219,7 @@ class ConfigManager:
         path = self._get_policy_path(policy.agent_name)
         with open(path, "w") as f:
             f.write(policy.model_dump_json(indent=2))
+        _restrict(path, 0o600)
 
     def grant_permission(self, agent_name: str, server_name: str,
                          tool: str = "*", arg_policies: List[str] = None):

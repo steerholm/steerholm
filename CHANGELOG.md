@@ -29,6 +29,14 @@ tagging it. At tag time, rename `[Unreleased]` to the version and date.
 - A server that never completes its MCP handshake no longer hangs startup
   (120s connect timeout), and shutdown stops servers concurrently.
 
+### Security
+
+- Config files are now owner-only: `~/.steerholm` is `0700`, and `config.json`
+  and the per-agent policy files are `0600`. `--env` secrets, policies, and
+  grants are no longer readable by other users on the machine; existing installs
+  are hardened on the next run. (No-op on Windows, where per-user `AppData`
+  already isolates them.)
+
 ## [0.1.0] - 2026-08-24
 
 ### Added

@@ -1,5 +1,7 @@
 """Tests for the ConfigManager."""
 
+import os
+import stat
 import sys
 import pytest
 from steerholm.models import Server, Agent, AgentPolicy, ToolPermission, ServerType
@@ -39,6 +41,19 @@ class TestConfigManagerServers:
     def test_add_server_rejects_env_with_url(self, config_manager):
         with pytest.raises(ValueError, match="stdio"):
             config_manager.add_server("bad", url="http://x", env={"K": "v"})
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX modes; Windows isolates AppData via ACLs")
+    def test_config_and_policy_files_are_owner_only(self, config_manager):
+        import steerholm.config as c
+        config_manager.add_server("db", command="uvx x", env={"DB": "secret"})
+        config_manager.add_agent("a")
+        config_manager.grant_permission("a", "db", tool="*")
+        assert stat.S_IMODE(os.stat(c.CONFIG_DIR).st_mode) == 0o700
+        assert stat.S_IMODE(os.stat(c.POLICIES_DIR).st_mode) == 0o700
+        assert stat.S_IMODE(os.stat(c.CONFIG_FILE).st_mode) == 0o600
+        policy = c.POLICIES_DIR / "a.json"
+        assert policy.exists()
+        assert stat.S_IMODE(os.stat(policy).st_mode) == 0o600
 
     def test_add_duplicate_server_raises(self, config_manager):
         config_manager.add_server("filesystem", command="echo")
