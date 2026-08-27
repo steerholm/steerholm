@@ -55,6 +55,25 @@ class TestConfigManagerServers:
         assert policy.exists()
         assert stat.S_IMODE(os.stat(policy).st_mode) == 0o600
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX modes; Windows isolates AppData via ACLs")
+    def test_update_hardens_preexisting_loose_config(self, config_manager):
+        # Simulate a v0.1.0 install (dir + files world-readable), then start the
+        # updated binary — a fresh ConfigManager must re-harden everything.
+        import steerholm.config as c
+        config_manager.add_server("db", command="uvx x", env={"DB": "secret"})
+        config_manager.add_agent("a")
+        config_manager.grant_permission("a", "db", tool="*")
+        policy = c.POLICIES_DIR / "a.json"
+        os.chmod(c.CONFIG_DIR, 0o755)
+        os.chmod(c.CONFIG_FILE, 0o644)
+        os.chmod(policy, 0o644)
+
+        c.ConfigManager()  # like the updated daemon/CLI starting up
+
+        assert stat.S_IMODE(os.stat(c.CONFIG_DIR).st_mode) == 0o700
+        assert stat.S_IMODE(os.stat(c.CONFIG_FILE).st_mode) == 0o600
+        assert stat.S_IMODE(os.stat(policy).st_mode) == 0o600
+
     def test_add_duplicate_server_raises(self, config_manager):
         config_manager.add_server("filesystem", command="echo")
         with pytest.raises(ValueError, match="already exists"):

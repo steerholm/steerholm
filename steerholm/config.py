@@ -71,12 +71,18 @@ class ConfigManager:
 
     def _ensure_dirs(self):
         # The config holds server secrets (--env), agent policies, and grants, so
-        # keep it owner-only. chmod on every run also fixes pre-existing installs
-        # whose dirs were created world-readable.
+        # keep it owner-only. Re-applying on every run hardens a pre-existing
+        # install (e.g. a v0.1.0 config created world-readable) the first time the
+        # updated binary runs — the daemon restart on update triggers this — and
+        # covers both the dirs and any files already on disk.
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         POLICIES_DIR.mkdir(parents=True, exist_ok=True)
         _restrict(CONFIG_DIR, 0o700)
         _restrict(POLICIES_DIR, 0o700)
+        if CONFIG_FILE.exists():
+            _restrict(CONFIG_FILE, 0o600)
+        for policy in POLICIES_DIR.glob("*.json"):
+            _restrict(policy, 0o600)
 
     def _load_config(self) -> Config:
         if not CONFIG_FILE.exists():
