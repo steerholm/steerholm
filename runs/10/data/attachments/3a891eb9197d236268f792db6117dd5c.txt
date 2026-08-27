@@ -1,0 +1,1 @@
+WARNING  steerholm:gateway.py:357 Server 'broken' failed its health check; will restart: broken pipe

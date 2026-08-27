@@ -1,0 +1,1 @@
+{"id":"2ed35e2fffcaf62d4b051ef81164230b","fullName":"tests.integration.test_gateway_coverage#test_auth_cache_hit_returns_without_rebcrypt","name":"test_auth_cache_hit_returns_without_rebcrypt","status":"passed","testResultsByEnv":{"default":"94f1fc4ef62276bc050d623e857c873f"}}
