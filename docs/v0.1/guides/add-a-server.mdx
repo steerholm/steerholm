@@ -27,6 +27,17 @@ holm add server git --command "uvx mcp-server-git"
 holm add server remote-api --url "http://localhost:8000/mcp"
 ```
 
+Pass configuration or secrets to a stdio server with `--env` (repeatable) — for
+example a database connection string:
+
+```bash
+holm add server db \
+  --command "uvx postgres-mcp" \
+  --env "DATABASE_URI=postgresql://user:pass@localhost/app"
+```
+
+`holm show server` masks env values, so secrets don't print back.
+
 ## Confirm it's running
 
 `list servers` shows every server with its transport and live status; `show server`

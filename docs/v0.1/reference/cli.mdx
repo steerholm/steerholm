@@ -22,12 +22,18 @@ server processes.
 ### holm add server
 
 Register a new MCP server. Provide `--command` for stdio servers or `--url` for
-HTTP servers (not both); the server type is inferred.
+HTTP servers (not both); the server type is inferred. Pass config or secrets to a
+stdio server with `--env` (repeatable).
 
 ```bash
 # Stdio server
 holm add server git \
   --command "uvx mcp-server-git"
+
+# Stdio server with environment variables (e.g. a DB connection string)
+holm add server db \
+  --command "uvx postgres-mcp" \
+  --env "DATABASE_URI=postgresql://user:pass@localhost/app"
 
 # HTTP server
 holm add server remote-api --url "http://localhost:8000/mcp"
@@ -38,6 +44,13 @@ holm add server remote-api --url "http://localhost:8000/mcp"
 | `<name>` | Yes | Unique name for the server |
 | `--command` | One of | Full command to launch a stdio server |
 | `--url` | One of | URL of a streamable HTTP server |
+| `--env` | No | `KEY=VALUE` environment variable for a stdio server (repeatable) |
+
+<Note>
+  `--env` names must be letters, digits, `_`, `-`, or `.` and can't start with a
+  digit (the Kubernetes/Docker rule, for cross-platform portability); a repeated
+  name is an error. Values may contain anything, including `=`.
+</Note>
 
 ### holm remove server
 

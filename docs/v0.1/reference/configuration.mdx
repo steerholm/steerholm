@@ -34,6 +34,15 @@ the daemon read it) — useful for isolated setups or testing:
 STEERHOLM_CONFIG_DIR=/tmp/steerholm-test holm list servers
 ```
 
+## File permissions
+
+The config directory and files are created **owner-only** — `0700` on
+`~/.steerholm` and its `policies/` directory, and `0600` on `config.json` and each
+policy file — so `--env` secrets, agent policies, and grants aren't readable by
+other users on the machine. Steerholm re-applies these permissions on startup, so
+an existing install is tightened automatically after an upgrade. On Windows,
+per-user `AppData` already provides this isolation via ACLs.
+
 ## config.json
 
 ```json
@@ -70,8 +79,15 @@ STEERHOLM_CONFIG_DIR=/tmp/steerholm-test holm list servers
 | `server_type` | `"stdio"` or `"http"` | Transport type (inferred from `--command` or `--url`) |
 
 <Note>
-  `env` has no CLI flag yet — set it by editing `config.json` directly, then run
-  `holm add`/`remove` (or restart the daemon) so it re-reads the config.
+  Set `env` from the CLI: `holm add server <name> --command "..." --env KEY=VALUE`
+  (repeatable). It's stored here in `config.json`, and `holm show server` masks the
+  values so secrets don't print back.
+
+  **Variable names** must be letters, digits, `_`, `-`, or `.`, and can't start
+  with a digit — the same rule Kubernetes and Docker use, so a config stays
+  portable across Linux, macOS, and Windows. Values are unrestricted (they may
+  contain `=`, spaces, or anything else); only the name is validated, and repeating
+  a name is an error.
 </Note>
 
 ### Agent fields
