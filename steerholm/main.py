@@ -111,7 +111,7 @@ def _handle(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
     except Exception as e:
-        console.print(f"[bold red]Error:[/bold red] {e}")
+        console.print(f"[bold red]Error:[/bold red] {escape(str(e))}")
         raise typer.Exit(code=1)
 
 
@@ -127,10 +127,10 @@ def _parse_env(pairs: Optional[List[str]]) -> dict:
         key, sep, value = item.partition("=")
         key = key.strip()
         if not sep or not key:
-            console.print(f"[bold red]Error:[/bold red] --env expects KEY=VALUE, got {item!r}")
+            console.print(f"[bold red]Error:[/bold red] --env expects KEY=VALUE, got {escape(repr(item))}")
             raise typer.Exit(code=1)
         if key in result:
-            console.print(f"[bold red]Error:[/bold red] --env got {key!r} more than once")
+            console.print(f"[bold red]Error:[/bold red] --env got {escape(repr(key))} more than once")
             raise typer.Exit(code=1)
         result[key] = value
     return result
@@ -156,7 +156,7 @@ def update(
     try:
         info = update_binary(tag=tag, check_only=True, force=force)
     except UpdateError as e:
-        console.print(f"[bold red]Error:[/bold red] {e}")
+        console.print(f"[bold red]Error:[/bold red] {escape(str(e))}")
         raise typer.Exit(code=1)
 
     if check:
@@ -178,7 +178,7 @@ def update(
     try:
         run_update_installer(info.tag)
     except UpdateError as e:
-        console.print(f"[bold red]Error:[/bold red] {e}")
+        console.print(f"[bold red]Error:[/bold red] {escape(str(e))}")
         raise typer.Exit(code=1)
 
     console.print(f"[bold green]Updated Steerholm to {info.tag}.[/bold green]")
@@ -208,16 +208,16 @@ def add_server(
       holm add server remote-api --url "http://localhost:8000/mcp"
     """
     _handle(config_manager.add_server, name, command=command, url=url, env=_parse_env(env))
-    console.print(f"[bold green]Added server '{name}'.[/bold green]")
+    console.print(f"[bold green]Added server '{escape(name)}'.[/bold green]")
     _notify_daemon_reconcile()
-    console.print(f"Next: let an agent use it with [bold]holm grant <agent> {name}[/bold].")
+    console.print(f"Next: let an agent use it with [bold]holm grant <agent> {escape(name)}[/bold].")
 
 
 @remove_app.command("server")
 def remove_server(name: str):
     """Remove an MCP server."""
     _handle(config_manager.remove_server, name)
-    console.print(f"[bold green]Removed server '{name}'.[/bold green]")
+    console.print(f"[bold green]Removed server '{escape(name)}'.[/bold green]")
     _notify_daemon_reconcile()
 
 
@@ -243,18 +243,18 @@ def _notify_daemon_reconcile() -> None:
         with urllib.request.urlopen(req, timeout=30) as resp:
             result = json.loads(resp.read() or b"{}")
     except Exception as e:
-        console.print(f"[yellow]Could not reach the daemon to apply the change: {e}[/yellow]")
+        console.print(f"[yellow]Could not reach the daemon to apply the change: {escape(str(e))}[/yellow]")
         return
 
     failed = result.get("failed") or []
     started = result.get("started") or []
     stopped = result.get("stopped") or []
     if failed:
-        console.print(f"[bold red]Daemon could not start:[/bold red] {', '.join(failed)} (check the daemon log)")
+        console.print(f"[bold red]Daemon could not start:[/bold red] {', '.join(escape(s) for s in failed)} (check the daemon log)")
     if started:
-        console.print(f"[green]Daemon started:[/green] {', '.join(started)}")
+        console.print(f"[green]Daemon started:[/green] {', '.join(escape(s) for s in started)}")
     if stopped:
-        console.print(f"[green]Daemon stopped:[/green] {', '.join(stopped)}")
+        console.print(f"[green]Daemon stopped:[/green] {', '.join(escape(s) for s in stopped)}")
 
 
 def _daemon_server_status() -> Optional[dict]:
@@ -325,8 +325,8 @@ def list_servers():
         state = st.get("state", "unknown" if status is None else "stopped")
         n_tools = len(st.get("tools", [])) if st else 0
         table.add_row(
-            server.name,
-            server.command or server.url,
+            escape(server.name),
+            escape(server.command or server.url),
             server.server_type.value,
             _status_markup(state),
             _format_uptime(st.get("uptime_seconds")),
@@ -353,7 +353,7 @@ def _print_server_status(name: str) -> None:
     if st.get("uptime_seconds") is not None:
         console.print(f"[bold]Uptime:[/bold] {_format_uptime(st['uptime_seconds'])}")
     if st.get("error"):
-        console.print(f"[bold red]Error:[/bold red] {st['error']}")
+        console.print(f"[bold red]Error:[/bold red] {escape(str(st['error']))}")
 
     tools = st.get("tools") or []
     if tools:
@@ -362,7 +362,7 @@ def _print_server_status(name: str) -> None:
         tools_table.add_column("Description", style="white")
         for tool in tools:
             desc = (tool.get("description") or "").strip().split("\n")[0]
-            tools_table.add_row(tool["name"], desc)
+            tools_table.add_row(escape(tool["name"]), escape(desc))
         console.print(tools_table)
     elif st["state"] == "running":
         console.print("[dim]This server exposes no tools.[/dim]")
@@ -383,7 +383,7 @@ def _print_server_grantees(name: str) -> None:
     table.add_column("Agent", style="cyan")
     table.add_column("Tools", style="green")
     for agent_name, tools in grantees:
-        table.add_row(agent_name, tools)
+        table.add_row(escape(agent_name), escape(tools))
     console.print(table)
 
 
@@ -392,7 +392,7 @@ def show_server(name: str):
     """Show a server: its config, live status, tools, and which agents can reach it."""
     server = config_manager.get_server(name)
     if not server:
-        console.print(f"[bold red]Error:[/bold red] Server '{name}' not found.")
+        console.print(f"[bold red]Error:[/bold red] Server '{escape(name)}' not found.")
         raise typer.Exit(code=1)
 
     # escape() the user-supplied values so a '[' in a name/command/url/env key
@@ -474,7 +474,7 @@ def start():
             capture_output=True, text=True,
         )
         if result.returncode != 0:
-            console.print(f"[bold red]Error:[/bold red] {result.stderr.strip() or 'Failed to start daemon.'}")
+            console.print(f"[bold red]Error:[/bold red] {escape(result.stderr.strip() or 'Failed to start daemon.')}")
             raise typer.Exit(1)
         # /Run only triggers the task; confirm the daemon actually came up.
         for _ in range(20):
@@ -572,17 +572,17 @@ def status():
 def add_agent(name: str):
     """Add an agent and generate its access key."""
     access_key = _handle(config_manager.add_agent, name)
-    console.print(f"[bold green]Added agent '{name}'.[/bold green]")
+    console.print(f"[bold green]Added agent '{escape(name)}'.[/bold green]")
     console.print(f"[bold]Access key:[/bold] {access_key}")
     console.print("[yellow]Store it now — it is shown only once.[/yellow]")
-    console.print(f"Next: grant it access with [bold]holm grant {name} <server>[/bold].")
+    console.print(f"Next: grant it access with [bold]holm grant {escape(name)} <server>[/bold].")
 
 
 @rotate_app.command("agent")
 def rotate_agent(name: str):
     """Generate a new access key for an agent, keeping its grants."""
     access_key = _handle(config_manager.rotate_agent_key, name)
-    console.print(f"[bold green]Rotated the access key for '{name}'.[/bold green]")
+    console.print(f"[bold green]Rotated the access key for '{escape(name)}'.[/bold green]")
     console.print(f"[bold]New access key:[/bold] {access_key}")
     console.print("[yellow]The previous key no longer works. Update the agent's config.[/yellow]")
 
@@ -599,7 +599,7 @@ def list_agents():
     table.add_column("Name", style="cyan")
     table.add_column("Access key", style="magenta")
     for name, agent in agents.items():
-        table.add_row(name, agent.key_prefix)
+        table.add_row(escape(name), agent.key_prefix)
     console.print(table)
 
 
@@ -607,7 +607,7 @@ def list_agents():
 def remove_agent(name: str):
     """Remove an agent, its access key, and its grants."""
     _handle(config_manager.remove_agent, name)
-    console.print(f"[bold green]Removed agent '{name}'.[/bold green]")
+    console.print(f"[bold green]Removed agent '{escape(name)}'.[/bold green]")
 
 
 @show_app.command("agent")
@@ -615,10 +615,10 @@ def show_agent(name: str):
     """Show an agent: its access-key prefix, its grants, and how to connect."""
     agent = config_manager.get_agent(name)
     if not agent:
-        console.print(f"[bold red]Error:[/bold red] Agent '{name}' not found.")
+        console.print(f"[bold red]Error:[/bold red] Agent '{escape(name)}' not found.")
         raise typer.Exit(code=1)
 
-    console.print(f"[bold]Agent:[/bold] {agent.name}")
+    console.print(f"[bold]Agent:[/bold] {escape(agent.name)}")
     console.print(f"[bold]Access key:[/bold] {agent.key_prefix}")
 
     policy = config_manager.load_policy(name)
@@ -627,7 +627,7 @@ def show_agent(name: str):
     else:
         console.print("[bold]Access:[/bold]")
         for server, tools in policy.permissions.items():
-            console.print(f"  [cyan]{server}[/cyan]")
+            console.print(f"  [cyan]{escape(server)}[/cyan]")
             for tool in tools:
                 pol_str = ""
                 if tool.policies:
@@ -635,7 +635,7 @@ def show_agent(name: str):
                         f"{p.arg_name}={'re:' if p.match_type == 'regex' else ''}{p.pattern}"
                         for p in tool.policies
                     )
-                console.print(f"    - [green]{tool.name}[/green]{pol_str}")
+                console.print(f"    - [green]{escape(tool.name)}[/green]{escape(pol_str)}")
 
     from .config import DEFAULT_HOST, DEFAULT_PORT
     console.print(
@@ -665,13 +665,13 @@ def grant(
       holm grant my-agent db --tool "query" --args "sql=re:^SELECT.*" "db=production"
     """
     if agent not in config_manager.config.agents:
-        console.print(f"[bold red]Error:[/bold red] Agent '{agent}' not found.")
+        console.print(f"[bold red]Error:[/bold red] Agent '{escape(agent)}' not found.")
         raise typer.Exit(code=1)
     if not config_manager.get_server(server) and server != "*":
-        console.print(f"[yellow]Warning: Server '{server}' is not currently added.[/yellow]")
+        console.print(f"[yellow]Warning: Server '{escape(server)}' is not currently added.[/yellow]")
 
     _handle(config_manager.grant_permission, agent, server, tool=tool, arg_policies=args)
-    console.print(f"[bold green]Granted[/bold green] '{agent}' access to '{server}' tool '{tool}'.")
+    console.print(f"[bold green]Granted[/bold green] '{escape(agent)}' access to '{escape(server)}' tool '{escape(tool)}'.")
 
 
 @app.command()
@@ -694,16 +694,16 @@ def revoke(
       holm revoke my-agent filesystem --tool "read_*"
     """
     if agent not in config_manager.config.agents:
-        console.print(f"[bold red]Error:[/bold red] Agent '{agent}' not found.")
+        console.print(f"[bold red]Error:[/bold red] Agent '{escape(agent)}' not found.")
         raise typer.Exit(code=1)
 
     removed = _handle(config_manager.revoke_permission, agent, server, tool=tool)
     what = f"tool '{tool}' on '{server}'" if tool else f"all access to '{server}'"
     if removed:
-        console.print(f"[bold green]Revoked[/bold green] {agent}'s {what}.")
+        console.print(f"[bold green]Revoked[/bold green] {escape(agent)}'s {escape(what)}.")
     else:
         target = f"tool '{tool}' on '{server}'" if tool else f"'{server}'"
-        console.print(f"[yellow]Nothing to revoke: '{agent}' has no grant for {target}.[/yellow]")
+        console.print(f"[yellow]Nothing to revoke: '{escape(agent)}' has no grant for {escape(target)}.[/yellow]")
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -382,6 +382,17 @@ def test_show_agent_with_regex_and_glob(cli):
     assert "re:" in result.output  # regex prefix rendered
 
 
+def test_show_agent_arg_pattern_with_brackets_shown_literally(cli):
+    # A regex arg policy like ^[a-z]+ contains '[...]'; without escaping Rich
+    # consumes it as a (dropped) markup tag and renders "sql=re:^+". Common input.
+    cli.add_agent("agent")
+    cli.add_server("db", command="echo")
+    cli.grant_permission("agent", "db", tool="query", arg_policies=["sql=re:^[a-z]+"])
+    result = runner.invoke(app, ["show", "agent", "agent"])
+    assert result.exit_code == 0
+    assert "^[a-z]+" in result.output      # pattern shown intact, not mangled
+
+
 # ─── list servers / show server ─────────────────────────────────────
 
 
@@ -395,6 +406,34 @@ def test_list_servers_daemon_down(cli):
     result = runner.invoke(app, ["list", "servers"])
     assert "fs" in result.output
     assert "status unavailable" in result.output
+
+
+def test_list_servers_command_with_brackets_shown_literally(cli):
+    # The command cell renders as Rich markup; a '[' must show literally, not be
+    # parsed as a (dropped) markup tag.
+    cli.add_server("db", command="serve [core]")
+    result = runner.invoke(app, ["list", "servers"])
+    assert result.exit_code == 0
+    assert "[core]" in result.output
+
+
+def test_show_server_not_found_bracket_name_does_not_crash(cli):
+    # The not-found error interpolates the name from argv; a malformed tag like
+    # "[/]" must not abort the command with a Rich markup error.
+    result = runner.invoke(app, ["show", "server", "[/]"])
+    assert result.exit_code == 1          # not found -> clean exit, not a crash
+    assert "not found" in result.output   # message printed (a crash would skip it)
+
+
+def test_show_server_grantee_tool_pattern_brackets_shown_literally(cli):
+    # The grantees table shows granted tool patterns; a glob class like [abc] must
+    # render literally rather than be consumed as (dropped) Rich markup.
+    cli.add_agent("agent")
+    cli.add_server("db", command="echo")
+    cli.grant_permission("agent", "db", tool="log_[abc]")
+    result = runner.invoke(app, ["show", "server", "db"])
+    assert result.exit_code == 0
+    assert "log_[abc]" in result.output
 
 
 def test_list_servers_daemon_up_running(cli, monkeypatch):
