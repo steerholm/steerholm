@@ -3,6 +3,7 @@ import asyncio
 from pathlib import Path
 from typing import List, Optional
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 from . import __version__
 from .config import ConfigManager
@@ -115,12 +116,21 @@ def _handle(fn, *args, **kwargs):
 
 
 def _parse_env(pairs: Optional[List[str]]) -> dict:
-    """Parse repeated 'KEY=VALUE' options into a dict; values may contain '='."""
+    """Parse repeated 'KEY=VALUE' options into a dict; values may contain '='.
+
+    Keys are trimmed of surrounding whitespace (a whitespace-padded name is an
+    invalid env var the child would silently drop). A repeated key is rejected
+    rather than silently overwriting an earlier value.
+    """
     result: dict = {}
     for item in pairs or []:
         key, sep, value = item.partition("=")
+        key = key.strip()
         if not sep or not key:
             console.print(f"[bold red]Error:[/bold red] --env expects KEY=VALUE, got {item!r}")
+            raise typer.Exit(code=1)
+        if key in result:
+            console.print(f"[bold red]Error:[/bold red] --env got {key!r} more than once")
             raise typer.Exit(code=1)
         result[key] = value
     return result
@@ -385,14 +395,17 @@ def show_server(name: str):
         console.print(f"[bold red]Error:[/bold red] Server '{name}' not found.")
         raise typer.Exit(code=1)
 
-    console.print(f"[bold]Name:[/bold] {server.name}")
+    # escape() the user-supplied values so a '[' in a name/command/url/env key
+    # isn't parsed as Rich markup (which would misrender or raise and abort).
+    console.print(f"[bold]Name:[/bold] {escape(server.name)}")
     if server.command:
-        console.print(f"[bold]Command:[/bold] {server.command}")
+        console.print(f"[bold]Command:[/bold] {escape(server.command)}")
     if server.url:
-        console.print(f"[bold]URL:[/bold] {server.url}")
+        console.print(f"[bold]URL:[/bold] {escape(server.url)}")
     if server.env:
         # Show which env vars are set, but mask values so secrets don't leak.
-        console.print(f"[bold]Env:[/bold] {', '.join(f'{k}=***' for k in server.env)}")
+        keys = ", ".join(f"{escape(k)}=***" for k in server.env)
+        console.print(f"[bold]Env:[/bold] {keys}")
     console.print(f"[bold]Type:[/bold] {server.server_type.value}")
 
     _print_server_grantees(name)

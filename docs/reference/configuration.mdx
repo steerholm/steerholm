@@ -80,8 +80,14 @@ per-user `AppData` already provides this isolation via ACLs.
 
 <Note>
   Set `env` from the CLI: `holm add server <name> --command "..." --env KEY=VALUE`
-  (repeatable). It's stored here in `config.json`; `holm show server` masks the
+  (repeatable). It's stored here in `config.json`, and `holm show server` masks the
   values so secrets don't print back.
+
+  **Variable names** must be letters, digits, `_`, `-`, or `.`, and can't start
+  with a digit — the same rule Kubernetes and Docker use, so a config stays
+  portable across Linux, macOS, and Windows. Values are unrestricted (they may
+  contain `=`, spaces, or anything else); only the name is validated, and repeating
+  a name is an error.
 </Note>
 
 ### Agent fields

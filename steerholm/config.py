@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import json
 import logging
@@ -62,6 +63,32 @@ def _restrict(path, mode: int) -> None:
         os.chmod(path, mode)
     except OSError:
         pass
+
+
+# Env var name rule shared by Kubernetes and Docker's build/Compose layer:
+# letters, digits, '_', '-', '.', not starting with a digit. Every name it
+# accepts is valid on every OS we support, so a config stays portable.
+_ENV_KEY_RE = re.compile(r"[-._a-zA-Z][-._a-zA-Z0-9]*")
+
+
+def validate_env_key(key: str) -> None:
+    """Reject env var names that aren't portable across platforms.
+
+    Uses the same rule as Kubernetes and Docker's build/Compose layer — a name is
+    letters, digits, '_', '-', or '.', and must not start with a digit — so every
+    accepted name is valid on every supported OS. It rejects platform-specific
+    oddities (spaces, parentheses, '+', '#', ...) that one OS might tolerate but
+    that break portability and shell/tooling use. Since the daemon already inherits
+    its full environment, '--env' only declares app config and secrets, which use
+    conventional names, so this costs nothing in practice.
+    """
+    if not key:
+        raise ValueError("Environment variable name cannot be empty.")
+    if not _ENV_KEY_RE.fullmatch(key):
+        raise ValueError(
+            f"Invalid environment variable name {key!r}: names must consist of "
+            "letters, digits, '_', '-', or '.', and must not start with a digit."
+        )
 
 
 class ConfigManager:
@@ -130,6 +157,8 @@ class ConfigManager:
                 "Environment variables apply to stdio servers (--command), "
                 "not remote (--url) servers."
             )
+        for key in (env or {}):
+            validate_env_key(key)
 
         if command:
             server = Server(name=name, command=command, env=env or {},

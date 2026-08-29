@@ -162,6 +162,92 @@ def test_show_server_masks_env_values(cli):
     assert "***" in result.output
 
 
+def test_add_server_env_value_with_equals(cli, monkeypatch):
+    # The '=' in the value must survive — parsing splits on the FIRST '=' only.
+    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
+    dsn = "postgresql://u:p@h/db?sslmode=require&opt=1"
+    result = runner.invoke(app, ["add", "server", "db", "--command", "uvx x", "--env", f"DSN={dsn}"])
+    assert result.exit_code == 0
+    assert cli.get_server("db").env == {"DSN": dsn}
+
+
+def test_add_server_env_empty_value_ok(cli, monkeypatch):
+    # 'KEY=' is a deliberate set-to-empty, not a format error.
+    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
+    result = runner.invoke(app, ["add", "server", "db", "--command", "uvx x", "--env", "FLAG="])
+    assert result.exit_code == 0
+    assert cli.get_server("db").env == {"FLAG": ""}
+
+
+def test_add_server_env_empty_key_errors(cli):
+    result = runner.invoke(app, ["add", "server", "db", "--command", "uvx x", "--env", "=value"])
+    assert result.exit_code == 1
+    assert "KEY=VALUE" in result.output
+
+
+def test_add_server_env_duplicate_key_errors(cli):
+    result = runner.invoke(app, [
+        "add", "server", "db", "--command", "uvx x", "--env", "K=1", "--env", "K=2",
+    ])
+    assert result.exit_code == 1
+    assert "more than once" in result.output
+
+
+def test_add_server_env_key_whitespace_trimmed(cli, monkeypatch):
+    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
+    result = runner.invoke(app, ["add", "server", "db", "--command", "uvx x", "--env", "  K  =v"])
+    assert result.exit_code == 0
+    assert cli.get_server("db").env == {"K": "v"}
+
+
+def test_add_server_env_rejected_with_url_via_cli(cli):
+    result = runner.invoke(app, ["add", "server", "bad", "--url", "http://x", "--env", "K=v"])
+    assert result.exit_code == 1
+    assert "stdio" in result.output
+
+
+def test_show_server_command_shown_literally_not_as_markup(cli):
+    # Without escaping, Rich consumes "[core]" as a (dropped) markup tag and would
+    # display just "serve"; the command must render literally. (Env keys can't hold
+    # brackets after validation, so the unvalidated command is the realistic surface.)
+    cli.add_server("db", command="serve [core]")
+    result = runner.invoke(app, ["show", "server", "db"])
+    assert result.exit_code == 0
+    assert "serve [core]" in result.output           # shown intact, not mangled
+
+
+def test_show_server_survives_malformed_markup_in_command(cli):
+    # A malformed tag like "[/]" in a stored value raises MarkupError and would
+    # abort `show server` if printed unescaped.
+    cli.add_server("db", command="uvx [/]")
+    result = runner.invoke(app, ["show", "server", "db"])
+    assert result.exit_code == 0
+    assert "uvx [/]" in result.output
+
+
+def test_add_server_env_key_portable_name_allowed(cli, monkeypatch):
+    # A portable name with '.' and '-' (valid under the K8s rule) goes through.
+    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
+    result = runner.invoke(app, [
+        "add", "server", "db", "--command", "uvx x", "--env", "my.env-name=1",
+    ])
+    assert result.exit_code == 0
+    assert cli.get_server("db").env == {"my.env-name": "1"}
+
+
+def test_add_server_env_key_internal_space_errors(cli):
+    result = runner.invoke(app, ["add", "server", "db", "--command", "uvx x", "--env", "FOO BAR=v"])
+    assert result.exit_code == 1
+    assert "Invalid environment variable name" in result.output
+
+
+def test_add_server_env_key_leading_digit_errors(cli):
+    # Notable K8s-rule consequence users may hit: a name can't start with a digit.
+    result = runner.invoke(app, ["add", "server", "db", "--command", "uvx x", "--env", "2FA=x"])
+    assert result.exit_code == 1
+    assert "digit" in result.output
+
+
 def test_remove_server(cli, monkeypatch):
     cli.add_server("fs", command="echo")
     monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())

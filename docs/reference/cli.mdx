@@ -46,6 +46,12 @@ holm add server remote-api --url "http://localhost:8000/mcp"
 | `--url` | One of | URL of a streamable HTTP server |
 | `--env` | No | `KEY=VALUE` environment variable for a stdio server (repeatable) |
 
+<Note>
+  `--env` names must be letters, digits, `_`, `-`, or `.` and can't start with a
+  digit (the Kubernetes/Docker rule, for cross-platform portability); a repeated
+  name is an error. Values may contain anything, including `=`.
+</Note>
+
 ### holm remove server
 
 Remove a server from Steerholm.

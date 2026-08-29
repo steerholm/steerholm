@@ -42,6 +42,53 @@ class TestConfigManagerServers:
         with pytest.raises(ValueError, match="stdio"):
             config_manager.add_server("bad", url="http://x", env={"K": "v"})
 
+    def test_add_server_env_key_allows_portable_names(self, config_manager):
+        # The Kubernetes / Docker-build rule: letters, digits, '_', '-', '.', not
+        # starting with a digit. Every one of these is valid on every OS and must
+        # be accepted (guards against regressing into a too-strict POSIX rule).
+        env = {
+            "DATABASE_URI": "x",
+            "FOO-BAR": "1",
+            "my.env.name": "2",
+            "lower_case": "3",
+            "MixedCase1": "4",
+            "_INTERNAL": "5",
+        }
+        config_manager.add_server("db", command="uvx x", env=env)
+        assert config_manager.get_server("db").env == env
+
+    def test_add_server_env_key_rejects_leading_digit(self, config_manager):
+        with pytest.raises(ValueError, match="digit"):
+            config_manager.add_server("db", command="uvx x", env={"2FA_TOKEN": "v"})
+
+    def test_add_server_env_key_rejects_parentheses(self, config_manager):
+        # A Windows-only name (parentheses) is rejected for portability, even
+        # though the Win32 API would accept it — it's inherited, never declared.
+        with pytest.raises(ValueError, match="Invalid environment variable name"):
+            config_manager.add_server("db", command="uvx x", env={"ProgramFiles(x86)": "v"})
+
+    def test_add_server_env_key_rejects_internal_whitespace(self, config_manager):
+        with pytest.raises(ValueError, match="Invalid environment variable name"):
+            config_manager.add_server("db", command="uvx x", env={"FOO BAR": "v"})
+
+    def test_add_server_env_key_rejects_leading_whitespace(self, config_manager):
+        # The model layer rejects a padded key (rather than silently trimming) —
+        # only the CLI convenience-trims before it reaches here.
+        with pytest.raises(ValueError, match="Invalid environment variable name"):
+            config_manager.add_server("db", command="uvx x", env={" K ": "v"})
+
+    def test_add_server_env_key_rejects_control_char(self, config_manager):
+        with pytest.raises(ValueError, match="Invalid environment variable name"):
+            config_manager.add_server("db", command="uvx x", env={"A\x01B": "v"})
+
+    def test_add_server_env_key_rejects_equals(self, config_manager):
+        with pytest.raises(ValueError, match="Invalid environment variable name"):
+            config_manager.add_server("db", command="uvx x", env={"A=B": "v"})
+
+    def test_add_server_env_key_rejects_empty(self, config_manager):
+        with pytest.raises(ValueError, match="empty"):
+            config_manager.add_server("db", command="uvx x", env={"": "v"})
+
     @pytest.mark.skipif(os.name == "nt", reason="POSIX modes; Windows isolates AppData via ACLs")
     def test_config_and_policy_files_are_owner_only(self, config_manager):
         import steerholm.config as c
