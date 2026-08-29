@@ -8,12 +8,13 @@ The release workflow publishes the section for the tagged version as its GitHub
 release notes, so update the entry for the version you're about to tag **before**
 tagging it. At tag time, rename `[Unreleased]` to the version and date.
 
-## [Unreleased]
+## [0.1.1] - 2026-08-29
 
 ### Added
 
 - `--env KEY=VALUE` on `holm add server` — pass environment variables (config or
   secrets like a database connection string) to a stdio server. Repeatable;
+  variable names are validated (the portable Kubernetes/Docker rule) and
   `holm show server` masks the values.
 
 ### Fixed
@@ -28,6 +29,9 @@ tagging it. At tag time, rename `[Unreleased]` to the version and date.
   blocked by the previous instance's `TIME_WAIT` sockets ("port already in use").
 - A server that never completes its MCP handshake no longer hangs startup
   (120s connect timeout), and shutdown stops servers concurrently.
+- `list` and `show` output now displays names, commands, and argument patterns
+  literally instead of mangling or crashing when they contain `[` — for example a
+  regex policy like `sql=re:^[a-z]+` in `holm show agent`.
 
 ### Security
 
