@@ -35,6 +35,7 @@ from mcp.server.lowlevel.server import request_ctx
 from mcp.shared.context import RequestContext
 from mcp.types import Tool, ListToolsResult, CallToolResult, TextContent, ListToolsRequest, CallToolRequest, CallToolRequestParams
 
+from steerholm.events import EventLog
 from steerholm.gateway import SteerholmGateway
 from steerholm.models import Server
 from steerholm.process_manager import SteerholmDaemon, ServerProcess
@@ -202,6 +203,7 @@ def make_gateway(config_manager) -> SteerholmGateway:
     gateway.config_manager = config_manager
     gateway.daemon = SteerholmDaemon()
     gateway.session_server = MCPServer("steerholm")
+    gateway.event_log = EventLog()
     gateway._auth_cache = OrderedDict()
     gateway._auth_cache_max = 4096
     gateway._reconcile_lock = asyncio.Lock()

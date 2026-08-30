@@ -25,12 +25,25 @@ from starlette.routing import Route
 
 from . import __version__
 from .config import ConfigManager, get_or_create_control_token
-from .errors import authorization_denied, server_unavailable
+from .errors import AUTHORIZATION_DENIED_CODE, authorization_denied, server_unavailable
+from .events import DecisionEvent, EventLog, now_iso, summarize_args
 from .models import AgentPolicy
 from .permissions import PermissionEngine
 from .process_manager import SteerholmDaemon
 
 logger = logging.getLogger("steerholm")
+
+
+def _reason_from_exc(exc: Exception) -> str:
+    """Pull a human-readable reason out of an McpError (or any exception)."""
+    err = getattr(exc, "error", None)
+    return getattr(err, "message", None) or str(exc)
+
+
+def _is_authorization_denied(exc: Exception) -> bool:
+    """True if the exception is a policy denial (vs a server-down/unexpected error)."""
+    err = getattr(exc, "error", None)
+    return getattr(err, "code", None) == AUTHORIZATION_DENIED_CODE
 
 
 class SteerholmAuthenticatedStreamableHTTPApp:
@@ -98,6 +111,8 @@ class SteerholmGateway:
         self.config_manager = ConfigManager()
         self.daemon = SteerholmDaemon()
         self.session_server = Server("steerholm")
+        # Audit stream: every tool call the gateway evaluates records a decision.
+        self.event_log = EventLog()
         # token sha256 -> (agent, stored key hash). Lets repeat requests skip the
         # per-request O(agents) bcrypt; invalidated when the stored hash changes.
         self._auth_cache: "OrderedDict[str, tuple[str, str]]" = OrderedDict()
@@ -224,28 +239,70 @@ class SteerholmGateway:
     async def _call_tool_for_agent(
         self, agent_name: str, name: str, arguments: dict
     ) -> types.CallToolResult:
-        policy = self._load_agent_policy(agent_name)
-        engine = PermissionEngine(policy)
-        server_name = await self._resolve_tool_server(agent_name, name)
-
-        if not server_name:
-            raise authorization_denied(f"Tool '{name}' not found on any docked server.")
-
-        process = self.daemon.get_shared_process(server_name)
-        if not process or not process.session:
-            raise server_unavailable(server_name)
-
-        engine.check_permission(server_name, name, arguments)
-
-        logger.info(f"Routing tool '{name}' to server '{server_name}'")
+        started = time.monotonic()
+        server_name: Optional[str] = None
+        decision = "error"  # until adjudicated: a server-down / unexpected failure
+        result_status = "error"
+        reason: Optional[str] = None
+        cancelled = False
         try:
-            result = await process.call_tool(name, arguments)
-            return result
+            policy = self._load_agent_policy(agent_name)
+            engine = PermissionEngine(policy)
+            server_name = await self._resolve_tool_server(agent_name, name)
+
+            if not server_name:
+                reason = f"Tool '{name}' not found on any docked server."
+                raise authorization_denied(reason)
+
+            process = self.daemon.get_shared_process(server_name)
+            if not process or not process.session:
+                reason = f"Server '{server_name}' is not running."
+                raise server_unavailable(server_name)
+
+            engine.check_permission(server_name, name, arguments)
+            decision = "allowed"
+
+            logger.info(f"Routing tool '{name}' to server '{server_name}'")
+            try:
+                result = await process.call_tool(name, arguments)
+                result_status = "ok"
+                return result
+            except Exception as e:
+                if hasattr(e, "error"):
+                    raise
+                logger.error(f"Error calling tool '{name}' on '{server_name}': {e}")
+                raise server_unavailable(server_name)
+        except asyncio.CancelledError:
+            # A disconnected / timed-out call was never adjudicated — don't record
+            # a phantom decision for it.
+            cancelled = True
+            raise
         except Exception as e:
-            if hasattr(e, "error"):
-                raise
-            logger.error(f"Error calling tool '{name}' on '{server_name}': {e}")
-            raise server_unavailable(server_name)
+            if reason is None:
+                reason = _reason_from_exc(e)
+            # An authorization failure is a policy "denied"; anything else that
+            # wasn't already allowed stays "error" (server down / unexpected).
+            if decision != "allowed" and _is_authorization_denied(e):
+                decision = "denied"
+            raise
+        finally:
+            # Guard (not `return`) so we never swallow the in-flight exception —
+            # a `return` in a finally suppresses a propagating raise, including the
+            # CancelledError re-raised above.
+            if not cancelled:
+                agent = self.config_manager.get_agent(agent_name)
+                self.event_log.record(DecisionEvent(
+                    ts=now_iso(),
+                    agent=agent_name,
+                    agent_id=agent.id if agent else None,
+                    tool=name,
+                    server=server_name,
+                    decision=decision,
+                    reason=reason,
+                    result=result_status,
+                    latency_ms=int((time.monotonic() - started) * 1000),
+                    args_summary=summarize_args(arguments),
+                ))
 
     async def reconcile_servers(self) -> dict:
         """The daemon's single lifecycle primitive: make the running shared servers
