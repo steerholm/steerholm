@@ -619,6 +619,8 @@ def show_agent(name: str):
         raise typer.Exit(code=1)
 
     console.print(f"[bold]Agent:[/bold] {escape(agent.name)}")
+    if agent.id:
+        console.print(f"[bold]ID:[/bold] {agent.id}")
     console.print(f"[bold]Access key:[/bold] {agent.key_prefix}")
 
     policy = config_manager.load_policy(name)

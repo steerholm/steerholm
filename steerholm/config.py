@@ -71,6 +71,13 @@ def _restrict(path, mode: int) -> None:
 _ENV_KEY_RE = re.compile(r"[-._a-zA-Z][-._a-zA-Z0-9]*")
 
 
+def _new_agent_id() -> str:
+    """Mint an immutable agent id, set once at creation and kept across key
+    rotation, so the audit log can tell a deleted-then-recreated name apart from
+    the original (same name, different principal)."""
+    return "agt_" + secrets.token_hex(8)
+
+
 def validate_env_key(key: str) -> None:
     """Reject env var names that aren't portable across platforms.
 
@@ -199,7 +206,9 @@ class ConfigManager:
         if name in self.config.agents:
             raise ValueError(f"Agent '{name}' already exists.")
         access_key = self._generate_access_key(name)
-        self.config.agents[name] = Agent(name=name, key_prefix=access_key[:15] + "...")
+        self.config.agents[name] = Agent(
+            name=name, id=_new_agent_id(), key_prefix=access_key[:15] + "..."
+        )
         self.save_config()
         return access_key
 
@@ -209,7 +218,11 @@ class ConfigManager:
         if name not in self.config.agents:
             raise ValueError(f"Agent '{name}' not found.")
         access_key = self._generate_access_key(name)
-        self.config.agents[name] = Agent(name=name, key_prefix=access_key[:15] + "...")
+        # Rotation is a new credential for the same principal — keep the id (and a
+        # legacy agent's absent id stays absent; it's minted only at creation).
+        self.config.agents[name] = Agent(
+            name=name, id=self.config.agents[name].id, key_prefix=access_key[:15] + "..."
+        )
         self.save_config()
         return access_key
 

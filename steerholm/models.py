@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Dict
+from typing import List, Dict, Optional
 from pydantic import BaseModel, Field
 
 
@@ -47,6 +47,10 @@ class AgentPolicy(BaseModel):
 
 class Agent(BaseModel):
     name: str = Field(..., description="Name of the agent")
+    # Immutable id, minted once at creation and kept across key rotation. Lets the
+    # audit log distinguish a deleted-then-recreated name (same name, new principal).
+    # Optional: agents created before this field exist load as None (forward-only).
+    id: Optional[str] = Field(default=None, description="Immutable agent id (minted at creation)")
     key_prefix: str = Field(..., description="First 15 chars of the access key for display")
 
 

@@ -202,6 +202,49 @@ class TestConfigManagerAgents:
         with pytest.raises(ValueError, match="not found"):
             config_manager.rotate_agent_key("ghost")
 
+    def test_add_agent_mints_immutable_id(self, config_manager):
+        config_manager.add_agent("a")
+        assert config_manager.get_agent("a").id.startswith("agt_")
+
+    def test_agent_id_persists_across_reload(self, config_manager):
+        config_manager.add_agent("a")
+        agent_id = config_manager.get_agent("a").id
+        config_manager.reload()
+        assert config_manager.get_agent("a").id == agent_id
+
+    def test_rotate_preserves_agent_id(self, config_manager):
+        # A new key for the same principal must NOT change its id.
+        config_manager.add_agent("a")
+        original = config_manager.get_agent("a").id
+        config_manager.rotate_agent_key("a")
+        assert config_manager.get_agent("a").id == original
+
+    def test_recreate_same_name_gets_a_new_id(self, config_manager):
+        # The audit-integrity case: delete + re-add the same name is a NEW principal.
+        config_manager.add_agent("cursor")
+        first = config_manager.get_agent("cursor").id
+        config_manager.remove_agent("cursor")
+        config_manager.add_agent("cursor")
+        assert config_manager.get_agent("cursor").id != first
+
+    def test_legacy_agent_without_id_loads_as_none(self, config_manager):
+        _cfg.CONFIG_FILE.write_text(
+            '{"servers": {}, "agents": '
+            '{"old": {"name": "old", "key_prefix": "steer_sk_x..."}}}'
+        )
+        config_manager.reload()
+        assert config_manager.get_agent("old").id is None
+
+    def test_legacy_agent_id_stays_none_across_rotation(self, config_manager):
+        # Forward-only: rotation must not mint an id for a legacy agent.
+        _cfg.CONFIG_FILE.write_text(
+            '{"servers": {}, "agents": '
+            '{"old": {"name": "old", "key_prefix": "steer_sk_x..."}}}'
+        )
+        config_manager.reload()
+        config_manager.rotate_agent_key("old")
+        assert config_manager.get_agent("old").id is None
+
 
 class TestConfigManagerPolicies:
     def test_grant_permission_creates_policy(self, config_manager):
