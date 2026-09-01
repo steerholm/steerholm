@@ -697,3 +697,142 @@ def test_show_server_failed_shows_error(cli, monkeypatch):
                                         "error": "connection refused", "tools": []}})
     result = runner.invoke(app, ["show", "server", "fs"])
     assert "connection refused" in result.output
+
+
+# ─── audit log (holm log) ───────────────────────────────────────────
+
+_TS = "2026-08-31T12:04:35.000+00:00"
+
+
+def _write_events(config_dir, events):
+    (config_dir / "events.jsonl").write_text(
+        "\n".join(json.dumps(e) for e in events) + "\n"
+    )
+
+
+def test_log_shows_events_from_the_file(cli, tmp_config_dir):
+    # Works with the daemon down (cli fixture reports it down) — reads the file.
+    _write_events(tmp_config_dir, [
+        {"ts": _TS, "agent": "cursor", "server": "git", "tool": "git_log",
+         "decision": "allowed", "reason": None},
+        {"ts": _TS, "agent": "cursor", "server": "fs", "tool": "write_file",
+         "decision": "denied", "reason": "not allowed"},
+    ])
+    result = runner.invoke(app, ["log"])
+    assert result.exit_code == 0
+    for needle in ("cursor", "git_log", "write_file", "allowed", "denied", "12:04:35"):
+        assert needle in result.output
+
+
+def test_log_no_file_reports_empty(cli):
+    result = runner.invoke(app, ["log"])
+    assert result.exit_code == 0
+    assert "No matching activity" in result.output
+
+
+def test_log_filters_by_agent(cli, tmp_config_dir):
+    _write_events(tmp_config_dir, [
+        {"ts": _TS, "agent": "a", "tool": "t_a", "decision": "allowed", "server": "s"},
+        {"ts": _TS, "agent": "b", "tool": "t_b", "decision": "allowed", "server": "s"},
+    ])
+    result = runner.invoke(app, ["log", "--agent", "a"])
+    assert "t_a" in result.output
+    assert "t_b" not in result.output
+
+
+def test_log_filters_by_decision(cli, tmp_config_dir):
+    _write_events(tmp_config_dir, [
+        {"ts": _TS, "agent": "a", "tool": "t_ok", "decision": "allowed", "server": "s"},
+        {"ts": _TS, "agent": "a", "tool": "t_no", "decision": "denied", "server": "s"},
+    ])
+    result = runner.invoke(app, ["log", "--decision", "denied"])
+    assert "t_no" in result.output
+    assert "t_ok" not in result.output
+
+
+def test_log_limit_shows_most_recent(cli, tmp_config_dir):
+    _write_events(tmp_config_dir, [
+        {"ts": _TS, "agent": "a", "tool": f"t{i}", "decision": "allowed", "server": "s"}
+        for i in range(5)
+    ])
+    result = runner.invoke(app, ["log", "-n", "2"])
+    assert "t3" in result.output and "t4" in result.output
+    assert "t0" not in result.output
+
+
+def test_log_bracketed_reason_not_markup(cli, tmp_config_dir):
+    # A regex reason like ^[a-z]+ must render literally, not mangle as Rich markup.
+    _write_events(tmp_config_dir, [
+        {"ts": _TS, "agent": "a", "server": "db", "tool": "query",
+         "decision": "denied", "reason": "sql=re:^[a-z]+"},
+    ])
+    result = runner.invoke(app, ["log"])
+    assert result.exit_code == 0
+    assert "^[a-z]+" in result.output
+
+
+def test_log_skips_blank_and_torn_lines(cli, tmp_config_dir):
+    # A blank line and a torn final line (crash mid-write) are skipped, not fatal.
+    (tmp_config_dir / "events.jsonl").write_text(
+        json.dumps({"ts": _TS, "agent": "a", "tool": "good",
+                    "decision": "allowed", "server": "s"}) + "\n"
+        "\n"                        # blank line
+        '{"ts": "2026-08-31T12:0'   # torn JSON, no newline/close
+    )
+    result = runner.invoke(app, ["log"])
+    assert result.exit_code == 0
+    assert "good" in result.output
+
+
+def test_log_skips_non_dict_lines(cli, tmp_config_dir):
+    # A valid-JSON non-object line (tamper/corruption) is skipped, not fatal.
+    (tmp_config_dir / "events.jsonl").write_text(
+        "null\n42\n[1,2]\n"
+        + json.dumps({"ts": _TS, "agent": "a", "tool": "good",
+                      "decision": "allowed", "server": "s"}) + "\n"
+    )
+    result = runner.invoke(app, ["log"])
+    assert result.exit_code == 0
+    assert "good" in result.output
+
+
+def test_log_tolerates_invalid_utf8(cli, tmp_config_dir):
+    # A torn multibyte char (crash mid-write) must not abort the whole read.
+    path = tmp_config_dir / "events.jsonl"
+    good = json.dumps({"ts": _TS, "agent": "a", "tool": "good",
+                       "decision": "allowed", "server": "s"})
+    path.write_bytes(good.encode() + b"\n" + b"\xff\xfe not utf-8\n")
+    result = runner.invoke(app, ["log"])
+    assert result.exit_code == 0
+    assert "good" in result.output
+
+
+def test_log_tolerates_non_string_fields(cli, tmp_config_dir):
+    # A corrupted dict with numeric ts/decision must render without crashing.
+    (tmp_config_dir / "events.jsonl").write_text(
+        json.dumps({"ts": 123, "agent": "a", "tool": "t", "decision": 7, "server": "s"}) + "\n"
+    )
+    result = runner.invoke(app, ["log"])
+    assert result.exit_code == 0
+
+
+def test_log_negative_limit_rejected(cli):
+    result = runner.invoke(app, ["log", "-n", "-5"])
+    assert result.exit_code != 0          # typer min=0 rejects it
+
+
+def test_log_zero_limit_shows_all(cli, tmp_config_dir):
+    _write_events(tmp_config_dir, [
+        {"ts": _TS, "agent": "a", "tool": f"t{i}", "decision": "allowed", "server": "s"}
+        for i in range(3)
+    ])
+    result = runner.invoke(app, ["log", "-n", "0"])
+    assert result.exit_code == 0
+    for i in range(3):
+        assert f"t{i}" in result.output
+
+
+def test_log_invalid_decision_rejected(cli):
+    result = runner.invoke(app, ["log", "--decision", "denyed"])
+    assert result.exit_code == 1
+    assert "must be one of" in result.output

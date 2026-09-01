@@ -708,5 +708,99 @@ def revoke(
         console.print(f"[yellow]Nothing to revoke: '{escape(agent)}' has no grant for {escape(target)}.[/yellow]")
 
 
+# ─── Audit log ───────────────────────────────────────────────────────
+
+
+def _iter_event_log():
+    """Yield each decision event (a dict) from the durable JSONL audit log, oldest
+    first. Streams the file line by line and skips blank / torn / non-object lines,
+    so it tolerates a corrupted log and works with the daemon stopped."""
+    import json
+    from . import config
+    path = config.CONFIG_DIR / "events.jsonl"
+    if not path.exists():
+        return
+    # errors="replace" so a torn multibyte char (crash mid-write) can't abort the
+    # whole read; that line then fails JSON parsing and is skipped below.
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue  # torn line from a crash mid-write
+            if isinstance(obj, dict):
+                yield obj  # ignore any valid-JSON non-object line
+
+
+def _event_time(ts: str) -> str:
+    """ISO '2026-08-31T12:04:35.221+00:00' -> '12:04:35'."""
+    return ts[11:19] if len(ts) >= 19 else ts
+
+
+def _decision_markup(decision: str) -> str:
+    return {
+        "allowed": "[green]allowed[/green]",
+        "denied": "[red]denied[/red]",
+        "error": "[yellow]error[/yellow]",
+    }.get(decision, f"[dim]{escape(decision)}[/dim]")
+
+
+def _render_event_table(events: list, title: str = "Audit log") -> None:
+    table = Table(title=title)
+    table.add_column("Time", style="dim")
+    table.add_column("Agent", style="cyan")
+    table.add_column("Server", style="magenta")
+    table.add_column("Tool")
+    table.add_column("Decision")
+    table.add_column("Reason", style="dim")
+    for e in events:
+        table.add_row(
+            escape(_event_time(str(e.get("ts", "")))),
+            escape(str(e.get("agent", ""))),
+            escape(str(e.get("server") or "-")),
+            escape(str(e.get("tool", ""))),
+            _decision_markup(str(e.get("decision", ""))),
+            escape(str(e.get("reason") or "")),
+        )
+    console.print(table)
+
+
+_DECISIONS = ("allowed", "denied", "error")
+
+
+@app.command("log")
+def audit_log(
+    limit: int = typer.Option(50, "--limit", "-n", min=0, help="Show the most recent N events (0 for all)"),
+    agent: Optional[str] = typer.Option(None, "--agent", help="Only events for this agent name"),
+    decision: Optional[str] = typer.Option(None, "--decision", help="Only 'allowed', 'denied', or 'error'"),
+):
+    """Show recorded agent tool-call decisions from the durable audit log.
+
+    Reads the on-disk log directly, so it works with the daemon stopped.
+    """
+    if decision is not None and decision not in _DECISIONS:
+        console.print(f"[bold red]Error:[/bold red] --decision must be one of {', '.join(_DECISIONS)}.")
+        raise typer.Exit(code=1)
+
+    from collections import deque
+    # Keep only the last `limit` matching events (deque bounds memory, so a huge
+    # unrotated log isn't fully loaded); limit 0 -> unbounded (show all).
+    matching = deque(maxlen=limit or None)
+    for e in _iter_event_log():
+        if agent is not None and e.get("agent") != agent:
+            continue
+        if decision is not None and e.get("decision") != decision:
+            continue
+        matching.append(e)
+
+    if not matching:
+        console.print("[dim]No matching activity in the audit log.[/dim]")
+        return
+    _render_event_table(list(matching))
+
+
 if __name__ == "__main__":  # pragma: no cover
     app()
