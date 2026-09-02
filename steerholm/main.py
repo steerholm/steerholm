@@ -711,28 +711,137 @@ def revoke(
 # ─── Audit log ───────────────────────────────────────────────────────
 
 
+def _event_log_path():
+    from . import config
+    return config.CONFIG_DIR / "events.jsonl"
+
+
+def _parse_event_line(line: str):
+    """Parse one JSONL line into an event dict, or None if it is blank, torn
+    (crash mid-write), or valid JSON that isn't an object."""
+    import json
+    line = line.strip()
+    if not line:
+        return None
+    try:
+        obj = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
 def _iter_event_log():
     """Yield each decision event (a dict) from the durable JSONL audit log, oldest
     first. Streams the file line by line and skips blank / torn / non-object lines,
     so it tolerates a corrupted log and works with the daemon stopped."""
-    import json
-    from . import config
-    path = config.CONFIG_DIR / "events.jsonl"
+    path = _event_log_path()
     if not path.exists():
         return
     # errors="replace" so a torn multibyte char (crash mid-write) can't abort the
     # whole read; that line then fails JSON parsing and is skipped below.
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         for line in f:
-            line = line.strip()
-            if not line:
+            event = _parse_event_line(line)
+            if event is not None:
+                yield event
+
+
+def _read_event_history(matches, limit):
+    """Return (matching events, byte offset just past the last complete line).
+
+    Taking the history and the resume offset from a single pass is what makes
+    `--follow` exact: the tail starts precisely where the printed history ended,
+    so no event is shown twice and none is missed in between. A trailing partial
+    line (a write in progress) is excluded from the offset so it is read once it
+    is complete.
+    """
+    from collections import deque
+    path = _event_log_path()
+    if not path.exists():
+        return [], 0
+    kept = deque(maxlen=limit)
+    offset = 0
+    # Read bytes, not text: the offset must be an exact byte count, and decoding
+    # with errors="replace" would make it drift (one bad byte -> U+FFFD -> 3 bytes).
+    with open(path, "rb") as f:
+        for raw in f:
+            if not raw.endswith(b"\n"):
+                break  # half-written append; leave it for the tail to pick up
+            offset += len(raw)
+            event = _parse_event_line(raw.decode("utf-8", errors="replace"))
+            if event is not None and matches(event):
+                kept.append(event)
+    return list(kept), offset
+
+
+def _log_was_replaced(handle, path) -> bool:
+    """True if the log was truncated or rotated out from under an open handle.
+
+    A transient stat error is deliberately NOT treated as a replacement: doing so
+    would reopen at offset 0 and replay the whole log as if it were new activity.
+    """
+    import os
+    try:
+        st = path.stat()
+    except FileNotFoundError:
+        return True  # rotated away; reopen once it is recreated
+    except OSError:
+        return False  # momentary EACCES/EBUSY — keep following
+    if st.st_size < handle.tell():
+        return True  # truncated in place
+    try:
+        fst = os.fstat(handle.fileno())
+    except OSError:
+        return False
+    # Rotation by rename leaves a same-or-larger file, which the size check alone
+    # cannot see. Only trust inode identity where the platform reports one
+    # (Windows can report 0, in which case this comparison is skipped).
+    return bool(st.st_ino and fst.st_ino and st.st_ino != fst.st_ino)
+
+
+def _tail_event_log(on_event, offset: int = 0, poll: float = 0.25, stop=None) -> None:
+    """Follow the audit log file from `offset`, calling on_event(dict) per new event.
+
+    Follows the same file `holm log` prints, so there is no second source to drift
+    against. Only complete (newline-terminated) lines are parsed, so a half-written
+    append is never shown; if the log is truncated or rotated, the tail reopens it.
+    """
+    import time
+    path = _event_log_path()
+    handle = None
+    buf = b""
+    try:
+        while stop is None or not stop():
+            if handle is None:
+                try:
+                    # Open directly rather than checking exists() first: the log
+                    # may not exist yet, or may be rotated away between the two.
+                    handle = open(path, "rb")
+                except OSError:
+                    time.sleep(poll)
+                    continue
+                handle.seek(offset)
+            chunk = handle.read()
+            if chunk:
+                # Buffer bytes and decode only whole lines, so a multibyte char
+                # split across two polls is reassembled instead of corrupted.
+                buf += chunk
+                while b"\n" in buf:
+                    raw, _, buf = buf.partition(b"\n")
+                    event = _parse_event_line(raw.decode("utf-8", errors="replace"))
+                    if event is not None:
+                        on_event(event)
+                continue  # keep draining before sleeping again
+            if _log_was_replaced(handle, path):
+                handle.close()
+                handle, buf, offset = None, b"", 0
                 continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue  # torn line from a crash mid-write
-            if isinstance(obj, dict):
-                yield obj  # ignore any valid-JSON non-object line
+            time.sleep(poll)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if handle is not None:
+            handle.close()
 
 
 def _event_time(ts: str) -> str:
@@ -768,6 +877,21 @@ def _render_event_table(events: list, title: str = "Audit log") -> None:
     console.print(table)
 
 
+def _event_line(e: dict) -> str:
+    """One aligned line for a decision event (used by --follow)."""
+    reason = str(e.get("reason") or "")
+    if len(reason) > 60:
+        reason = reason[:60] + "…"
+    return (
+        f"[dim]{escape(_event_time(str(e.get('ts', ''))))}[/dim]  "
+        f"[cyan]{escape(str(e.get('agent', '')))}[/cyan]  "
+        f"[magenta]{escape(str(e.get('server') or '-'))}[/magenta]  "
+        f"{escape(str(e.get('tool', '')))}  "
+        f"{_decision_markup(str(e.get('decision', '')))}"
+        + (f"  [dim]{escape(reason)}[/dim]" if reason else "")
+    )
+
+
 _DECISIONS = ("allowed", "denied", "error")
 
 
@@ -776,30 +900,50 @@ def audit_log(
     limit: int = typer.Option(50, "--limit", "-n", min=0, help="Show the most recent N events (0 for all)"),
     agent: Optional[str] = typer.Option(None, "--agent", help="Only events for this agent name"),
     decision: Optional[str] = typer.Option(None, "--decision", help="Only 'allowed', 'denied', or 'error'"),
+    follow: bool = typer.Option(False, "--follow", "-f", help="Keep printing decisions as they happen"),
 ):
     """Show recorded agent tool-call decisions from the durable audit log.
 
-    Reads the on-disk log directly, so it works with the daemon stopped.
+    Reads the on-disk log directly, so it works with the daemon stopped. With
+    --follow, prints recent history and then keeps printing decisions as they are
+    recorded (Ctrl-C to stop); it follows the same file, so it also works offline
+    and picks up automatically once the daemon starts.
     """
     if decision is not None and decision not in _DECISIONS:
         console.print(f"[bold red]Error:[/bold red] --decision must be one of {', '.join(_DECISIONS)}.")
         raise typer.Exit(code=1)
 
-    from collections import deque
-    # Keep only the last `limit` matching events (deque bounds memory, so a huge
-    # unrotated log isn't fully loaded); limit 0 -> unbounded (show all).
-    matching = deque(maxlen=limit or None)
-    for e in _iter_event_log():
-        if agent is not None and e.get("agent") != agent:
-            continue
-        if decision is not None and e.get("decision") != decision:
-            continue
-        matching.append(e)
+    def matches(e: dict) -> bool:
+        return ((agent is None or e.get("agent") == agent)
+                and (decision is None or e.get("decision") == decision))
 
-    if not matching:
-        console.print("[dim]No matching activity in the audit log.[/dim]")
+    if not follow:
+        from collections import deque
+        # Keep only the last `limit` matching events (deque bounds memory, so a
+        # huge unrotated log isn't fully loaded); limit 0 -> unbounded (show all).
+        matching = deque((e for e in _iter_event_log() if matches(e)), maxlen=limit or None)
+        if not matching:
+            console.print("[dim]No matching activity in the audit log.[/dim]")
+            return
+        _render_event_table(list(matching))
         return
-    _render_event_table(list(matching))
+
+    # --follow: print scrollback, then tail the same file from exactly where the
+    # scrollback ended (one pass gives both, so nothing repeats or slips through).
+    from .config import DEFAULT_HOST, DEFAULT_PORT
+    history, offset = _read_event_history(matches, limit or None)  # 0 -> all, as documented
+    for e in history:
+        console.print(_event_line(e))
+    if not _daemon_up(DEFAULT_HOST, DEFAULT_PORT):
+        console.print("[yellow]Daemon is not running, so no new decisions will be "
+                      "recorded; start it with [bold]holm start[/bold].[/yellow]")
+    console.print("[dim]Watching for new decisions… (Ctrl-C to stop)[/dim]")
+
+    def show(e: dict) -> None:
+        if matches(e):
+            console.print(_event_line(e))
+
+    _tail_event_log(show, offset=offset)
 
 
 if __name__ == "__main__":  # pragma: no cover
