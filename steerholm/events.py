@@ -7,6 +7,7 @@ without touching the file. Auditing must never break a call, so the file write i
 best-effort — a failure is logged and the ring still holds the event.
 """
 import logging
+import os
 from collections import deque
 from datetime import datetime, timezone
 from typing import Deque, List, Optional
@@ -71,10 +72,31 @@ class EventLog:
     def __init__(self, path=None, ring_size: int = 500):
         self._path = path
         self._ring: Deque[DecisionEvent] = deque(maxlen=ring_size)
+        self._repair_torn_last_line()
 
     @property
     def path(self):
         return self._path or (_config.CONFIG_DIR / "events.jsonl")
+
+    def _repair_torn_last_line(self) -> None:
+        """Close a line left half-written by a previous run that died mid-append.
+
+        Without this the next append fuses onto the torn line, so a reader loses
+        both it and the first real event after it. Done once at startup (we are
+        the only writer), so it costs nothing per recorded event.
+        """
+        try:
+            path = self.path
+            if not path.exists() or path.stat().st_size == 0:
+                return
+            with open(path, "rb") as f:
+                f.seek(-1, os.SEEK_END)
+                if f.read(1) == b"\n":
+                    return
+            with open(path, "a", encoding="utf-8") as f:
+                f.write("\n")
+        except Exception as e:  # best-effort, like the rest of the audit path
+            logger.warning("Could not repair the event log's last line: %s", e)
 
     def record(self, event: DecisionEvent) -> None:
         self._ring.append(event)

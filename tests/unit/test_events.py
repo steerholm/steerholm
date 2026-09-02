@@ -95,3 +95,24 @@ class TestEventLog:
         import steerholm.config as config_mod
         monkeypatch.setattr(config_mod, "CONFIG_DIR", tmp_path)
         assert EventLog().path == tmp_path / "events.jsonl"
+
+
+class TestTornLineRepair:
+    def test_leaves_a_well_formed_log_untouched(self, tmp_path):
+        path = tmp_path / "events.jsonl"
+        body = '{"ts":"t","agent":"a","tool":"t","decision":"allowed"}\n'
+        path.write_text(body)
+        EventLog(path=path)                      # construction triggers the check
+        assert path.read_text() == body          # already ends on a line boundary
+
+    def test_closes_a_torn_last_line(self, tmp_path):
+        path = tmp_path / "events.jsonl"
+        path.write_bytes(b'{"ts":"2026-08-3')    # killed mid-write
+        EventLog(path=path)
+        assert path.read_bytes().endswith(b"\n")
+
+    def test_repair_failure_is_swallowed(self, tmp_path):
+        class _Unreadable:
+            def exists(self):
+                raise OSError("boom")
+        EventLog(path=_Unreadable())             # must not raise
