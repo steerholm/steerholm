@@ -105,6 +105,13 @@ app.add_typer(show_app, name="show")
 rotate_app = typer.Typer(no_args_is_help=True, help="Rotate an agent's access key.")
 app.add_typer(rotate_app, name="rotate")
 
+# `log` is a group so it can carry `log config`/`log set`, but it still runs bare
+# (`holm log`, `holm log -f`) via its invoke_without_command callback. No help=
+# here on purpose: that would override the callback's docstring, which is where
+# the command is actually explained.
+log_app = typer.Typer(invoke_without_command=True)
+app.add_typer(log_app, name="log")
+
 
 def _handle(fn, *args, **kwargs):
     """Call a service method and display any error cleanly."""
@@ -711,9 +718,11 @@ def revoke(
 # ─── Audit log ───────────────────────────────────────────────────────
 
 
-def _event_log_path():
+def _event_log_files():
+    """Every audit log file, oldest first (rotation splits the log into segments)."""
     from . import config
-    return config.CONFIG_DIR / "events.jsonl"
+    from .events import log_files
+    return log_files(config.CONFIG_DIR)
 
 
 def _parse_event_line(line: str):
@@ -734,44 +743,59 @@ def _iter_event_log():
     """Yield each decision event (a dict) from the durable JSONL audit log, oldest
     first. Streams the file line by line and skips blank / torn / non-object lines,
     so it tolerates a corrupted log and works with the daemon stopped."""
-    path = _event_log_path()
-    if not path.exists():
-        return
-    # errors="replace" so a torn multibyte char (crash mid-write) can't abort the
-    # whole read; that line then fails JSON parsing and is skipped below.
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        for line in f:
-            event = _parse_event_line(line)
-            if event is not None:
-                yield event
+    for path in _event_log_files():
+        # errors="replace" so a torn multibyte char (crash mid-write) can't abort
+        # the read; that line then fails JSON parsing and is skipped.
+        try:
+            with open(path, "rb") as f:
+                for raw in f:
+                    event = _parse_event_line(raw.decode("utf-8", errors="replace"))
+                    if event is not None:
+                        yield event
+        except OSError:
+            continue  # segment pruned mid-read
 
 
 def _read_event_history(matches, limit):
-    """Return (matching events, byte offset just past the last complete line).
+    """Return (matching events, byte offset, the file that offset belongs to).
 
-    Taking the history and the resume offset from a single pass is what makes
-    `--follow` exact: the tail starts precisely where the printed history ended,
-    so no event is shown twice and none is missed in between. A trailing partial
-    line (a write in progress) is excluded from the offset so it is read once it
-    is complete.
+    Taking the history and the resume point from a single pass is what makes
+    `--follow` exact: the tail resumes precisely where the printed history ended,
+    so no event is shown twice and none is missed in between. The path is returned
+    because an offset is only meaningful for the file it was measured against — a
+    rotation between this call and the tail attaching would otherwise apply it to
+    a different file. `None` means no resume point could be established.
     """
     from collections import deque
-    path = _event_log_path()
-    if not path.exists():
-        return [], 0
+    files = _event_log_files()
+    if not files:
+        return [], 0, None
     kept = deque(maxlen=limit)
     offset = 0
+    newest = files[-1]
+    resume = newest
     # Read bytes, not text: the offset must be an exact byte count, and decoding
     # with errors="replace" would make it drift (one bad byte -> U+FFFD -> 3 bytes).
-    with open(path, "rb") as f:
-        for raw in f:
-            if not raw.endswith(b"\n"):
-                break  # half-written append; leave it for the tail to pick up
-            offset += len(raw)
-            event = _parse_event_line(raw.decode("utf-8", errors="replace"))
-            if event is not None and matches(event):
-                kept.append(event)
-    return list(kept), offset
+    # Only the newest file's bytes count, since that is the one the tail follows.
+    for path in files:
+        try:
+            with open(path, "rb") as f:
+                for raw in f:
+                    if not raw.endswith(b"\n"):
+                        break  # half-written append; leave it for the tail
+                    if path == newest:
+                        offset += len(raw)
+                    event = _parse_event_line(raw.decode("utf-8", errors="replace"))
+                    if event is not None and matches(event):
+                        kept.append(event)
+        except OSError:
+            if path == newest:
+                # We could not measure the file the tail resumes from, so there is
+                # no valid offset. Say so rather than returning 0, which would make
+                # the tail replay the whole segment as if it were new activity.
+                offset, resume = 0, None
+            continue  # segment pruned or briefly unreadable
+    return list(kept), offset, resume
 
 
 def _log_was_replaced(handle, path) -> bool:
@@ -799,28 +823,56 @@ def _log_was_replaced(handle, path) -> bool:
     return bool(st.st_ino and fst.st_ino and st.st_ino != fst.st_ino)
 
 
-def _tail_event_log(on_event, offset: int = 0, poll: float = 0.25, stop=None) -> None:
+def _tail_event_log(on_event, offset: int = 0, from_path=None, at_end: bool = False,
+                    poll: float = 0.25, stop=None) -> None:
     """Follow the audit log file from `offset`, calling on_event(dict) per new event.
 
-    Follows the same file `holm log` prints, so there is no second source to drift
-    against. Only complete (newline-terminated) lines are parsed, so a half-written
-    append is never shown; if the log is truncated or rotated, the tail reopens it.
+    Follows the same files `holm log` prints, so there is no second source to drift
+    against. `from_path` is the file `offset` was measured against — an offset is
+    meaningless for any other file. Only complete (newline-terminated) lines are
+    parsed, so a half-written append is never shown; on rotation the tail advances
+    one segment at a time, and a truncated file is reopened from the top.
     """
     import time
-    path = _event_log_path()
+    from .events import segment_number
     handle = None
+    current = None
     buf = b""
     try:
         while stop is None or not stop():
+            files = _event_log_files()
+            if not files:
+                time.sleep(poll)  # no log yet; wait for the first event
+                continue
             if handle is None:
+                # An offset is only meaningful for the file it was measured
+                # against. Reuse it for that file (or when the caller named none
+                # and meant the newest), but never carry it onto a different file
+                # after the measured one has been pruned.
+                if at_end:
+                    # No trustworthy position was established, so begin at the end
+                    # of the newest file: missing the entries we could not read
+                    # beats replaying a whole segment as if it were new activity.
+                    target, start = files[-1], None
+                elif from_path is None:
+                    target, start = files[-1], offset
+                elif from_path in files:
+                    target, start = from_path, offset
+                else:
+                    target, start = files[-1], 0
                 try:
-                    # Open directly rather than checking exists() first: the log
-                    # may not exist yet, or may be rotated away between the two.
-                    handle = open(path, "rb")
+                    # Open directly rather than checking exists() first: the file
+                    # may be pruned between the check and the open.
+                    handle = open(target, "rb")
                 except OSError:
                     time.sleep(poll)
                     continue
-                handle.seek(offset)
+                current = target
+                at_end = False  # only applies to the first file we attach to
+                if start is None:
+                    handle.seek(0, 2)   # EOF, without a stat that could fail
+                else:
+                    handle.seek(start)
             chunk = handle.read()
             if chunk:
                 # Buffer bytes and decode only whole lines, so a multibyte char
@@ -832,9 +884,20 @@ def _tail_event_log(on_event, offset: int = 0, poll: float = 0.25, stop=None) ->
                     if event is not None:
                         on_event(event)
                 continue  # keep draining before sleeping again
-            if _log_was_replaced(handle, path):
+            # This file is drained. Advance to the NEXT segment by ordinal rather
+            # than jumping to the newest, or a burst of rotations would skip the
+            # ones in between. Works even if `current` has since been pruned.
+            here = segment_number(current)
+            nxt = next((f for f in files if segment_number(f) > here), None)
+            if nxt is not None:
                 handle.close()
-                handle, buf, offset = None, b"", 0
+                handle, current, buf = None, None, b""
+                from_path, offset = nxt, 0
+                continue
+            if _log_was_replaced(handle, current):
+                handle.close()
+                handle, current, buf = None, None, b""
+                from_path, offset = None, 0
                 continue
             time.sleep(poll)
     except KeyboardInterrupt:
@@ -892,58 +955,210 @@ def _event_line(e: dict) -> str:
     )
 
 
-_DECISIONS = ("allowed", "denied", "error")
+def _limit_text(value: int, unit: str) -> str:
+    return f"{value} {unit}" if value else "unlimited"
 
 
-@app.command("log")
-def audit_log(
-    limit: int = typer.Option(50, "--limit", "-n", min=0, help="Show the most recent N events (0 for all)"),
-    agent: Optional[str] = typer.Option(None, "--agent", help="Only events for this agent name"),
-    decision: Optional[str] = typer.Option(None, "--decision", help="Only 'allowed', 'denied', or 'error'"),
-    follow: bool = typer.Option(False, "--follow", "-f", help="Keep printing decisions as they happen"),
-):
-    """Show recorded agent tool-call decisions from the durable audit log.
+def _segment_mb() -> int:
+    from .events import MAX_SEGMENT_BYTES
+    return MAX_SEGMENT_BYTES // (1024 * 1024)
 
-    Reads the on-disk log directly, so it works with the daemon stopped. With
-    --follow, prints recent history and then keeps printing decisions as they are
-    recorded (Ctrl-C to stop); it follows the same file, so it also works offline
-    and picks up automatically once the daemon starts.
+
+
+def _retention_summary(audit) -> str:
+    return (f"at most {_limit_text(audit.max_files, 'files')}, "
+            f"kept for {_limit_text(audit.max_age_days, 'days')}")
+
+
+@log_app.command("config")
+def log_config():
+    """Show how much history the log keeps, and where it lives.
+
+    Read-only — change these with `holm log set`.
     """
-    if decision is not None and decision not in _DECISIONS:
-        console.print(f"[bold red]Error:[/bold red] --decision must be one of {', '.join(_DECISIONS)}.")
+    audit = config_manager.config.audit
+    from .config import CONFIG_DIR
+    from .events import SEGMENT_PREFIX, SEGMENT_SUFFIX
+    per_file = _segment_mb()
+
+    console.print("[bold]Audit log[/bold]")
+    # soft_wrap so a long path is never broken mid-filename (it must stay
+    # copy-pasteable into grep/jq).
+    console.print(f"  Files:         "
+                  f"{escape(str(CONFIG_DIR / f'{SEGMENT_PREFIX}*{SEGMENT_SUFFIX}'))}",
+                  soft_wrap=True)
+    console.print(f"  Max files:     {audit.max_files or 'unlimited'}")
+    console.print(f"  Max age:       {_limit_text(audit.max_age_days, 'days')}")
+    total = per_file * audit.max_files
+    console.print(
+        f"  Disk ceiling:  {str(total) + ' MB' if total else 'unbounded (no file limit)'}"
+        f" [dim]({per_file} MB per file)[/dim]")
+    console.print("\n[dim]Change it with [bold]holm log set[/bold], e.g. "
+                  "[bold]holm log set --max-files 10 --max-age-days 30[/bold].[/dim]")
+
+
+@log_app.command("set")
+def log_set(
+    max_files: Optional[int] = typer.Option(
+        None, "--max-files", help="How many log files to keep (0 = no limit)"),
+    max_age_days: Optional[int] = typer.Option(
+        None, "--max-age-days", help="Delete log files older than this (0 = no limit)"),
+):
+    """Change how much history the log keeps.
+
+    Both limits apply: a log file is removed once it is past the file count OR
+    older than the age limit — the count bounds disk use, the age sets how long
+    history lives. See the current values with `holm log config`.
+
+    Examples:
+      holm log set --max-age-days 30    # keep a month of history
+      holm log set --max-files 20       # allow more history on disk
+      holm log set --max-age-days 0     # no age limit (count still applies)
+    """
+    if max_files is None and max_age_days is None:
+        console.print("[bold red]Error:[/bold red] Give at least one setting to change.")
+        raise typer.Exit(code=1)
+    audit = _handle(
+        config_manager.set_audit_settings,
+        max_files=max_files,
+        max_age_days=max_age_days,
+    )
+    console.print("[bold green]Updated the audit log's retention.[/bold green]")
+    console.print(f"Keeping {_retention_summary(audit)}.")
+    _notify_daemon_reconcile()
+
+
+def _warn_if_name_is_ambiguous(agent: Optional[str], ids) -> None:
+    """Say so when a filtered name covers more than one principal.
+
+    Takes the set of agent ids seen for that name, so the caller can collect them
+    in its existing pass instead of materialising the whole log.
+
+    Removing and re-adding an agent reuses the name for a different principal, so
+    a name filter can silently mix two agents' histories. Point at the ids, which
+    are what separate them.
+    """
+    if not agent:
+        return
+    # Only real ids count. A missing id means the agent was already gone when the
+    # call was adjudicated, which is not evidence of a second principal.
+    ids = {i for i in ids if i}
+    if len(ids) < 2:
+        return
+    shown = ", ".join(escape(str(i)) for i in sorted(ids))
+    console.print(
+        f"[yellow]Note:[/yellow] {len(ids)} different agents have used the name "
+        f"'{escape(agent)}' (removed and re-added). Filter by id to separate them: {shown}"
+    )
+
+
+_STATUSES = ("allowed", "denied", "error")
+
+
+@log_app.callback(invoke_without_command=True)
+def audit_log(
+    ctx: typer.Context,
+    number: int = typer.Option(50, "--number", "-n", min=0, help="Show the most recent N entries (0 for all)"),
+    agent: Optional[str] = typer.Option(
+        None, "--agent", help="Only this agent, by name or id"),
+    server: Optional[str] = typer.Option(None, "--server", help="Only calls to this server"),
+    status: Optional[str] = typer.Option(
+        None, "--status", help="Only this outcome: allowed, denied, or error"),
+    follow: bool = typer.Option(
+        False, "--follow", "-f", help="Watch new calls as they are recorded (Ctrl-C to stop)"),
+):
+    """
+    Show what your agents did and whether it was allowed.
+
+    Steerholm records every tool call an agent makes through it — which agent,
+    which server, which tool, and whether policy allowed it, denied it, or the
+    server failed. This reads that record straight from disk, so it works with
+    the daemon stopped.
+
+    Filters combine, and --agent takes a name or an agent id (`holm show agent`
+    prints the id). A name can be reused by removing and re-adding an agent, so
+    filtering by id is what isolates one specific agent's history.
+
+    Examples:
+      holm log                                    # the 50 most recent calls
+      holm log --status denied                    # only what was refused
+      holm log --server git --agent coding-agent  # one agent, on one server
+      holm log --follow                           # watch calls as they happen
+    """
+    if ctx.invoked_subcommand is not None:
+        # A subcommand (e.g. `holm log config`) handles it. These options belong to
+        # `holm log` itself, so reject them here rather than silently dropping them.
+        # Derived from the callback's own parameters, so a renamed or newly added
+        # option cannot silently escape the check. The source is compared by name
+        # rather than importing click's enum: click is only transitive here (and
+        # newer typer vendors its own copy, which would never compare equal).
+        given = [p.name for p in ctx.command.params
+                 if p.name != "help"
+                 and getattr(ctx.get_parameter_source(p.name), "name", "DEFAULT") != "DEFAULT"]
+        if given:
+            console.print(
+                f"[bold red]Error:[/bold red] {', '.join('--' + g for g in given)} "
+                f"appl{'ies' if len(given) == 1 else 'y'} to [bold]holm log[/bold], "
+                f"not [bold]holm log {ctx.invoked_subcommand}[/bold]."
+            )
+            raise typer.Exit(code=1)
+        return
+    if status is not None and status not in _STATUSES:
+        console.print(f"[bold red]Error:[/bold red] --status must be one of {', '.join(_STATUSES)}.")
         raise typer.Exit(code=1)
 
     def matches(e: dict) -> bool:
-        return ((agent is None or e.get("agent") == agent)
-                and (decision is None or e.get("decision") == decision))
+        # --agent accepts either identifier; the stored status field is `decision`.
+        return ((agent is None or agent in (e.get("agent"), e.get("agent_id")))
+                and (server is None or e.get("server") == server)
+                and (status is None or e.get("decision") == status))
 
     if not follow:
         from collections import deque
         # Keep only the last `limit` matching events (deque bounds memory, so a
         # huge unrotated log isn't fully loaded); limit 0 -> unbounded (show all).
-        matching = deque((e for e in _iter_event_log() if matches(e)), maxlen=limit or None)
+        # One streaming pass: a bounded window for display, plus the set of ids
+        # seen for the ambiguity check. Materialising every match would cost the
+        # whole log in memory just to print a screenful.
+        matching = deque(maxlen=number or None)
+        ids_for_name = set()
+        for e in _iter_event_log():
+            if not matches(e):
+                continue
+            matching.append(e)
+            if agent and e.get("agent") == agent and e.get("agent_id"):
+                ids_for_name.add(e["agent_id"])
         if not matching:
             console.print("[dim]No matching activity in the audit log.[/dim]")
             return
         _render_event_table(list(matching))
+        # Checked over the whole history, not just the shown window, or narrowing
+        # with -n would hide the very conflation this warns about.
+        _warn_if_name_is_ambiguous(agent, ids_for_name)
         return
 
     # --follow: print scrollback, then tail the same file from exactly where the
     # scrollback ended (one pass gives both, so nothing repeats or slips through).
     from .config import DEFAULT_HOST, DEFAULT_PORT
-    history, offset = _read_event_history(matches, limit or None)  # 0 -> all, as documented
+    history, offset, resume = _read_event_history(matches, number or None)  # 0 -> all
+    at_end = resume is None  # history could not measure the newest file
     for e in history:
         console.print(_event_line(e))
     if not _daemon_up(DEFAULT_HOST, DEFAULT_PORT):
         console.print("[yellow]Daemon is not running, so no new decisions will be "
                       "recorded; start it with [bold]holm start[/bold].[/yellow]")
+    if agent:  # a full scan is pointless without a name to disambiguate
+        _warn_if_name_is_ambiguous(agent, {
+            e["agent_id"] for e in _iter_event_log()
+            if matches(e) and e.get("agent") == agent and e.get("agent_id")
+        })
     console.print("[dim]Watching for new decisions… (Ctrl-C to stop)[/dim]")
 
     def show(e: dict) -> None:
         if matches(e):
             console.print(_event_line(e))
 
-    _tail_event_log(show, offset=offset)
+    _tail_event_log(show, offset=offset, from_path=resume, at_end=at_end)
 
 
 if __name__ == "__main__":  # pragma: no cover

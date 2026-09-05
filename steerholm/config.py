@@ -9,7 +9,10 @@ from pathlib import Path
 from typing import Optional, List
 import bcrypt
 import keyring
-from .models import Config, Server, Agent, AgentPolicy, ToolPermission, ArgumentPolicy, ServerType
+from .models import (
+    AuditSettings, Config, Server, Agent, AgentPolicy, ToolPermission,
+    ArgumentPolicy, ServerType,
+)
 
 logger = logging.getLogger("steerholm.config")
 
@@ -176,6 +179,31 @@ class ConfigManager:
         self.config.servers[name] = server
         self.save_config()
         return server
+
+    # --- Audit log retention ---
+    def audit_kwargs(self) -> dict:
+        """The audit settings as EventLog constructor/configure arguments.
+        Segment size is fixed (see AuditSettings), so it is not included."""
+        audit = self.config.audit
+        return {
+            "max_files": audit.max_files,
+            "max_age_days": audit.max_age_days,
+        }
+
+    def set_audit_settings(self, max_files: int = None,
+                           max_age_days: int = None) -> AuditSettings:
+        """Update audit-log retention. Only the values given are changed."""
+        audit = self.config.audit
+        if max_files is not None:
+            if max_files < 0:
+                raise ValueError("Maximum files cannot be negative (0 = no limit).")
+            audit.max_files = max_files
+        if max_age_days is not None:
+            if max_age_days < 0:
+                raise ValueError("Maximum age cannot be negative (0 = no limit).")
+            audit.max_age_days = max_age_days
+        self.save_config()
+        return audit
 
     def remove_server(self, name: str):
         if name not in self.config.servers:

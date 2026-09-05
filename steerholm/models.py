@@ -54,6 +54,25 @@ class Agent(BaseModel):
     key_prefix: str = Field(..., description="First 15 chars of the access key for display")
 
 
+class AuditSettings(BaseModel):
+    """Retention for the decision audit log. Both limits apply — a segment goes
+    when it is past the count OR older than the age limit.
+
+    Segment size is deliberately not settable: changing it would leave existing
+    segments at the old size (honouring a new one means re-splitting the log), and
+    an unwitting large value costs memory and latency on every read.
+    """
+
+    max_files: int = Field(
+        default=5, description="How many log files to keep (0 = no limit)"
+    )
+    max_age_days: int = Field(
+        default=0, description="Delete segments older than this (0 = no age limit)"
+    )
+
+
 class Config(BaseModel):
     servers: Dict[str, Server] = Field(default_factory=dict)
     agents: Dict[str, Agent] = Field(default_factory=dict)
+    # Absent in configs written before retention was configurable; defaults apply.
+    audit: AuditSettings = Field(default_factory=AuditSettings)

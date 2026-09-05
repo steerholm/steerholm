@@ -472,3 +472,35 @@ def test_legacy_policy_identity_name_migrates_to_agent_name(config_manager):
     assert policy is not None
     assert policy.agent_name == "bob"
     assert "fs" in policy.permissions
+
+
+class TestAuditSettings:
+    def test_defaults(self, config_manager):
+        audit = config_manager.config.audit
+        assert (audit.max_files, audit.max_age_days) == (5, 0)
+
+    def test_audit_kwargs_excludes_the_fixed_segment_size(self, config_manager):
+        # Segment size is not user-settable, so it is not passed through config.
+        assert config_manager.audit_kwargs() == {"max_files": 5, "max_age_days": 0}
+
+    def test_set_and_persist(self, config_manager):
+        config_manager.set_audit_settings(max_files=3, max_age_days=30)
+        config_manager.reload()
+        audit = config_manager.config.audit
+        assert (audit.max_files, audit.max_age_days) == (3, 30)
+
+    def test_partial_update_leaves_others(self, config_manager):
+        config_manager.set_audit_settings(max_age_days=14)
+        audit = config_manager.config.audit
+        assert (audit.max_age_days, audit.max_files) == (14, 5)
+
+    def test_rejects_invalid_values(self, config_manager):
+        with pytest.raises(ValueError, match="negative"):
+            config_manager.set_audit_settings(max_files=-1)
+        with pytest.raises(ValueError, match="negative"):
+            config_manager.set_audit_settings(max_age_days=-1)
+
+    def test_legacy_config_without_audit_section_loads(self, config_manager):
+        _cfg.CONFIG_FILE.write_text('{"servers": {}, "agents": {}}')
+        config_manager.reload()
+        assert config_manager.config.audit.max_files == 5     # defaults applied

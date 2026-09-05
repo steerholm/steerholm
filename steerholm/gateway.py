@@ -112,7 +112,7 @@ class SteerholmGateway:
         self.daemon = SteerholmDaemon()
         self.session_server = Server("steerholm")
         # Audit stream: every tool call the gateway evaluates records a decision.
-        self.event_log = EventLog()
+        self.event_log = EventLog(**self.config_manager.audit_kwargs())
         # token sha256 -> (agent, stored key hash). Lets repeat requests skip the
         # per-request O(agents) bcrypt; invalidated when the stored hash changes.
         self._auth_cache: "OrderedDict[str, tuple[str, str]]" = OrderedDict()
@@ -311,6 +311,9 @@ class SteerholmGateway:
         driven at startup, by the control plane on config changes, and periodically.
         """
         async with self._reconcile_lock:
+            # Reconcile is the daemon's "apply the config" primitive, so pick up
+            # changed audit retention here too — no restart needed after `set config`.
+            self.event_log.configure(**self.config_manager.audit_kwargs())
             desired = {s.name: s for s in self.config_manager.list_servers()}
             started, stopped, failed = [], [], []
 
