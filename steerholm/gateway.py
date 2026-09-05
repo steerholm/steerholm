@@ -291,12 +291,15 @@ class SteerholmGateway:
             # CancelledError re-raised above.
             if not cancelled:
                 agent = self.config_manager.get_agent(agent_name)
+                server_cfg = (self.config_manager.get_server(server_name)
+                              if server_name else None)
                 self.event_log.record(DecisionEvent(
                     ts=now_iso(),
                     agent=agent_name,
                     agent_id=agent.id if agent else None,
                     tool=name,
                     server=server_name,
+                    server_id=server_cfg.id if server_cfg else None,
                     decision=decision,
                     reason=reason,
                     result=result_status,

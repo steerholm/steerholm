@@ -74,6 +74,12 @@ def _restrict(path, mode: int) -> None:
 _ENV_KEY_RE = re.compile(r"[-._a-zA-Z][-._a-zA-Z0-9]*")
 
 
+def _new_server_id() -> str:
+    """Mint an immutable server id, set once at creation, so the audit log can
+    tell a re-added name apart from the server it replaced."""
+    return "srv_" + secrets.token_hex(8)
+
+
 def _new_agent_id() -> str:
     """Mint an immutable agent id, set once at creation and kept across key
     rotation, so the audit log can tell a deleted-then-recreated name apart from
@@ -171,10 +177,11 @@ class ConfigManager:
             validate_env_key(key)
 
         if command:
-            server = Server(name=name, command=command, env=env or {},
-                            server_type=ServerType.stdio)
+            server = Server(name=name, id=_new_server_id(), command=command,
+                            env=env or {}, server_type=ServerType.stdio)
         else:
-            server = Server(name=name, url=url, server_type=ServerType.http)
+            server = Server(name=name, id=_new_server_id(), url=url,
+                            server_type=ServerType.http)
 
         self.config.servers[name] = server
         self.save_config()

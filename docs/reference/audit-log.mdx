@@ -31,7 +31,7 @@ One JSON object per line ([JSON Lines](https://jsonlines.org/)), oldest first, s
 the log streams into `jq` or a log shipper without a parser:
 
 ```json
-{"ts":"2026-09-05T12:04:41.880+00:00","agent":"coding-agent","agent_id":"agt_9f2a1c4e","tool":"write_file","decision":"denied","server":"filesystem","reason":"Tool 'write_file' on server 'filesystem' is not allowed.","result":"error","latency_ms":2,"args_summary":"path=/etc/passwd"}
+{"ts":"2026-09-05T12:04:41.880+00:00","agent":"coding-agent","agent_id":"agt_9f2a1c4e","tool":"write_file","decision":"denied","server":"filesystem","server_id":"srv_4b81e0d2","reason":"Tool 'write_file' on server 'filesystem' is not allowed.","result":"error","latency_ms":2,"args_summary":"path=/etc/passwd"}
 ```
 
 | Field | Type | Description |
@@ -40,7 +40,8 @@ the log streams into `jq` or a log shipper without a parser:
 | `agent` | `string` | Agent name — reusable, so prefer `agent_id` to identify one |
 | `agent_id` | `string` | Immutable agent id; `null` if the agent was already removed |
 | `tool` | `string` | Tool the agent asked for |
-| `server` | `string` | Server that owns the tool; `null` if no granted server has it |
+| `server` | `string` | Server name that owns the tool; `null` if no granted server has it |
+| `server_id` | `string` | Immutable server id; `null` for servers created before ids existed |
 | `decision` | `string` | `allowed`, `denied` (policy refused it), or `error` (server down or unexpected failure) |
 | `reason` | `string` | Why it was refused or what failed; `null` when allowed |
 | `result` | `string` | `ok` if the call completed, else `error` |

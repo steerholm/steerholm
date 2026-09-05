@@ -1504,3 +1504,111 @@ def test_follow_uses_at_end_when_history_cannot_be_measured(cli, tmp_config_dir,
     monkeypatch.setattr(m, "_tail_event_log", fake_tail)
     assert runner.invoke(app, ["log", "-f"]).exit_code == 0
     assert captured["at_end"] is True
+
+
+# ─── server ids ─────────────────────────────────────────────────────
+
+
+_SRV1, _SRV2 = "srv_1111111111111111", "srv_2222222222222222"
+
+
+def _reused_server_events(tmp_config_dir):
+    _write_events(tmp_config_dir, [
+        {"ts": _TS, "agent": "a", "server": "git", "server_id": _SRV1,
+         "tool": "first_server", "decision": "allowed"},
+        {"ts": _TS, "agent": "a", "server": "git", "server_id": _SRV2,
+         "tool": "second_server", "decision": "allowed"},
+        {"ts": _TS, "agent": "a", "server": "db", "server_id": "srv_3",
+         "tool": "unrelated", "decision": "allowed"},
+    ])
+
+
+def test_log_filters_by_server_id(cli, tmp_config_dir):
+    _reused_server_events(tmp_config_dir)
+    result = runner.invoke(app, ["log", "--server", _SRV2])
+    assert result.exit_code == 0
+    assert "second_server" in result.output
+    assert "first_server" not in result.output and "unrelated" not in result.output
+
+
+def test_log_filters_by_server_name_still_works(cli, tmp_config_dir):
+    _reused_server_events(tmp_config_dir)
+    result = runner.invoke(app, ["log", "--server", "git"])
+    assert "first_server" in result.output and "second_server" in result.output
+    assert "unrelated" not in result.output
+
+
+def test_log_warns_when_a_server_name_covers_two_servers(cli, tmp_config_dir):
+    _reused_server_events(tmp_config_dir)
+    result = runner.invoke(app, ["log", "--server", "git"])
+    assert result.exit_code == 0
+    assert "2 different servers have used the name" in result.output
+    assert _SRV1 in result.output and _SRV2 in result.output
+
+
+def test_log_does_not_warn_for_an_unambiguous_server(cli, tmp_config_dir):
+    _reused_server_events(tmp_config_dir)
+    result = runner.invoke(app, ["log", "--server", "db"])
+    assert result.exit_code == 0
+    assert "different servers" not in result.output
+
+
+def test_show_server_prints_its_id(cli):
+    cli.add_server("git", command="echo")
+    result = runner.invoke(app, ["show", "server", "git"])
+    assert result.exit_code == 0
+    assert cli.get_server("git").id in result.output
+
+
+def test_log_follow_filters_by_server_id(cli, tmp_config_dir, monkeypatch):
+    def fake_tail(on_event, offset=0, from_path=None, at_end=False, poll=0.25, stop=None):
+        on_event({"ts": _TS, "agent": "a", "server": "git", "server_id": _SRV1,
+                  "tool": "kept", "decision": "denied"})
+        on_event({"ts": _TS, "agent": "a", "server": "git", "server_id": _SRV2,
+                  "tool": "dropped", "decision": "denied"})
+    monkeypatch.setattr(m, "_tail_event_log", fake_tail)
+    result = runner.invoke(app, ["log", "-f", "--server", _SRV1])
+    assert "kept" in result.output and "dropped" not in result.output
+
+
+def test_log_follow_warns_about_a_reused_name(cli, tmp_config_dir, monkeypatch):
+    # The scrollback scan must still surface a conflated name when following.
+    _write_events(tmp_config_dir, [
+        {"ts": _TS, "agent": "cursor", "agent_id": _AG1, "server": "git",
+         "server_id": _SRV1, "tool": "first", "decision": "allowed"},
+        {"ts": _TS, "agent": "cursor", "agent_id": _AG2, "server": "git",
+         "server_id": _SRV2, "tool": "second", "decision": "allowed"},
+    ])
+    monkeypatch.setattr(m, "_tail_event_log", lambda *a, **k: None)
+
+    by_agent = runner.invoke(app, ["log", "-f", "--agent", "cursor"])
+    assert "2 different agents have used the name" in by_agent.output
+
+    by_server = runner.invoke(app, ["log", "-f", "--server", "git"])
+    assert "2 different servers have used the name" in by_server.output
+
+
+def test_log_follow_skips_the_scan_without_a_filter(cli, tmp_config_dir, monkeypatch):
+    # No name to disambiguate -> no full-log scan, and no note.
+    _write_events(tmp_config_dir, [
+        {"ts": _TS, "agent": "cursor", "agent_id": _AG1, "tool": "t",
+         "decision": "allowed", "server": "s"},
+    ])
+    monkeypatch.setattr(m, "_tail_event_log", lambda *a, **k: None)
+    result = runner.invoke(app, ["log", "-f"])
+    assert result.exit_code == 0
+    assert "different" not in result.output
+
+
+def test_log_follow_scan_skips_non_matching_events(cli, tmp_config_dir, monkeypatch):
+    # The scan applies the same filters, so another agent's events are ignored.
+    _write_events(tmp_config_dir, [
+        {"ts": _TS, "agent": "other", "agent_id": "agt_other", "tool": "x",
+         "decision": "allowed", "server": "s"},
+        {"ts": _TS, "agent": "cursor", "agent_id": _AG1, "tool": "y",
+         "decision": "allowed", "server": "s"},
+    ])
+    monkeypatch.setattr(m, "_tail_event_log", lambda *a, **k: None)
+    result = runner.invoke(app, ["log", "-f", "--agent", "cursor"])
+    assert result.exit_code == 0
+    assert "different agents" not in result.output   # one principal only

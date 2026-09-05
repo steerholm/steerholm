@@ -405,6 +405,8 @@ def show_server(name: str):
     # escape() the user-supplied values so a '[' in a name/command/url/env key
     # isn't parsed as Rich markup (which would misrender or raise and abort).
     console.print(f"[bold]Name:[/bold] {escape(server.name)}")
+    if server.id:
+        console.print(f"[bold]ID:[/bold] {server.id}")
     if server.command:
         console.print(f"[bold]Command:[/bold] {escape(server.command)}")
     if server.url:
@@ -1028,7 +1030,7 @@ def log_set(
     _notify_daemon_reconcile()
 
 
-def _warn_if_name_is_ambiguous(agent: Optional[str], ids) -> None:
+def _warn_if_name_is_ambiguous(kind: str, name: Optional[str], ids) -> None:
     """Say so when a filtered name covers more than one principal.
 
     Takes the set of agent ids seen for that name, so the caller can collect them
@@ -1038,7 +1040,7 @@ def _warn_if_name_is_ambiguous(agent: Optional[str], ids) -> None:
     a name filter can silently mix two agents' histories. Point at the ids, which
     are what separate them.
     """
-    if not agent:
+    if not name:
         return
     # Only real ids count. A missing id means the agent was already gone when the
     # call was adjudicated, which is not evidence of a second principal.
@@ -1047,8 +1049,8 @@ def _warn_if_name_is_ambiguous(agent: Optional[str], ids) -> None:
         return
     shown = ", ".join(escape(str(i)) for i in sorted(ids))
     console.print(
-        f"[yellow]Note:[/yellow] {len(ids)} different agents have used the name "
-        f"'{escape(agent)}' (removed and re-added). Filter by id to separate them: {shown}"
+        f"[yellow]Note:[/yellow] {len(ids)} different {kind}s have used the name "
+        f"'{escape(name)}' (removed and re-added). Filter by id to separate them: {shown}"
     )
 
 
@@ -1061,7 +1063,8 @@ def audit_log(
     number: int = typer.Option(50, "--number", "-n", min=0, help="Show the most recent N entries (0 for all)"),
     agent: Optional[str] = typer.Option(
         None, "--agent", help="Only this agent, by name or id"),
-    server: Optional[str] = typer.Option(None, "--server", help="Only calls to this server"),
+    server: Optional[str] = typer.Option(
+        None, "--server", help="Only this server, by name or id"),
     status: Optional[str] = typer.Option(
         None, "--status", help="Only this outcome: allowed, denied, or error"),
     follow: bool = typer.Option(
@@ -1110,7 +1113,7 @@ def audit_log(
     def matches(e: dict) -> bool:
         # --agent accepts either identifier; the stored status field is `decision`.
         return ((agent is None or agent in (e.get("agent"), e.get("agent_id")))
-                and (server is None or e.get("server") == server)
+                and (server is None or server in (e.get("server"), e.get("server_id")))
                 and (status is None or e.get("decision") == status))
 
     if not follow:
@@ -1121,20 +1124,23 @@ def audit_log(
         # seen for the ambiguity check. Materialising every match would cost the
         # whole log in memory just to print a screenful.
         matching = deque(maxlen=number or None)
-        ids_for_name = set()
+        agent_ids, server_ids = set(), set()
         for e in _iter_event_log():
             if not matches(e):
                 continue
             matching.append(e)
             if agent and e.get("agent") == agent and e.get("agent_id"):
-                ids_for_name.add(e["agent_id"])
+                agent_ids.add(e["agent_id"])
+            if server and e.get("server") == server and e.get("server_id"):
+                server_ids.add(e["server_id"])
         if not matching:
             console.print("[dim]No matching activity in the audit log.[/dim]")
             return
         _render_event_table(list(matching))
         # Checked over the whole history, not just the shown window, or narrowing
         # with -n would hide the very conflation this warns about.
-        _warn_if_name_is_ambiguous(agent, ids_for_name)
+        _warn_if_name_is_ambiguous("agent", agent, agent_ids)
+        _warn_if_name_is_ambiguous("server", server, server_ids)
         return
 
     # --follow: print scrollback, then tail the same file from exactly where the
@@ -1147,11 +1153,17 @@ def audit_log(
     if not _daemon_up(DEFAULT_HOST, DEFAULT_PORT):
         console.print("[yellow]Daemon is not running, so no new decisions will be "
                       "recorded; start it with [bold]holm start[/bold].[/yellow]")
-    if agent:  # a full scan is pointless without a name to disambiguate
-        _warn_if_name_is_ambiguous(agent, {
-            e["agent_id"] for e in _iter_event_log()
-            if matches(e) and e.get("agent") == agent and e.get("agent_id")
-        })
+    if agent or server:  # a full scan is pointless without a name to disambiguate
+        agent_ids, server_ids = set(), set()
+        for e in _iter_event_log():
+            if not matches(e):
+                continue
+            if agent and e.get("agent") == agent and e.get("agent_id"):
+                agent_ids.add(e["agent_id"])
+            if server and e.get("server") == server and e.get("server_id"):
+                server_ids.add(e["server_id"])
+        _warn_if_name_is_ambiguous("agent", agent, agent_ids)
+        _warn_if_name_is_ambiguous("server", server, server_ids)
     console.print("[dim]Watching for new decisions… (Ctrl-C to stop)[/dim]")
 
     def show(e: dict) -> None:

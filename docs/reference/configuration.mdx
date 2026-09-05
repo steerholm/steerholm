@@ -57,6 +57,7 @@ per-user `AppData` already provides this isolation via ACLs.
   "servers": {
     "git": {
       "name": "git",
+      "id": "srv_654dfec363cf7f7b",
       "command": "uvx mcp-server-git",
       "server_type": "stdio"
     },
@@ -84,7 +85,8 @@ per-user `AppData` already provides this isolation via ACLs.
 
 | Field | Type | Description |
 |---|---|---|
-| `name` | `string` | Unique identifier |
+| `name` | `string` | Unique identifier; reusable once a server is removed |
+| `id` | `string` | Immutable id, minted at creation. `null` for servers created before ids existed |
 | `command` | `string` | Full launch command (stdio servers) |
 | `url` | `string` | Server URL (HTTP servers) |
 | `env` | `object` | Extra environment variables passed to a stdio server |

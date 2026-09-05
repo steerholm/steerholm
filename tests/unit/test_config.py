@@ -504,3 +504,35 @@ class TestAuditSettings:
         _cfg.CONFIG_FILE.write_text('{"servers": {}, "agents": {}}')
         config_manager.reload()
         assert config_manager.config.audit.max_files == 5     # defaults applied
+
+
+class TestServerIds:
+    def test_add_server_mints_an_immutable_id(self, config_manager):
+        config_manager.add_server("git", command="uvx mcp-server-git")
+        assert config_manager.get_server("git").id.startswith("srv_")
+
+    def test_http_server_gets_an_id_too(self, config_manager):
+        config_manager.add_server("api", url="http://localhost:8000/mcp")
+        assert config_manager.get_server("api").id.startswith("srv_")
+
+    def test_server_id_persists_across_reload(self, config_manager):
+        config_manager.add_server("git", command="echo")
+        sid = config_manager.get_server("git").id
+        config_manager.reload()
+        assert config_manager.get_server("git").id == sid
+
+    def test_re_added_name_gets_a_new_id(self, config_manager):
+        # The audit-integrity case: the same name can point at a different server.
+        config_manager.add_server("git", command="uvx mcp-server-git")
+        first = config_manager.get_server("git").id
+        config_manager.remove_server("git")
+        config_manager.add_server("git", command="something-else")
+        assert config_manager.get_server("git").id != first
+
+    def test_legacy_server_without_an_id_loads_as_none(self, config_manager):
+        _cfg.CONFIG_FILE.write_text(
+            '{"servers": {"old": {"name": "old", "command": "echo",'
+            ' "server_type": "stdio"}}, "agents": {}}'
+        )
+        config_manager.reload()
+        assert config_manager.get_server("old").id is None

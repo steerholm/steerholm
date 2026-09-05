@@ -72,8 +72,9 @@ holm list servers
 
 ### holm show server
 
-Show a server's configuration, its live status, the tools it provides, and which
-agents have been granted access to it.
+Show a server's id and configuration, its live status, the tools it provides, and
+which agents have been granted access to it. The id is what `holm log --server`
+takes to isolate one server's history from a reused name.
 
 ```bash
 holm show server git
@@ -223,7 +224,7 @@ holm log --follow                           # watch calls as they happen
 |---|---|---|
 | `--number`, `-n` | `50` | Show the most recent N entries (`0` for all) |
 | `--agent` | — | Only this agent, by name **or** id |
-| `--server` | — | Only calls to this server |
+| `--server` | — | Only this server, by name **or** id |
 | `--status` | — | Only this outcome: `allowed`, `denied`, or `error` |
 | `--follow`, `-f` | — | Keep printing entries as they are recorded (Ctrl-C to stop) |
 
@@ -232,10 +233,11 @@ server. With `--follow`, recent history prints first and then new decisions
 appear as they happen.
 
 <Note>
-  An agent name can be reused by removing and re-adding an agent, so a name
-  filter can span two different principals. `--agent` also accepts the immutable
-  agent id (`holm show agent` prints it), which isolates one of them; `holm log`
-  says so when a name covers more than one.
+  Names are reusable: removing and re-adding an agent or a server gives a
+  different one the same name, so a name filter can span both. `--agent` and
+  `--server` also accept the immutable id that `holm show agent` / `holm show
+  server` print, which isolates one of them — and `holm log` says so when a name
+  covers more than one.
 </Note>
 
 ### holm log config

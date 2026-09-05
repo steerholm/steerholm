@@ -10,6 +10,11 @@ class ServerType(str, Enum):
 
 class Server(BaseModel):
     name: str = Field(..., description="Unique name of the server")
+    # Immutable id, minted once at creation. A name can be reused by removing and
+    # re-adding a server — pointing it at a different command — so the audit log
+    # records the id to tell those apart.
+    # Optional: servers created before this field exist load as None.
+    id: Optional[str] = Field(default=None, description="Immutable server id (minted at creation)")
     command: str = Field(default="", description="Full command to execute (stdio servers)")
     url: str = Field(default="", description="Server URL (http servers)")
     env: Dict[str, str] = Field(

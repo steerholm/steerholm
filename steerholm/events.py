@@ -56,6 +56,7 @@ class DecisionEvent(BaseModel):
     tool: str
     decision: str                    # "allowed" | "denied"
     server: Optional[str] = None
+    server_id: Optional[str] = None  # immutable; a server name can be reused too
     reason: Optional[str] = None
     result: str = "error"            # "ok" | "error"
     latency_ms: Optional[int] = None
