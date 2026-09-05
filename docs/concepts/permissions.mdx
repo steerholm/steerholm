@@ -25,6 +25,9 @@ When an agent calls a tool, Steerholm checks three things in order:
 
 If all checks pass, the request is forwarded to the MCP server.
 
+Every one of these decisions is recorded — allowed and denied alike — in the
+[audit log](/reference/audit-log), readable with `holm log`.
+
 ## Tool filtering
 
 `list_tools` only returns tools that match at least one entry in the policy. Agents never see tools they aren't allowed to use.
@@ -57,7 +60,8 @@ holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*" "db=prod
 
 Agents are created with `holm add agent <name>`. Each gets:
 
-- A **name** (stored in `config.json`)
+- A **name** (stored in `config.json`) — reusable once an agent is removed
+- An immutable **id**, minted at creation and kept across key rotation
 - A **key prefix** for display (stored in `config.json`)
 - A **bcrypt-hashed access key** (stored in system keyring — never in config files)
 

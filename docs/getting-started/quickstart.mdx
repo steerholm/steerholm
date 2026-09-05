@@ -78,6 +78,13 @@ holm show server git
 Your agent should now list the tools its policy allows. If none appear,
 see [Troubleshooting](/guides/troubleshooting).
 
+Once it starts working, see what it actually did:
+
+```bash
+holm log             # every call, and whether it was allowed
+holm log --follow    # watch them as they happen
+```
+
 ## What happens at runtime
 
 ```
@@ -97,3 +104,6 @@ Agent sends: call_tool("git_commit", {"repo_path": "/home/user/projects/app", "m
   → returns AUTHORIZATION_DENIED (-31001)
   → agent receives error, does not retry
 ```
+
+Both outcomes are recorded. `holm log --status denied` shows the refusal above,
+with the reason that produced it — see the [audit log](/reference/audit-log).

@@ -10,6 +10,9 @@ description: Config files, directory layout, and platform support.
 ```bash Linux / macOS
 ~/.steerholm/
 ├── config.json
+├── events-000001.jsonl     # audit log (rotated)
+├── events-000002.jsonl
+├── update-check.json       # cached "update available" check
 └── policies/
     ├── coding-agent.json
     └── research-agent.json
@@ -18,6 +21,9 @@ description: Config files, directory layout, and platform support.
 ```bash Windows
 %APPDATA%\steerholm\
 ├── config.json
+├── events-000001.jsonl
+├── events-000002.jsonl
+├── update-check.json
 └── policies\
     ├── coding-agent.json
     └── research-agent.json
@@ -37,8 +43,9 @@ STEERHOLM_CONFIG_DIR=/tmp/steerholm-test holm list servers
 ## File permissions
 
 The config directory and files are created **owner-only** — `0700` on
-`~/.steerholm` and its `policies/` directory, and `0600` on `config.json` and each
-policy file — so `--env` secrets, agent policies, and grants aren't readable by
+`~/.steerholm` and its `policies/` directory, and `0600` on `config.json`, each
+policy file, and each [audit log](/reference/audit-log) file — so `--env`
+secrets, agent policies, grants, and recorded activity aren't readable by
 other users on the machine. Steerholm re-applies these permissions on startup, so
 an existing install is tightened automatically after an upgrade. On Windows,
 per-user `AppData` already provides this isolation via ACLs.
@@ -62,8 +69,13 @@ per-user `AppData` already provides this isolation via ACLs.
   "agents": {
     "coding-agent": {
       "name": "coding-agent",
+      "id": "agt_9f2a1c4e7b3d05a1",
       "key_prefix": "steer_sk_A7x..."
     }
+  },
+  "audit": {
+    "max_files": 5,
+    "max_age_days": 0
   }
 }
 ```
@@ -94,8 +106,25 @@ per-user `AppData` already provides this isolation via ACLs.
 
 | Field | Type | Description |
 |---|---|---|
-| `name` | `string` | Unique identifier |
+| `name` | `string` | Unique identifier; reusable once an agent is removed |
+| `id` | `string` | Immutable id, minted at creation and kept across key rotation. `null` for agents created before ids existed |
 | `key_prefix` | `string` | First 15 chars of the access key (display only) |
+
+The `id` is what distinguishes two agents that have shared a name — the
+[audit log](/reference/audit-log) records it, and `holm log --agent <id>`
+isolates one of them.
+
+### Audit fields
+
+| Field | Type | Description |
+|---|---|---|
+| `max_files` | `number` | How many [audit log](/reference/audit-log) files to keep (`0` = no limit) |
+| `max_age_days` | `number` | Delete log files older than this (`0` = no limit) |
+
+<Note>
+  Set these with `holm log set --max-files N --max-age-days N`; a running daemon
+  picks them up without a restart. Segment size is fixed at 10 MB.
+</Note>
 
 ## Defaults
 
@@ -103,3 +132,5 @@ per-user `AppData` already provides this isolation via ACLs.
 |---|---|
 | Host | `127.0.0.1` |
 | Port | `4767` |
+| Audit log files kept | `5` (10 MB each, so a 50 MB ceiling) |
+| Audit log max age | none |

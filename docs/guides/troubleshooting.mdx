@@ -10,6 +10,7 @@ tell you the most:
 holm status                 # is the daemon running?
 holm show server <name>     # is the server running, and what tools does it expose?
 holm show agent <name>      # what is this agent actually allowed to do?
+holm log --status denied    # what did an agent try that was refused, and why?
 ```
 
 ## My tool connects but shows no tools
@@ -76,10 +77,29 @@ port with `holm serve --port <port>` (and point the agent at the new port).
 allowed to reference a not-yet-added server, but usually this means a typo or a
 missing `holm add server`. Check `holm list servers`.
 
+## A tool call returns AUTHORIZATION_DENIED (-31001)
+
+The policy refused the call. The [audit log](/reference/audit-log) records why:
+
+```bash
+holm log --status denied --agent <name>
+```
+
+The **Reason** column names the failing check — the tool isn't granted, the
+server isn't granted, or an argument didn't satisfy its policy (it prints the
+argument and the value). Fix it with a matching `holm grant`, then reconnect the
+tool so it re-lists.
+
+```bash
+holm log --follow --status denied    # watch refusals as they happen
+```
+
 ## A tool call returns SERVER_UNAVAILABLE (-31002)
 
 The downstream MCP server crashed or is unreachable. Check
 `holm show server <name>` for a **failed** state and its error, then fix the
 command and re-add it. The daemon also retries failed servers periodically, so a
-transient failure may clear on its own. See [Error codes](/concepts/error-codes)
-for the full list.
+transient failure may clear on its own. These show up in the audit log as
+`error` rather than `denied` (`holm log --status error`), which is how you tell
+"the server broke" from "policy refused it". See
+[Error codes](/concepts/error-codes) for the full list.

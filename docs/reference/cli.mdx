@@ -10,8 +10,9 @@ act on the action plane over the daemon's [MCP endpoint](/reference/mcp-endpoint
 Commands read verb-first — `holm <verb> <resource> [name]`.
 
 The verbs are `add`, `remove`, `list`, `show`, `grant`, `revoke`, and `rotate`;
-the resources are `server` and `agent`. Daemon lifecycle (`start`, `stop`,
-`status`, `serve`) and `version` / `update` round out the surface.
+the resources are `server` and `agent`. Alongside them: [`log`](#audit-log) reads
+what your agents did, daemon lifecycle is `start` / `stop` / `status` / `serve`,
+and `version` / `update` round out the surface.
 
 ## Servers
 
@@ -103,8 +104,9 @@ holm list agents
 
 ### holm show agent
 
-Show an agent: its access-key prefix, everything it can reach (server → tools →
-argument constraints), and how to connect it with its key.
+Show an agent: its id and access-key prefix, everything it can reach (server →
+tools → argument constraints), and how to connect it with its key. The id is what
+`holm log --agent` takes to isolate one agent's history from a reused name.
 
 ```bash
 holm show agent my-agent
@@ -197,6 +199,80 @@ holm revoke my-agent git
 | Option | Default | Description |
 |---|---|---|
 | `--tool` | — | Revoke only this tool grant; omit to revoke all access to the server |
+
+## Audit log
+
+Steerholm records every tool call an agent makes through it — which agent, which
+server, which tool, and whether policy allowed it, denied it, or the server
+failed. See [Audit log](/reference/audit-log) for the record format and where it
+is stored.
+
+### holm log
+
+Show recorded decisions. Reads the files directly, so it works with the daemon
+stopped.
+
+```bash
+holm log                                    # the 50 most recent calls
+holm log --status denied                    # only what was refused
+holm log --server git --agent coding-agent  # one agent, on one server
+holm log --follow                           # watch calls as they happen
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--number`, `-n` | `50` | Show the most recent N entries (`0` for all) |
+| `--agent` | — | Only this agent, by name **or** id |
+| `--server` | — | Only calls to this server |
+| `--status` | — | Only this outcome: `allowed`, `denied`, or `error` |
+| `--follow`, `-f` | — | Keep printing entries as they are recorded (Ctrl-C to stop) |
+
+Filters combine, so `--server git --status denied` shows what was refused on one
+server. With `--follow`, recent history prints first and then new decisions
+appear as they happen.
+
+<Note>
+  An agent name can be reused by removing and re-adding an agent, so a name
+  filter can span two different principals. `--agent` also accepts the immutable
+  agent id (`holm show agent` prints it), which isolates one of them; `holm log`
+  says so when a name covers more than one.
+</Note>
+
+### holm log config
+
+Show how much history the log keeps, and where it lives. Read-only.
+
+```bash
+holm log config
+```
+
+```
+Audit log
+  Files:         ~/.steerholm/events-*.jsonl
+  Max files:     5
+  Max age:       unlimited
+  Disk ceiling:  50 MB (10 MB per file)
+```
+
+### holm log set
+
+Change how much history the log keeps. Both limits apply — a log file is removed
+once it is past the file count **or** older than the age limit.
+
+```bash
+holm log set --max-age-days 30    # keep a month of history
+holm log set --max-files 20       # allow more history on disk
+holm log set --max-age-days 0     # no age limit (the file count still applies)
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--max-files` | `5` | How many log files to keep (`0` = no limit) |
+| `--max-age-days` | `0` | Delete log files older than this (`0` = no limit) |
+
+Changes take effect on a running daemon without a restart. Segment size is fixed
+at 10 MB and is not configurable — changing it would leave existing files at the
+old size.
 
 ## Daemon
 

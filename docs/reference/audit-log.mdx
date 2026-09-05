@@ -1,0 +1,94 @@
+---
+title: Audit log
+description: What Steerholm records for every tool call, and how long it keeps it.
+---
+
+Steerholm sits between your agents and their servers, so it is the one place that
+sees every tool call. It records one decision per call: which agent asked, which
+server and tool, and whether policy allowed it, denied it, or the server failed.
+
+Read it with [`holm log`](/reference/cli#holm-log).
+
+## Where it lives
+
+The log is split into numbered files in the [config
+directory](/reference/configuration#directory-layout):
+
+```bash
+~/.steerholm/
+├── events-000001.jsonl
+├── events-000002.jsonl
+└── events-000003.jsonl   # the one being written
+```
+
+Each file is owner-only (`0600`), like `config.json` and the policy files. Files
+are never renamed — rotating just starts writing the next number — so a reader
+tailing one is never pulled out from under it.
+
+## Record format
+
+One JSON object per line ([JSON Lines](https://jsonlines.org/)), oldest first, so
+the log streams into `jq` or a log shipper without a parser:
+
+```json
+{"ts":"2026-09-05T12:04:41.880+00:00","agent":"coding-agent","agent_id":"agt_9f2a1c4e","tool":"write_file","decision":"denied","server":"filesystem","reason":"Tool 'write_file' on server 'filesystem' is not allowed.","result":"error","latency_ms":2,"args_summary":"path=/etc/passwd"}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `ts` | `string` | When the call was decided (UTC, ISO 8601) |
+| `agent` | `string` | Agent name — reusable, so prefer `agent_id` to identify one |
+| `agent_id` | `string` | Immutable agent id; `null` if the agent was already removed |
+| `tool` | `string` | Tool the agent asked for |
+| `server` | `string` | Server that owns the tool; `null` if no granted server has it |
+| `decision` | `string` | `allowed`, `denied` (policy refused it), or `error` (server down or unexpected failure) |
+| `reason` | `string` | Why it was refused or what failed; `null` when allowed |
+| `result` | `string` | `ok` if the call completed, else `error` |
+| `latency_ms` | `number` | How long the call took |
+| `args_summary` | `string` | One-line `key=value` view of the arguments |
+
+<Note>
+  `decision` separates **policy** from **infrastructure**: `denied` means
+  Steerholm refused the call, `error` means it would have been allowed but the
+  server was unreachable or failed. Filtering for refusals means
+  `--status denied`, not both.
+</Note>
+
+<Warning>
+  Argument values and failure reasons are recorded as they were, not scrubbed —
+  that is what makes the log an audit rather than a summary. Agents rarely pass
+  secrets (server credentials are injected by the daemon via
+  [`--env`](/reference/cli#holm-add-server) and never travel through an agent),
+  but the files are owner-only for a reason: treat the log as sensitive if you
+  copy or export it.
+</Warning>
+
+## Retention
+
+Old files are deleted, so the log does not grow without bound. Two limits apply,
+and a file goes when it passes **either**:
+
+| Limit | Default | Meaning |
+|---|---|---|
+| `--max-files` | `5` | How many files to keep (`0` = no limit) |
+| `--max-age-days` | `0` (off) | Delete files older than this (`0` = no limit) |
+
+The file count bounds disk use; the age sets how long history is kept. With the
+defaults that is a 50 MB ceiling and no time limit — so on a busy install the
+oldest entries are dropped once the ceiling is reached.
+
+```bash
+holm log config                    # show the current limits
+holm log set --max-age-days 30     # keep a month of history
+```
+
+<Note>
+  Age is taken from the timestamps **inside** the files, not their modification
+  time. Restoring a backup with `tar -x` or `rsync -a` preserves old modification
+  times and would otherwise delete a restored audit trail; copying with `cp -r`
+  resets them and would keep it for ever.
+</Note>
+
+Writes are best-effort: a failure to record is logged and never breaks the tool
+call it was describing. The log is not `fsync`ed, so an abrupt power loss can
+lose the most recent lines.

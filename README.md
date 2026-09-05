@@ -77,6 +77,7 @@ Agent → HTTP /mcp → Steerholm daemon → MCP Servers
 - **Per-agent policies** — allowlist of servers, tools, and argument constraints
 - **Isolation by policy** — one shared daemon; each agent is confined by its policy, not by separate server processes
 - **Structured error codes** — `AUTHORIZATION_DENIED` (-31001) and `SERVER_UNAVAILABLE` (-31002)
+- **Everything is recorded** — every call, allowed or denied, with the reason: `holm log` (and `holm log --follow` to watch live)
 
 ## Documentation
 

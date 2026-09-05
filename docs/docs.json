@@ -62,6 +62,7 @@
         "pages": [
           "reference/cli",
           "reference/mcp-endpoint",
+          "reference/audit-log",
           "reference/configuration",
           "reference/policy-format"
         ]
