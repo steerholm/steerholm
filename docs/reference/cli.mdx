@@ -9,7 +9,8 @@ act on the action plane over the daemon's [MCP endpoint](/reference/mcp-endpoint
 
 Commands read verb-first — `holm <verb> <resource> [name]`.
 
-The verbs are `add`, `remove`, `list`, `show`, `grant`, `revoke`, and `rotate`;
+The verbs are `add`, `modify`, `remove`, `list`, `show`, `grant`, `revoke`, and
+`rotate`;
 the resources are `server` and `agent`. Alongside them: [`log`](#audit-log) reads
 what your agents did, daemon lifecycle is `start` / `stop` / `status` / `serve`,
 and `version` / `update` round out the surface.
@@ -51,6 +52,46 @@ holm add server remote-api --url "http://localhost:8000/mcp"
   `--env` names must be letters, digits, `_`, `-`, or `.` and can't start with a
   digit (the Kubernetes/Docker rule, for cross-platform portability); a repeated
   name is an error. Values may contain anything, including `=`.
+</Note>
+
+### holm modify server
+
+Change a server without removing it. Only what you name changes: `--env` merges
+into the existing variables and `--unset` removes them.
+
+```bash
+# Point it at a different command
+holm modify server git --command "uvx mcp-server-git --repository /srv/app"
+
+# Add one variable, drop another
+holm modify server db --env "DATABASE_URI=postgresql://..." --unset OLD_VAR
+
+# Switch it to a remote server
+holm modify server api --url "http://localhost:9000/mcp"
+```
+
+| Option | Description |
+|---|---|
+| `--command` | New launch command (stdio) |
+| `--url` | New server URL (streamable HTTP) |
+| `--env` | Set `KEY=VALUE` (repeatable; merges with what is there) |
+| `--unset` | Remove an environment variable by name (repeatable) |
+
+The server keeps its **id** and every agent's **grants** — that is what makes this
+different from removing and re-adding it, which would create a different server
+with no grants. The daemon restarts the server process with the new spec, so
+in-flight calls to it fail; agent sessions to Steerholm itself are unaffected.
+
+<Warning>
+  Because grants survive, repointing a server at a different command hands every
+  agent that was granted access to the old one the same access to the new one.
+  `holm modify server` names those agents so the transfer is never silent.
+</Warning>
+
+<Note>
+  Switching transport clears the state belonging to the old one: moving to
+  `--url` drops the launch command and its environment variables, and moving to
+  `--command` drops the URL. The command warns before it does so.
 </Note>
 
 ### holm remove server

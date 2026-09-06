@@ -536,3 +536,95 @@ class TestServerIds:
         )
         config_manager.reload()
         assert config_manager.get_server("old").id is None
+
+
+class TestModifyServer:
+    def test_changes_the_command_and_keeps_the_id(self, config_manager):
+        config_manager.add_server("git", command="old")
+        sid = config_manager.get_server("git").id
+        config_manager.modify_server("git", command="new")
+        after = config_manager.get_server("git")
+        assert after.command == "new"
+        assert after.id == sid            # same server, new config
+
+    def test_env_merges_and_unset_removes(self, config_manager):
+        config_manager.add_server("db", command="x", env={"A": "1", "B": "2"})
+        config_manager.modify_server("db", env={"B": "9", "C": "3"}, unset=["A"])
+        assert config_manager.get_server("db").env == {"B": "9", "C": "3"}
+
+    def test_env_only_change_keeps_the_command(self, config_manager):
+        config_manager.add_server("db", command="uvx x", env={"A": "1"})
+        config_manager.modify_server("db", env={"B": "2"})
+        after = config_manager.get_server("db")
+        assert after.command == "uvx x" and after.env == {"A": "1", "B": "2"}
+
+    def test_unsetting_a_missing_key_is_not_an_error(self, config_manager):
+        config_manager.add_server("db", command="x", env={"A": "1"})
+        config_manager.modify_server("db", unset=["NOPE"])
+        assert config_manager.get_server("db").env == {"A": "1"}
+
+    def test_switch_to_url_clears_command_and_env(self, config_manager):
+        config_manager.add_server("git", command="uvx x", env={"A": "1"})
+        config_manager.modify_server("git", url="http://localhost:9000/mcp")
+        after = config_manager.get_server("git")
+        assert after.url == "http://localhost:9000/mcp"
+        assert after.command == "" and after.env == {}
+        assert after.server_type.value == "http"
+
+    def test_switch_to_command_clears_the_url(self, config_manager):
+        config_manager.add_server("api", url="http://localhost:8000/mcp")
+        config_manager.modify_server("api", command="uvx x")
+        after = config_manager.get_server("api")
+        assert after.command == "uvx x" and after.url == ""
+        assert after.server_type.value == "stdio"
+
+    def test_grants_survive_a_modification(self, config_manager):
+        config_manager.add_server("git", command="old")
+        config_manager.add_agent("a")
+        config_manager.grant_permission("a", "git", tool="git_log")
+        config_manager.modify_server("git", command="new")
+        policy = config_manager.load_policy("a")
+        assert [t.name for t in policy.permissions["git"]] == ["git_log"]
+
+    def test_persists_across_reload(self, config_manager):
+        config_manager.add_server("git", command="old")
+        config_manager.modify_server("git", command="new")
+        config_manager.reload()
+        assert config_manager.get_server("git").command == "new"
+
+    def test_rejects_an_unknown_server(self, config_manager):
+        with pytest.raises(ValueError, match="not found"):
+            config_manager.modify_server("ghost", command="x")
+
+    def test_rejects_command_and_url_together(self, config_manager):
+        config_manager.add_server("git", command="x")
+        with pytest.raises(ValueError, match="not both"):
+            config_manager.modify_server("git", command="a", url="http://x")
+
+    def test_rejects_env_with_url(self, config_manager):
+        config_manager.add_server("git", command="x")
+        with pytest.raises(ValueError, match="stdio"):
+            config_manager.modify_server("git", url="http://x", env={"A": "1"})
+
+    def test_rejects_env_on_a_remote_server(self, config_manager):
+        config_manager.add_server("api", url="http://localhost:8000/mcp")
+        with pytest.raises(ValueError, match="remote"):
+            config_manager.modify_server("api", env={"A": "1"})
+
+    def test_validates_env_names(self, config_manager):
+        config_manager.add_server("db", command="x")
+        with pytest.raises(ValueError, match="Invalid environment variable name"):
+            config_manager.modify_server("db", env={"BAD NAME": "1"})
+
+
+class TestAgentsWithGrants:
+    def test_lists_only_agents_holding_a_grant(self, config_manager):
+        config_manager.add_server("git", command="x")
+        config_manager.add_agent("holder")
+        config_manager.add_agent("bystander")
+        config_manager.grant_permission("holder", "git", tool="*")
+        assert config_manager.agents_with_grants("git") == ["holder"]
+
+    def test_empty_when_nobody_has_grants(self, config_manager):
+        config_manager.add_server("git", command="x")
+        assert config_manager.agents_with_grants("git") == []

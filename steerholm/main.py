@@ -7,6 +7,7 @@ from rich.markup import escape
 from rich.table import Table
 from . import __version__
 from .config import ConfigManager
+from .models import ServerType
 from .updater import UpdateError, run_update_installer, update_binary
 
 app = typer.Typer(
@@ -101,6 +102,9 @@ app.add_typer(list_app, name="list")
 
 show_app = typer.Typer(no_args_is_help=True, help="Show details for an agent or server.")
 app.add_typer(show_app, name="show")
+
+modify_app = typer.Typer(no_args_is_help=True, help="Change an existing server.")
+app.add_typer(modify_app, name="modify")
 
 rotate_app = typer.Typer(no_args_is_help=True, help="Rotate an agent's access key.")
 app.add_typer(rotate_app, name="rotate")
@@ -218,6 +222,72 @@ def add_server(
     console.print(f"[bold green]Added server '{escape(name)}'.[/bold green]")
     _notify_daemon_reconcile()
     console.print(f"Next: let an agent use it with [bold]holm grant <agent> {escape(name)}[/bold].")
+
+
+@modify_app.command("server")
+def modify_server(
+    name: str,
+    command: Optional[str] = typer.Option(None, help="New launch command (stdio)"),
+    url: Optional[str] = typer.Option(None, help="New server URL (streamable HTTP)"),
+    env: Optional[List[str]] = typer.Option(
+        None, "--env", help="Set an env var: 'KEY=VALUE' (repeatable; merges)"),
+    unset: Optional[List[str]] = typer.Option(
+        None, "--unset", help="Remove an env var by name (repeatable)"),
+):
+    """
+    Change a server without removing it.
+
+    Only what you name changes: --env merges into the existing variables and
+    --unset removes them. The server keeps its id and every agent's grants, which
+    is what makes this different from removing and re-adding it.
+
+    Examples:
+      holm modify server git --command "uvx mcp-server-git --repository /srv/app"
+      holm modify server db --env "DATABASE_URI=postgresql://..." --unset OLD_VAR
+      holm modify server api --url "http://localhost:9000/mcp"
+    """
+    before = config_manager.get_server(name)
+    if before is None:
+        console.print(f"[bold red]Error:[/bold red] Server '{escape(name)}' not found.")
+        raise typer.Exit(code=1)
+    if command is None and url is None and not env and not unset:
+        console.print("[bold red]Error:[/bold red] Give at least one change to make.")
+        raise typer.Exit(code=1)
+
+    # Say what a transport switch discards before it happens.
+    if url is not None and before.server_type == ServerType.stdio:
+        dropped = f" and {len(before.env)} env var{'' if len(before.env) == 1 else 's'}" if before.env else ""
+        console.print(f"[yellow]Switching '{escape(name)}' to a remote URL drops its "
+                      f"launch command{dropped}.[/yellow]")
+    if command is not None and before.server_type == ServerType.http:
+        console.print(f"[yellow]Switching '{escape(name)}' to a launch command drops "
+                      f"its URL.[/yellow]")
+
+    after = _handle(config_manager.modify_server, name, command=command, url=url,
+                    env=_parse_env(env), unset=list(unset or []))
+
+    console.print(f"[bold green]Modified server '{escape(name)}'.[/bold green]")
+    for label, old, new in (("Command", before.command, after.command),
+                            ("URL", before.url, after.url)):
+        if old != new:
+            console.print(f"  [bold]{label}:[/bold] {escape(old or '(none)')} "
+                          f"-> {escape(new or '(none)')}")
+    changed_env = sorted(set(before.env) ^ set(after.env)
+                         | {k for k in set(before.env) & set(after.env)
+                            if before.env[k] != after.env[k]})
+    if changed_env:
+        marks = ", ".join(("+" if k in after.env else "-") + escape(k) for k in changed_env)
+        console.print(f"  [bold]Env:[/bold] {marks}")
+
+    grantees = config_manager.agents_with_grants(name)
+    if grantees:
+        console.print(
+            f"[yellow]Note:[/yellow] {len(grantees)} agent"
+            f"{'' if len(grantees) == 1 else 's'} still "
+            f"{'has' if len(grantees) == 1 else 'have'} grants on '{escape(name)}': "
+            f"{', '.join(escape(g) for g in grantees)}."
+        )
+    _notify_daemon_reconcile()
 
 
 @remove_app.command("server")

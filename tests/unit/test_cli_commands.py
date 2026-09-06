@@ -1612,3 +1612,88 @@ def test_log_follow_scan_skips_non_matching_events(cli, tmp_config_dir, monkeypa
     result = runner.invoke(app, ["log", "-f", "--agent", "cursor"])
     assert result.exit_code == 0
     assert "different agents" not in result.output   # one principal only
+
+
+# ─── modify server ──────────────────────────────────────────────────
+
+
+def test_modify_server_reports_the_change_and_notifies(cli, monkeypatch):
+    notify = MagicMock()
+    monkeypatch.setattr(m, "_notify_daemon_reconcile", notify)
+    cli.add_server("git", command="old", env={"A": "1"})
+    result = runner.invoke(app, ["modify", "server", "git",
+                                 "--command", "new", "--env", "B=2", "--unset", "A"])
+    assert result.exit_code == 0
+    assert "old -> new" in result.output
+    assert "-A" in result.output and "+B" in result.output
+    assert cli.get_server("git").env == {"B": "2"}
+    notify.assert_called_once()          # the daemon restarts it
+
+
+def test_modify_server_keeps_the_id(cli, monkeypatch):
+    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
+    cli.add_server("git", command="old")
+    sid = cli.get_server("git").id
+    runner.invoke(app, ["modify", "server", "git", "--command", "new"])
+    assert cli.get_server("git").id == sid
+
+
+def test_modify_server_warns_before_a_transport_switch(cli, monkeypatch):
+    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
+    cli.add_server("git", command="uvx x", env={"A": "1", "B": "2"})
+    result = runner.invoke(app, ["modify", "server", "git", "--url", "http://x/mcp"])
+    assert result.exit_code == 0
+    assert "drops its launch command and 2 env vars" in result.output
+    assert cli.get_server("git").env == {}
+
+
+def test_modify_server_warns_switching_back_to_a_command(cli, monkeypatch):
+    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
+    cli.add_server("api", url="http://x/mcp")
+    result = runner.invoke(app, ["modify", "server", "api", "--command", "uvx x"])
+    assert "drops its URL" in result.output
+
+
+def test_modify_server_names_the_agents_still_granted(cli, monkeypatch):
+    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
+    cli.add_server("git", command="old")
+    cli.add_agent("coder")
+    cli.grant_permission("coder", "git", tool="git_log")
+    result = runner.invoke(app, ["modify", "server", "git", "--command", "new"])
+    # Repointing a server keeps every grant, so say whose trust just moved.
+    assert "1 agent still has grants on 'git': coder" in result.output
+
+
+def test_modify_server_silent_about_grants_when_there_are_none(cli, monkeypatch):
+    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
+    cli.add_server("git", command="old")
+    result = runner.invoke(app, ["modify", "server", "git", "--command", "new"])
+    assert "grants on" not in result.output
+
+
+def test_modify_server_requires_a_change(cli):
+    cli.add_server("git", command="old")
+    result = runner.invoke(app, ["modify", "server", "git"])
+    assert result.exit_code == 1
+    assert "at least one change" in result.output
+
+
+def test_modify_server_unknown_name_errors(cli):
+    result = runner.invoke(app, ["modify", "server", "ghost", "--command", "x"])
+    assert result.exit_code == 1
+    assert "not found" in result.output
+
+
+def test_modify_server_rejects_bad_env_name(cli):
+    cli.add_server("db", command="x")
+    result = runner.invoke(app, ["modify", "server", "db", "--env", "BAD NAME=1"])
+    assert result.exit_code == 1
+    assert "Invalid environment variable name" in result.output
+
+
+def test_modify_server_bracketed_values_are_escaped(cli, monkeypatch):
+    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
+    cli.add_server("git", command="old")
+    result = runner.invoke(app, ["modify", "server", "git", "--command", "serve [core]"])
+    assert result.exit_code == 0
+    assert "serve [core]" in result.output      # rendered literally, not as markup

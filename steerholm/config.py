@@ -187,6 +187,61 @@ class ConfigManager:
         self.save_config()
         return server
 
+    def modify_server(self, name: str, command: str = None, url: str = None,
+                      env: dict = None, unset: List[str] = None) -> Server:
+        """Change an existing server in place, keeping its id and its grants.
+
+        Only the fields given are changed; `env` merges into what is already
+        there and `unset` removes keys. Switching transport clears the state that
+        belongs to the old one — a URL has no launch command or environment.
+        """
+        if name not in self.config.servers:
+            raise ValueError(f"Server '{name}' not found.")
+        if command and url:
+            raise ValueError("Provide command or url, not both.")
+        if url and (env or unset):
+            raise ValueError(
+                "Environment variables apply to stdio servers (--command), "
+                "not remote (--url) servers."
+            )
+        existing = self.config.servers[name]
+        if url is None and (env or unset) and existing.server_type == ServerType.http:
+            raise ValueError(
+                "Environment variables apply to stdio servers (--command), "
+                f"and '{name}' is a remote (--url) server."
+            )
+
+        merged = dict(existing.env)
+        for key in (unset or []):
+            merged.pop(key, None)
+        for key, value in (env or {}).items():
+            validate_env_key(key)
+            merged[key] = value
+
+        if url is not None:                      # -> remote; stdio state goes away
+            server = Server(name=name, id=existing.id, url=url,
+                            server_type=ServerType.http)
+        elif command is not None:                # -> stdio (or a new command)
+            server = Server(name=name, id=existing.id, command=command,
+                            env=merged, server_type=ServerType.stdio)
+        else:                                    # env-only change, transport kept
+            server = Server(name=name, id=existing.id, command=existing.command,
+                            url=existing.url, env=merged,
+                            server_type=existing.server_type)
+
+        self.config.servers[name] = server
+        self.save_config()
+        return server
+
+    def agents_with_grants(self, server_name: str) -> List[str]:
+        """Agents holding any grant on a server, so a change can say who it affects."""
+        names = []
+        for agent_name in self.config.agents:
+            policy = self.load_policy(agent_name)
+            if policy and server_name in policy.permissions:
+                names.append(agent_name)
+        return names
+
     # --- Audit log retention ---
     def audit_kwargs(self) -> dict:
         """The audit settings as EventLog constructor/configure arguments.
