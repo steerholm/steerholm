@@ -1697,3 +1697,22 @@ def test_modify_server_bracketed_values_are_escaped(cli, monkeypatch):
     result = runner.invoke(app, ["modify", "server", "git", "--command", "serve [core]"])
     assert result.exit_code == 0
     assert "serve [core]" in result.output      # rendered literally, not as markup
+
+
+def test_remove_server_reports_revoked_grants(cli, monkeypatch):
+    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
+    cli.add_server("git", command="x")
+    cli.add_agent("coder")
+    cli.grant_permission("coder", "git", tool="git_log")
+    result = runner.invoke(app, ["remove", "server", "git"])
+    assert result.exit_code == 0
+    assert "Also revoked grants on 'git' for 1 agent: coder" in result.output
+    assert "git" not in cli.load_policy("coder").permissions
+
+
+def test_remove_server_silent_when_no_grants(cli, monkeypatch):
+    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
+    cli.add_server("git", command="x")
+    result = runner.invoke(app, ["remove", "server", "git"])
+    assert result.exit_code == 0
+    assert "Also revoked" not in result.output

@@ -267,11 +267,26 @@ class ConfigManager:
         self.save_config()
         return audit
 
-    def remove_server(self, name: str):
+    def remove_server(self, name: str) -> List[str]:
+        """Remove a server and every grant on it. Returns the agents affected.
+
+        Grants are cascaded for the same reason removing an agent deletes its
+        policy: a name can be reused, so a grant that outlived its server would
+        silently attach to whatever is added under that name next.
+        """
         if name not in self.config.servers:
             raise ValueError(f"Server '{name}' not found.")
         del self.config.servers[name]
         self.save_config()
+
+        affected = []
+        for agent_name in self.config.agents:
+            policy = self.load_policy(agent_name)
+            if policy and name in policy.permissions:
+                del policy.permissions[name]
+                self.save_policy(policy)
+                affected.append(agent_name)
+        return affected
 
     def get_server(self, name: str) -> Optional[Server]:
         return self.config.servers.get(name)

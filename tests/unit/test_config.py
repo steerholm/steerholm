@@ -628,3 +628,49 @@ class TestAgentsWithGrants:
     def test_empty_when_nobody_has_grants(self, config_manager):
         config_manager.add_server("git", command="x")
         assert config_manager.agents_with_grants("git") == []
+
+
+class TestGrantCascade:
+    """Removing either side of a grant takes the grant with it."""
+
+    def _wire(self, cm):
+        cm.add_server("git", command="x")
+        cm.add_server("db", command="y")
+        cm.add_agent("a")
+        cm.add_agent("b")
+        for agent in ("a", "b"):
+            cm.grant_permission(agent, "git", tool="git_log")
+            cm.grant_permission(agent, "db", tool="query")
+
+    def test_removing_a_server_revokes_its_grants(self, config_manager):
+        self._wire(config_manager)
+        affected = config_manager.remove_server("git")
+        assert affected == ["a", "b"]
+        for agent in ("a", "b"):
+            policy = config_manager.load_policy(agent)
+            assert "git" not in policy.permissions
+            assert "db" in policy.permissions      # other servers untouched
+
+    def test_a_re_added_server_starts_with_no_grants(self, config_manager):
+        # The privilege-transfer case: the same name must not inherit trust.
+        self._wire(config_manager)
+        config_manager.remove_server("git")
+        config_manager.add_server("git", command="something-else")
+        assert "git" not in config_manager.load_policy("a").permissions
+
+    def test_removing_a_server_nobody_uses_affects_nobody(self, config_manager):
+        config_manager.add_server("git", command="x")
+        config_manager.add_agent("a")
+        assert config_manager.remove_server("git") == []
+
+    def test_removing_an_agent_takes_its_grants(self, config_manager):
+        self._wire(config_manager)
+        config_manager.remove_agent("a")
+        assert config_manager.load_policy("a") is None
+        assert config_manager.load_policy("b") is not None   # only that agent's
+
+    def test_cascade_survives_reload(self, config_manager):
+        self._wire(config_manager)
+        config_manager.remove_server("git")
+        config_manager.reload()
+        assert "git" not in config_manager.load_policy("a").permissions

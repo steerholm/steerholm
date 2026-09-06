@@ -56,6 +56,16 @@ holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*"
 holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*" "db=production"
 ```
 
+## Grants and lifetime
+
+A grant ties one agent to one server, and it lives only as long as both sides do.
+Removing an agent deletes its policy; removing a server revokes every grant on
+it. Names are reusable, so a grant that outlived either side would silently
+attach to whatever took the name next.
+
+To change a server without losing its grants, modify it in place
+(`holm modify server`) rather than removing and re-adding it.
+
 ## Agents
 
 Agents are created with `holm add agent <name>`. Each gets:

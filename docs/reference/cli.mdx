@@ -96,11 +96,22 @@ in-flight calls to it fail; agent sessions to Steerholm itself are unaffected.
 
 ### holm remove server
 
-Remove a server from Steerholm.
+Remove a server from Steerholm, along with every agent's grants on it.
 
 ```bash
 holm remove server git
 ```
+
+Grants go with the server, the same way removing an agent takes its policy. A
+name can be reused, so a grant that outlived its server would silently apply to
+whatever is added under that name next. The command reports which agents lost
+grants.
+
+<Note>
+  To change a server's command, URL, or environment **without** losing its
+  grants, use [`holm modify server`](#holm-modify-server) instead of removing and
+  re-adding it.
+</Note>
 
 ### holm list servers
 
@@ -166,7 +177,8 @@ holm rotate agent my-agent
 
 ### holm remove agent
 
-Remove an agent, its access key, and its policy. The key is revoked immediately.
+Remove an agent, its access key, and its policy — which takes every grant it
+held. The key is revoked immediately.
 
 ```bash
 holm remove agent my-agent

@@ -292,9 +292,20 @@ def modify_server(
 
 @remove_app.command("server")
 def remove_server(name: str):
-    """Remove an MCP server."""
-    _handle(config_manager.remove_server, name)
+    """Remove an MCP server, and every agent's grants on it.
+
+    Grants go with the server: a name can be reused, so a grant that outlived it
+    would silently apply to whatever is added under that name next. To change a
+    server without losing its grants, use `holm modify server`.
+    """
+    affected = _handle(config_manager.remove_server, name)
     console.print(f"[bold green]Removed server '{escape(name)}'.[/bold green]")
+    if affected:
+        console.print(
+            f"Also revoked grants on '{escape(name)}' for {len(affected)} agent"
+            f"{'' if len(affected) == 1 else 's'}: "
+            f"{', '.join(escape(a) for a in affected)}."
+        )
     _notify_daemon_reconcile()
 
 
