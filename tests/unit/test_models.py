@@ -144,3 +144,23 @@ class TestJsonRoundtrip:
         json_str = p.model_dump_json()
         p2 = AgentPolicy.model_validate_json(json_str)
         assert p == p2
+
+
+class TestUnknownKeysAreRejected:
+    """These models are parsed from disk, so an unrecognised key must be an
+    error that names it — not silently dropped and then erased on the next save."""
+
+    def test_config_rejects_an_unknown_key(self):
+        with pytest.raises(ValidationError, match="future_setting"):
+            Config(servers={}, agents={}, future_setting=True)
+
+    def test_agent_policy_rejects_an_unknown_key(self):
+        with pytest.raises(ValidationError, match="agent_name"):
+            AgentPolicy(agent_id="agt_1111111111111111", permissions={},
+                        agent_name="bob")
+
+    def test_a_config_a_newer_build_wrote_does_not_load_silently(self, tmp_path):
+        # The failure mode this exists to prevent: a field from a newer schema is
+        # dropped on load and gone from the file after the next save.
+        with pytest.raises(ValidationError):
+            Config(**{"servers": {}, "agents": {}, "retention_policy": "90d"})

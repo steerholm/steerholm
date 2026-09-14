@@ -464,23 +464,6 @@ def test_load_policy_corrupt_returns_none(config_manager):
     assert config_manager.load_policy("agent") is None
 
 
-# ─── legacy-schema migration (identities -> agents) ─────────────────
-
-
-def test_legacy_config_identities_key_migrates_to_agents(config_manager):
-    _cfg.CONFIG_FILE.write_text(
-        '{"servers": {}, "identities": '
-        '{"bob": {"name": "bob", "key_prefix": "steer_sk_x..."}}}'
-    )
-    config_manager.reload()
-    assert "bob" in config_manager.config.agents
-    # re-saving rewrites the config in the new schema
-    config_manager.save_config()
-    import json
-    saved = json.loads(_cfg.CONFIG_FILE.read_text())
-    assert "agents" in saved and "identities" not in saved
-
-
 class TestAuditSettings:
     def test_defaults(self, config_manager):
         audit = config_manager.config.audit

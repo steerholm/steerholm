@@ -166,22 +166,10 @@ class ConfigManager:
         try:
             with open(CONFIG_FILE, "r") as f:
                 data = json.load(f)
-            data = self._migrate_config(data)
             return Config(**data)
         except Exception as e:
             print(f"Warning: Could not load config: {e}")
             return Config()
-
-    @staticmethod
-    def _migrate_config(data: dict) -> dict:
-        """Transparently upgrade a legacy config to the current schema. A config
-        written before the agent rename stored agents under an `identities` key;
-        map it across so old installs load unchanged (and get rewritten to the new
-        schema on the next save)."""
-        if isinstance(data, dict) and "identities" in data and "agents" not in data:
-            data = dict(data)  # copy first: don't mutate the caller's dict
-            data["agents"] = data.pop("identities")
-        return data
 
     def save_config(self):
         with open(CONFIG_FILE, "w") as f:
@@ -399,8 +387,8 @@ class ConfigManager:
                 validate_entity_name("Agent", name)
             except ValueError:
                 logger.warning(
-                    "Not removing a pre-v2 policy for %r: the name is not safe to "
-                    "use as a filename.", name,
+                    "Not removing a name-keyed policy for %r: the name is not "
+                    "safe to use as a filename.", name,
                 )
             else:
                 stale.append(POLICIES_DIR / f"{name}.json")

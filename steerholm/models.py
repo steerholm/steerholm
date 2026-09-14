@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import List, Dict, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ServerType(str, Enum):
@@ -44,6 +44,8 @@ class ToolPermission(BaseModel):
 
 
 class AgentPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     # Keyed by immutable ids, not names: a name can be reused by removing and
     # re-adding, and a grant that outlived its subject must not attach to
     # whatever takes the name next.
@@ -80,6 +82,13 @@ class AuditSettings(BaseModel):
 
 
 class Config(BaseModel):
+    # Reject unknown keys rather than dropping them. These models are parsed from
+    # files on disk, and pydantic's default would silently discard anything it did
+    # not recognise — then erase it on the next save. A field written by a newer
+    # Steerholm, or a typo in a hand-edited file, should be an error that names
+    # the key, not invisible data loss.
+    model_config = ConfigDict(extra="forbid")
+
     servers: Dict[str, Server] = Field(default_factory=dict)
     agents: Dict[str, Agent] = Field(default_factory=dict)
     # Absent in configs written before retention was configurable; defaults apply.
