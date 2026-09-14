@@ -221,3 +221,8 @@ __marimo__/
 allure-results/
 allure-report/
 history.jsonl
+
+# Local planning notes and prototypes — deliberately not published. The repo is
+# public, so backlog entries (which carry reproductions for unfixed defects) and
+# half-finished design work stay on the machine that made them.
+scratchpad/

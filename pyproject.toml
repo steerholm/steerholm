@@ -31,7 +31,7 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 # Package only the steerholm library; don't let setuptools flat-layout discovery
-# pick up other top-level dirs (design/, tests/, scripts/) as packages.
+# pick up other top-level dirs (scratchpad/, tests/, scripts/) as packages.
 [tool.setuptools.packages.find]
 include = ["steerholm*"]
 
