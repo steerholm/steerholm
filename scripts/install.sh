@@ -3,6 +3,7 @@ set -euo pipefail
 
 REPO="steerholm/steerholm"
 SERVICE_NAME="steerholm"
+PLIST_FILE="${HOME}/Library/LaunchAgents/dev.steerholm.daemon.plist"
 INSTALL_DIR="${HOME}/.local/bin"
 
 RED='\033[0;31m'
@@ -32,7 +33,8 @@ info "Detected platform: ${PLATFORM}"
 
 ASSET="steerholm-${PLATFORM}.tar.gz"
 TMP_DIR=$(mktemp -d)
-trap "rm -rf ${TMP_DIR}" EXIT
+# Cleanup (including this temp dir) is installed in step 3, once there is
+# also daemon state to restore on failure.
 
 if [ -n "${STEERHOLM_LOCAL_ARCHIVE:-}" ]; then
     # Local-file mode (used for testing): install from a provided archive,
@@ -77,7 +79,109 @@ fi
 
 tar -xzf "${TMP_DIR}/release.tar.gz" -C "$TMP_DIR"
 
-# ── 3. Install binaries ───────────────────────────────────────────
+# ── 3. Stop the daemon ────────────────────────────────────────────
+
+# Stop before swapping the binary, not after. The unit is Restart=on-failure
+# with RestartSec=5, so a daemon that exits any time between the swap and the
+# restart below comes back up running the NEW binary against state the installer
+# has not finished preparing. Windows already had to do this (it cannot replace
+# a running executable); Linux and macOS get the same ordering here.
+
+# Is a Steerholm daemon answering? Checks the service signature, not just "some
+# 2xx on 4767" — /healthz reports `"service":"steerholm"` precisely so a
+# different process holding the port is not a false positive. Bounded: a daemon
+# wedged mid-shutdown can accept the connection and never reply, and an un-timed
+# probe would hang the installer here with the daemon stopped and the binary
+# not yet swapped.
+steerholm_up() {
+    curl -fsS --connect-timeout 1 --max-time 2 \
+        "http://127.0.0.1:4767/healthz" 2>/dev/null | grep -q '"service":"steerholm"'
+}
+
+# Wait for it to go away. `launchctl unload` returns before the job's processes
+# exit, so this is what makes the stop actually synchronous on macOS.
+drain_daemon() {
+    if ! command -v curl >/dev/null 2>&1; then
+        warn "curl not available; cannot confirm the daemon stopped."
+        return 0
+    fi
+    i=0
+    while [ "$i" -lt 20 ]; do
+        steerholm_up || return 0
+        sleep 0.5 2>/dev/null || sleep 1   # fractional sleep is not universal
+        i=$((i + 1))
+    done
+    return 1
+}
+
+# `systemctl restart` and `launchctl load` both return before the daemon has
+# bound the port, and can return 0 on a unit that immediately fails. Step 3 took
+# the daemon down deliberately, so claiming it is back without looking would end
+# the install with no daemon and a message saying otherwise.
+confirm_daemon_started() {
+    i=0
+    while [ "$i" -lt 20 ]; do
+        if steerholm_up; then
+            info "Daemon started on 127.0.0.1:4767"
+            return 0
+        fi
+        sleep 0.5 2>/dev/null || sleep 1
+        i=$((i + 1))
+    done
+    warn "Daemon did not answer on 127.0.0.1:4767 within 10s."
+    warn "Check it with: holm status"
+}
+
+start_daemon() {
+    if [ "$OS" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
+        systemctl --user start "$SERVICE_NAME" 2>/dev/null || true
+    elif [ "$OS" = "Darwin" ] && [ -f "$PLIST_FILE" ]; then
+        launchctl load "$PLIST_FILE" 2>/dev/null || true
+    fi
+}
+
+# Deliberately NOT gated on STEERHOLM_NO_SERVICE: that flag means "do not
+# register a service", not "nothing is running". A daemon from an earlier
+# install would otherwise have its binary swapped underneath it and never be
+# restarted. install.ps1 orders it the same way, for the same reason.
+stop_daemon() {
+    # Reuse the CLI where it exists: `holm stop` already knows the per-platform
+    # stop and the plist path. On a fresh install there is no binary yet.
+    if [ -x "${INSTALL_DIR}/holm" ]; then
+        "${INSTALL_DIR}/holm" stop >/dev/null 2>&1 || true
+    elif [ "$OS" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
+        systemctl --user stop "$SERVICE_NAME" 2>/dev/null || true
+    elif [ "$OS" = "Darwin" ] && [ -f "$PLIST_FILE" ]; then
+        launchctl unload "$PLIST_FILE" 2>/dev/null || true
+    fi
+    DAEMON_STOPPED=1
+    if ! drain_daemon; then
+        warn "A Steerholm daemon is still answering on 127.0.0.1:4767."
+        warn "Stop it (\`holm stop\`, or kill the process) and re-run this installer."
+        exit 1
+    fi
+}
+
+DAEMON_STOPPED=0
+INSTALL_DONE=0
+
+# The daemon is deliberately down from here until step 5 starts it again. Any
+# abort in between — disk full, read-only HOME, Ctrl-C — would otherwise leave
+# the machine with no daemon and no message saying so.
+cleanup() {
+    rc=$?
+    rm -rf "${TMP_DIR}"
+    if [ "$rc" -ne 0 ] && [ "$DAEMON_STOPPED" = 1 ] && [ "$INSTALL_DONE" = 0 ]; then
+        warn "Install did not complete; restarting the daemon it stopped."
+        start_daemon
+    fi
+}
+trap cleanup EXIT
+
+stop_daemon
+
+
+# ── 4. Install binaries ───────────────────────────────────────────
 
 mkdir -p "$INSTALL_DIR"
 # Atomic replace: write to a temp name in the same dir, then rename over the
@@ -98,13 +202,14 @@ fi
 HOLM_BIN="${INSTALL_DIR}/holm"
 info "Installed holm at ${HOLM_BIN}"
 
-# ── 4. Register service ───────────────────────────────────────────
+# ── 5. Register service ───────────────────────────────────────────
 
 if [ -n "${STEERHOLM_NO_SERVICE:-}" ]; then
     info "Skipping service registration (STEERHOLM_NO_SERVICE set)."
     info "Run the daemon manually with: holm serve"
     echo ""
     info "Installation complete."
+    INSTALL_DONE=1
     exit 0
 fi
 
@@ -131,17 +236,16 @@ EOF
 
     systemctl --user daemon-reload
     systemctl --user enable "$SERVICE_NAME"
-    # restart (not start): on an update the daemon is already running the old
-    # binary, and `start` is a no-op on an active unit — it must be restarted to
-    # pick up the newly-installed binary.
+    # The daemon was stopped in step 3, so this is a plain start. `restart` is
+    # kept rather than `start` only so an interrupted stop cannot leave the old
+    # binary running — restarting an already-stopped unit just starts it.
     systemctl --user restart "$SERVICE_NAME"
 
     info "Registered systemd user service"
-    info "Daemon started on 127.0.0.1:4767"
+    confirm_daemon_started
 
 elif [ "$OS" = "Darwin" ]; then
-    PLIST_DIR="${HOME}/Library/LaunchAgents"
-    PLIST_FILE="${PLIST_DIR}/dev.steerholm.daemon.plist"
+    PLIST_DIR=$(dirname "$PLIST_FILE")
 
     mkdir -p "$PLIST_DIR"
 
@@ -172,19 +276,16 @@ elif [ "$OS" = "Darwin" ]; then
 </plist>
 EOF
 
+    # Unload again: the plist was just rewritten and launchd caches the old
+    # definition. This is a second teardown, so drain again — `launchctl unload`
+    # returns before the job's processes exit, and loading while the old one
+    # still holds 4767 makes the new agent fail to bind and launchd throttle it.
     launchctl unload "$PLIST_FILE" 2>/dev/null || true
-    # On an update the previous daemon still holds port 4767; wait for launchd to
-    # fully stop it before loading the new one, or the reloaded agent can't bind
-    # and launchd throttles the retries. (No-op on a fresh install — nothing is
-    # listening, so this breaks on the first probe.)
-    for _ in $(seq 1 20); do
-        curl -fsS -o /dev/null "http://127.0.0.1:4767/healthz" 2>/dev/null || break
-        sleep 0.5
-    done
+    drain_daemon || warn "Old daemon still answering; the reload may fail to bind."
     launchctl load "$PLIST_FILE"
 
     info "Registered launchd agent"
-    info "Daemon started on 127.0.0.1:4767"
+    confirm_daemon_started
 fi
 
 echo ""
@@ -194,3 +295,5 @@ echo "  holm stop"
 echo "  holm start"
 echo ""
 info "Installation complete."
+
+INSTALL_DONE=1
