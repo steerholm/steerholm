@@ -10,19 +10,20 @@ class PermissionEngine:
         self.policy = policy
 
     def check_permission(
-        self, server_name: str, tool_name: str, arguments: Dict[str, Any] = None
+        self, server_id: str, tool_name: str, arguments: Dict[str, Any] = None,
+        server_name: str = None,
     ) -> bool:
         """
         Checks if the agent has permission to use the tool on the given server.
         Raises McpError with AUTHORIZATION_DENIED if denied.
         Returns True if allowed.
         """
-        if server_name not in self.policy.permissions:
+        if server_id not in self.policy.permissions:
             raise authorization_denied(
-                f"Access to server '{server_name}' denied for this agent."
+                f"Access to server '{server_name or server_id}' denied for this agent."
             )
 
-        allowed_tools = self.policy.permissions[server_name]
+        allowed_tools = self.policy.permissions[server_id]
 
         matched_permission: Optional[ToolPermission] = None
         for perm in allowed_tools:
@@ -32,7 +33,7 @@ class PermissionEngine:
 
         if not matched_permission:
             raise authorization_denied(
-                f"Tool '{tool_name}' on server '{server_name}' is not allowed."
+                f"Tool '{tool_name}' on server '{server_name or server_id}' is not allowed."
             )
 
         if matched_permission.policies:

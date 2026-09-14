@@ -45,6 +45,9 @@ A glob pattern without wildcards is an exact match — `mode=readonly` matches o
 
 ### CLI examples
 
+Each example assumes the server is already docked — a grant records the server's
+id, so `holm add server` has to come first.
+
 ```bash
 # Glob: allow git_log only for repos under /home/user/projects
 holm grant my-agent git --tool "git_log" --args "repo_path=/home/user/projects/**"

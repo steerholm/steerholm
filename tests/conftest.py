@@ -1,10 +1,56 @@
 import asyncio
+import atexit
 import os
 import pytest
+import tempfile
 from collections import OrderedDict
 
 # Never let the CLI's "update available" check hit the network during tests.
 os.environ.setdefault("STEERHOLM_NO_UPDATE_CHECK", "1")
+
+# Keep the suite off the developer's real credential store. Agent access keys
+# are hashed into the system keyring, so without this every test that creates an
+# agent needs a working desktop keyring — which a headless or SSH-only box does
+# not have, and which fails in ways that look like test failures.
+#
+# An in-memory backend rather than a file one: it needs no dependency, no temp
+# directory, and no XDG_DATA_HOME/LOCALAPPDATA juggling (keyring resolves those
+# differently per platform, so a file backend is only isolated on some of them).
+# CI selects a backend explicitly via PYTHON_KEYRING_BACKEND; leave that alone.
+if not os.environ.get("PYTHON_KEYRING_BACKEND"):
+    import keyring
+    from keyring.backend import KeyringBackend
+
+    class _InMemoryKeyring(KeyringBackend):
+        """Test-only keyring. Never touches disk or the session keyring."""
+
+        priority = 1
+        _store: dict = {}
+
+        def get_password(self, service, username):
+            return self._store.get((service, username))
+
+        def set_password(self, service, username, password):
+            self._store[(service, username)] = password
+
+        def delete_password(self, service, username):
+            try:
+                del self._store[(service, username)]
+            except KeyError:
+                raise keyring.errors.PasswordDeleteError(username)
+
+    keyring.set_keyring(_InMemoryKeyring())
+
+# Point the whole suite at a throwaway config dir BEFORE steerholm.config is
+# imported, because CONFIG_DIR is resolved at import time. The per-test fixtures
+# monkeypatch those module constants, but anything touching the config outside a
+# fixture — a bare `import steerholm.main`, a CLI test without the `cli` fixture
+# — would otherwise read and write the developer's real ~/.steerholm. This is
+# the floor; the fixtures are the detail.
+_SUITE_CONFIG_DIR = tempfile.TemporaryDirectory(prefix="steerholm-tests-")
+os.environ["STEERHOLM_CONFIG_DIR"] = _SUITE_CONFIG_DIR.name
+atexit.register(_SUITE_CONFIG_DIR.cleanup)
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 

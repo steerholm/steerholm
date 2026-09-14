@@ -1,5 +1,6 @@
 """Tests for the ConfigManager."""
 
+import json
 import os
 import stat
 import sys
@@ -98,7 +99,7 @@ class TestConfigManagerServers:
         assert stat.S_IMODE(os.stat(c.CONFIG_DIR).st_mode) == 0o700
         assert stat.S_IMODE(os.stat(c.POLICIES_DIR).st_mode) == 0o700
         assert stat.S_IMODE(os.stat(c.CONFIG_FILE).st_mode) == 0o600
-        policy = c.POLICIES_DIR / "a.json"
+        policy = c.POLICIES_DIR / f"{config_manager._agent_id('a')}.json"
         assert policy.exists()
         assert stat.S_IMODE(os.stat(policy).st_mode) == 0o600
 
@@ -110,7 +111,7 @@ class TestConfigManagerServers:
         config_manager.add_server("db", command="uvx x", env={"DB": "secret"})
         config_manager.add_agent("a")
         config_manager.grant_permission("a", "db", tool="*")
-        policy = c.POLICIES_DIR / "a.json"
+        policy = c.POLICIES_DIR / f"{config_manager._agent_id('a')}.json"
         os.chmod(c.CONFIG_DIR, 0o755)
         os.chmod(c.CONFIG_FILE, 0o644)
         os.chmod(policy, 0o644)
@@ -171,6 +172,7 @@ class TestConfigManagerAgents:
 
     def test_remove_agent_cascades_to_policy(self, config_manager):
         config_manager.add_agent("test-agent")
+        config_manager.add_server("filesystem", command="echo")
         config_manager.grant_permission("test-agent", "filesystem", tool="read_file",
                                         arg_policies=["path=/home/user/public/**"])
 
@@ -188,6 +190,7 @@ class TestConfigManagerAgents:
 
     def test_rotate_agent_key_changes_key_keeps_grants(self, config_manager):
         first = config_manager.add_agent("test-agent")
+        config_manager.add_server("filesystem", command="echo")
         config_manager.grant_permission("test-agent", "filesystem", tool="read_file")
 
         rotated = config_manager.rotate_agent_key("test-agent")
@@ -196,7 +199,7 @@ class TestConfigManagerAgents:
         assert config_manager.get_agent("test-agent").key_prefix == rotated[:15] + "..."
         # grants survive a rotation
         policy = config_manager.load_policy("test-agent")
-        assert policy.permissions["filesystem"][0].name == "read_file"
+        assert policy.permissions[config_manager._server_id("filesystem")][0].name == "read_file"
 
     def test_rotate_nonexistent_agent_raises(self, config_manager):
         with pytest.raises(ValueError, match="not found"):
@@ -247,13 +250,20 @@ class TestConfigManagerAgents:
 
 
 class TestConfigManagerPolicies:
+    @pytest.fixture(autouse=True)
+    def _servers(self, config_manager):
+        # A grant records the server's id, so the server has to exist first.
+        for name in ("filesystem", "git", "db", "srv", "fs"):
+            if not config_manager.get_server(name):
+                config_manager.add_server(name, command="echo")
+
     def test_grant_permission_creates_policy(self, config_manager):
         config_manager.add_agent("agent")
         config_manager.grant_permission("agent", "filesystem", tool="read_file")
 
         policy = config_manager.load_policy("agent")
         assert policy is not None
-        assert policy.permissions["filesystem"][0].name == "read_file"
+        assert policy.permissions[config_manager._server_id("filesystem")][0].name == "read_file"
 
     def test_grant_permission_with_arg_policies(self, config_manager):
         config_manager.add_agent("agent")
@@ -261,7 +271,7 @@ class TestConfigManagerPolicies:
                                         arg_policies=["path=/home/user/**"])
 
         policy = config_manager.load_policy("agent")
-        arg = policy.permissions["filesystem"][0].policies[0]
+        arg = policy.permissions[config_manager._server_id("filesystem")][0].policies[0]
         assert arg.arg_name == "path"
         assert arg.match_type == "glob"
         assert arg.pattern == "/home/user/**"
@@ -272,7 +282,7 @@ class TestConfigManagerPolicies:
                                         arg_policies=["sql=re:^SELECT.*"])
 
         policy = config_manager.load_policy("agent")
-        arg = policy.permissions["db"][0].policies[0]
+        arg = policy.permissions[config_manager._server_id("db")][0].policies[0]
         assert arg.match_type == "regex"
         assert arg.pattern == "^SELECT.*"
 
@@ -293,7 +303,7 @@ class TestConfigManagerPolicies:
         assert config_manager.revoke_permission("agent", "filesystem", tool="read_file") is True
 
         policy = config_manager.load_policy("agent")
-        tool_names = [t.name for t in policy.permissions["filesystem"]]
+        tool_names = [t.name for t in policy.permissions[config_manager._server_id("filesystem")]]
         assert tool_names == ["write_file"]
 
     def test_revoke_permission_removes_whole_server(self, config_manager):
@@ -304,8 +314,8 @@ class TestConfigManagerPolicies:
         assert config_manager.revoke_permission("agent", "filesystem") is True
 
         policy = config_manager.load_policy("agent")
-        assert "filesystem" not in policy.permissions
-        assert "git" in policy.permissions
+        assert config_manager._server_id("filesystem") not in policy.permissions
+        assert config_manager._server_id("git") in policy.permissions
 
     def test_revoke_last_tool_drops_the_server(self, config_manager):
         config_manager.add_agent("agent")
@@ -314,7 +324,7 @@ class TestConfigManagerPolicies:
         assert config_manager.revoke_permission("agent", "filesystem", tool="read_file") is True
 
         policy = config_manager.load_policy("agent")
-        assert "filesystem" not in policy.permissions
+        assert config_manager._server_id("filesystem") not in policy.permissions
 
     def test_revoke_permission_returns_false_when_nothing_matches(self, config_manager):
         config_manager.add_agent("agent")
@@ -341,7 +351,7 @@ class TestConfigManagerPolicies:
         config_manager.grant_permission("agent", "filesystem", tool="write_file")
 
         policy = config_manager.load_policy("agent")
-        tool_names = [t.name for t in policy.permissions["filesystem"]]
+        tool_names = [t.name for t in policy.permissions[config_manager._server_id("filesystem")]]
         assert "read_file" in tool_names
         assert "write_file" in tool_names
 
@@ -351,8 +361,8 @@ class TestConfigManagerPolicies:
         config_manager.grant_permission("agent", "git", tool="git_status")
 
         policy = config_manager.load_policy("agent")
-        assert "filesystem" in policy.permissions
-        assert "git" in policy.permissions
+        assert config_manager._server_id("filesystem") in policy.permissions
+        assert config_manager._server_id("git") in policy.permissions
 
 
 # ─── Platform Config Dir ───────────────────────────────────────────
@@ -361,6 +371,12 @@ class TestConfigManagerPolicies:
 class TestConfigPlatformDir:
     # _get_config_dir() reads sys.platform at call time, not import time,
     # so monkeypatching sys.platform works here.
+
+    @pytest.fixture(autouse=True)
+    def _no_override(self, monkeypatch):
+        # The suite sets STEERHOLM_CONFIG_DIR so no test can touch the real
+        # config; these tests are about the fallback it overrides.
+        monkeypatch.delenv("STEERHOLM_CONFIG_DIR", raising=False)
 
     def test_unix_config_dir(self, monkeypatch):
         monkeypatch.setattr(sys, "platform", "linux")
@@ -424,6 +440,7 @@ def test_remove_agent_logs_keyring_error_but_removes(config_manager, monkeypatch
 
 def test_remove_agent_swallows_policy_unlink_error(config_manager, monkeypatch):
     config_manager.add_agent("agent")
+    config_manager.add_server("srv", command="echo")
     config_manager.grant_permission("agent", "srv", tool="*")  # writes a policy file
     monkeypatch.setattr("pathlib.Path.unlink", _MM(side_effect=OSError("locked")))
     config_manager.remove_agent("agent")
@@ -462,16 +479,6 @@ def test_legacy_config_identities_key_migrates_to_agents(config_manager):
     import json
     saved = json.loads(_cfg.CONFIG_FILE.read_text())
     assert "agents" in saved and "identities" not in saved
-
-
-def test_legacy_policy_identity_name_migrates_to_agent_name(config_manager):
-    (_cfg.POLICIES_DIR / "bob.json").write_text(
-        '{"identity_name": "bob", "permissions": {"fs": [{"name": "*", "policies": []}]}}'
-    )
-    policy = config_manager.load_policy("bob")
-    assert policy is not None
-    assert policy.agent_name == "bob"
-    assert "fs" in policy.permissions
 
 
 class TestAuditSettings:
@@ -584,7 +591,7 @@ class TestModifyServer:
         config_manager.grant_permission("a", "git", tool="git_log")
         config_manager.modify_server("git", command="new")
         policy = config_manager.load_policy("a")
-        assert [t.name for t in policy.permissions["git"]] == ["git_log"]
+        assert [t.name for t in policy.permissions[config_manager._server_id("git")]] == ["git_log"]
 
     def test_persists_across_reload(self, config_manager):
         config_manager.add_server("git", command="old")
@@ -617,17 +624,7 @@ class TestModifyServer:
             config_manager.modify_server("db", env={"BAD NAME": "1"})
 
 
-class TestAgentsWithGrants:
-    def test_lists_only_agents_holding_a_grant(self, config_manager):
-        config_manager.add_server("git", command="x")
-        config_manager.add_agent("holder")
-        config_manager.add_agent("bystander")
-        config_manager.grant_permission("holder", "git", tool="*")
-        assert config_manager.agents_with_grants("git") == ["holder"]
-
-    def test_empty_when_nobody_has_grants(self, config_manager):
-        config_manager.add_server("git", command="x")
-        assert config_manager.agents_with_grants("git") == []
+# ─── the grant cascade, keyed by id ─────────────────────────────────
 
 
 class TestGrantCascade:
@@ -644,19 +641,25 @@ class TestGrantCascade:
 
     def test_removing_a_server_revokes_its_grants(self, config_manager):
         self._wire(config_manager)
+        git_id = config_manager._server_id("git")
+        db_id = config_manager._server_id("db")
         affected = config_manager.remove_server("git")
         assert affected == ["a", "b"]
         for agent in ("a", "b"):
             policy = config_manager.load_policy(agent)
-            assert "git" not in policy.permissions
-            assert "db" in policy.permissions      # other servers untouched
+            assert git_id not in policy.permissions
+            assert db_id in policy.permissions      # other servers untouched
 
     def test_a_re_added_server_starts_with_no_grants(self, config_manager):
         # The privilege-transfer case: the same name must not inherit trust.
         self._wire(config_manager)
+        old_id = config_manager._server_id("git")
         config_manager.remove_server("git")
         config_manager.add_server("git", command="something-else")
-        assert "git" not in config_manager.load_policy("a").permissions
+        new_id = config_manager._server_id("git")
+        permissions = config_manager.load_policy("a").permissions
+        assert new_id != old_id
+        assert new_id not in permissions and old_id not in permissions
 
     def test_removing_a_server_nobody_uses_affects_nobody(self, config_manager):
         config_manager.add_server("git", command="x")
@@ -667,10 +670,171 @@ class TestGrantCascade:
         self._wire(config_manager)
         config_manager.remove_agent("a")
         assert config_manager.load_policy("a") is None
-        assert config_manager.load_policy("b") is not None   # only that agent's
+        assert config_manager.load_policy("b") is not None
 
     def test_cascade_survives_reload(self, config_manager):
         self._wire(config_manager)
+        git_id = config_manager._server_id("git")
         config_manager.remove_server("git")
         config_manager.reload()
-        assert "git" not in config_manager.load_policy("a").permissions
+        assert git_id not in config_manager.load_policy("a").permissions
+
+    def test_grants_survive_a_server_modification(self, config_manager):
+        config_manager.add_server("git", command="old")
+        config_manager.add_agent("a")
+        config_manager.grant_permission("a", "git", tool="git_log")
+        server_id = config_manager._server_id("git")
+        config_manager.modify_server("git", command="new")
+        # keeping the id is what keeps the grant attached across the edit
+        assert config_manager._server_id("git") == server_id
+        assert [t.name for t in config_manager.load_policy("a").permissions[server_id]] == ["git_log"]
+
+
+class TestAgentsWithGrants:
+    def test_lists_only_agents_holding_a_grant(self, config_manager):
+        config_manager.add_server("git", command="x")
+        config_manager.add_agent("holder")
+        config_manager.add_agent("bystander")
+        config_manager.grant_permission("holder", "git", tool="*")
+        assert config_manager.agents_with_grants("git") == ["holder"]
+
+    def test_empty_when_nobody_has_grants(self, config_manager):
+        config_manager.add_server("git", command="x")
+        assert config_manager.agents_with_grants("git") == []
+
+    def test_empty_for_a_server_that_does_not_exist(self, config_manager):
+        assert config_manager.agents_with_grants("ghost") == []
+
+
+# ─── writes resolve their path from the config, not the document ────
+
+
+def test_a_policy_file_claiming_another_id_is_not_written_to(config_manager):
+    # load_policy resolves the path from the config; if save_policy trusted the
+    # document's own agent_id, a revoke would land elsewhere and report success
+    # while the real grant stayed live.
+    config_manager.add_server("git", command="echo")
+    config_manager.add_agent("bob")
+    config_manager.grant_permission("bob", "git", tool="*")
+    path = config_manager.policy_path_for("bob")
+    doc = json.loads(path.read_text())
+    doc["agent_id"] = "agt_0000000000000000"
+    path.write_text(json.dumps(doc))
+
+    assert config_manager.revoke_permission("bob", "git") is True
+    assert config_manager.load_policy("bob").permissions == {}
+    assert not (_cfg.POLICIES_DIR / "agt_0000000000000000.json").exists()
+
+
+def test_create_policy_for_an_unknown_agent_raises(config_manager):
+    with pytest.raises(ValueError, match="not found"):
+        config_manager.create_policy("ghost")
+
+
+def test_load_policy_for_an_unknown_agent_returns_none(config_manager):
+    assert config_manager.load_policy("ghost") is None
+
+
+def test_a_grant_whose_server_vanished_can_still_be_revoked(config_manager):
+    # `holm show agent` prints such a grant as a raw srv_ id, so that id has to
+    # be something `holm revoke` accepts.
+    config_manager.add_server("git", command="x")
+    config_manager.add_agent("alice")
+    config_manager.grant_permission("alice", "git", tool="*")
+    server_id = config_manager._server_id("git")
+    del config_manager.config.servers["git"]      # cascade did not run
+    config_manager.save_config()
+
+    assert config_manager.revoke_permission("alice", server_id) is True
+    assert config_manager.load_policy("alice").permissions == {}
+
+
+# ─── names become ids' neighbours, so they are validated ────────────
+
+
+class TestEntityNameValidation:
+    def test_an_empty_name_is_rejected(self, config_manager):
+        with pytest.raises(ValueError, match="cannot be empty"):
+            config_manager.add_agent("")
+
+    def test_a_name_that_is_not_safe_as_a_filename_is_rejected(self, config_manager):
+        for bad in ("../evil", "a/b", "a b", ".hidden", "-leading"):
+            with pytest.raises(ValueError, match="must consist of letters"):
+                config_manager.add_agent(bad)
+
+    def test_a_name_shaped_like_an_id_is_rejected(self, config_manager):
+        # Ids and names share a namespace in the CLI (`holm log --agent` takes
+        # either), so a name must never be confusable with an id.
+        with pytest.raises(ValueError, match="reserved for ids"):
+            config_manager.add_agent("agt_0000000000000000")
+        with pytest.raises(ValueError, match="reserved for ids"):
+            config_manager.add_server("srv_0000000000000000", command="echo")
+
+    def test_the_reserved_prefix_check_is_case_insensitive(self, config_manager):
+        # macOS and Windows filesystems are case-insensitive, so `AGT_<hex>`
+        # would resolve to the same policy file as a real `agt_<hex>` id.
+        with pytest.raises(ValueError, match="reserved for ids"):
+            config_manager.add_agent("AGT_0000000000000000")
+        with pytest.raises(ValueError, match="reserved for ids"):
+            config_manager.add_server("Srv_0000000000000000", command="echo")
+
+    def test_servers_are_validated_too(self, config_manager):
+        with pytest.raises(ValueError, match="must consist of letters"):
+            config_manager.add_server("../evil", command="echo")
+
+    def test_ordinary_names_are_accepted(self, config_manager):
+        for good in ("git", "my-agent", "agent_2", "web.api", "_internal"):
+            config_manager.add_agent(good)
+        assert "web.api" in config_manager.config.agents
+
+
+def test_an_agent_that_exists_without_an_id_says_so(config_manager):
+    # "not found" for an agent the tool is listing sends the operator hunting
+    # for a typo instead of at the real cause.
+    config_manager.add_agent("bob")
+    config_manager.config.agents["bob"].id = None
+
+    with pytest.raises(ValueError, match="has no id"):
+        config_manager.create_policy("bob")
+    with pytest.raises(ValueError, match="not found"):
+        config_manager.policy_path_for("bob")
+
+
+def test_removing_an_id_less_agent_does_not_raise(config_manager):
+    config_manager.add_agent("bob")
+    config_manager.config.agents["bob"].id = None
+    config_manager.remove_agent("bob")           # must not raise
+    assert "bob" not in config_manager.config.agents
+
+
+def test_removing_an_unsafely_named_agent_does_not_follow_the_name(config_manager, caplog):
+    # remove_agent builds a path from the name; a config predating validation
+    # can still hold an unsafe one.
+    outside = _cfg.CONFIG_DIR / "secret.json"
+    outside.write_text("{}")
+    config_manager.add_agent("victim")
+    config_manager.config.agents["../secret"] = config_manager.config.agents.pop("victim")
+    config_manager.config.agents["../secret"].name = "../secret"
+
+    config_manager.remove_agent("../secret")
+
+    assert outside.exists()
+    assert "not safe to use as a filename" in caplog.text
+
+
+def test_a_corrupt_policy_file_reads_as_no_policy(config_manager):
+    config_manager.add_agent("bob")
+    config_manager.policy_path_for("bob").write_text("{ bad json")
+    assert config_manager.load_policy("bob") is None
+
+
+def test_granting_on_a_server_that_does_not_exist_raises(config_manager):
+    # A grant records the server's id, so there is nothing to point at. This is
+    # the invariant the change exists to enforce; it lives here, not just in the
+    # CLI, so it is asserted at the layer that owns it.
+    config_manager.add_agent("bob")
+
+    with pytest.raises(ValueError, match="Add it first"):
+        config_manager.grant_permission("bob", "ghost")
+
+    assert config_manager.load_policy("bob") is None   # and nothing was written

@@ -458,11 +458,13 @@ def _print_server_status(name: str) -> None:
 
 def _print_server_grantees(name: str) -> None:
     """Print which agents have been granted access to a server."""
+    server = config_manager.get_server(name)
+    server_id = server.id if server else None
     grantees = []
     for agent_name in config_manager.config.agents:
         policy = config_manager.load_policy(agent_name)
-        if policy and name in policy.permissions:
-            tools = ", ".join(t.name for t in policy.permissions[name])
+        if policy and server_id in policy.permissions:
+            tools = ", ".join(t.name for t in policy.permissions[server_id])
             grantees.append((agent_name, tools))
     if not grantees:
         console.print("[dim]No agents have been granted access to this server.[/dim]")
@@ -718,8 +720,11 @@ def show_agent(name: str):
         console.print("[bold]Access:[/bold] [dim]none granted (default-deny)[/dim]")
     else:
         console.print("[bold]Access:[/bold]")
-        for server, tools in policy.permissions.items():
-            console.print(f"  [cyan]{escape(server)}[/cyan]")
+        # Grants are stored by server id; show the name the user knows it by,
+        # falling back to the id if the server is gone.
+        names_by_id = {s.id: s.name for s in config_manager.list_servers() if s.id}
+        for server_id, tools in policy.permissions.items():
+            console.print(f"  [cyan]{escape(names_by_id.get(server_id, server_id))}[/cyan]")
             for tool in tools:
                 pol_str = ""
                 if tool.policies:
@@ -759,9 +764,8 @@ def grant(
     if agent not in config_manager.config.agents:
         console.print(f"[bold red]Error:[/bold red] Agent '{escape(agent)}' not found.")
         raise typer.Exit(code=1)
-    if not config_manager.get_server(server) and server != "*":
-        console.print(f"[yellow]Warning: Server '{escape(server)}' is not currently added.[/yellow]")
-
+    # A grant points at the server's id, so the server has to exist first;
+    # grant_permission raises and _handle turns that into a clean error.
     _handle(config_manager.grant_permission, agent, server, tool=tool, arg_policies=args)
     console.print(f"[bold green]Granted[/bold green] '{escape(agent)}' access to '{escape(server)}' tool '{escape(tool)}'.")
 

@@ -381,3 +381,40 @@ async def test_session_agent_binding_evicts_oldest(config_manager):
     await app(dict(scope), recv, snd)
 
     assert list(app._session_agents.keys()) == ["s2"]  # s1 evicted
+
+
+@pytest.mark.asyncio
+async def test_agent_without_an_id_is_denied_not_crashed(config_manager):
+    # Grants key on the id, so an agent without one holds none. Synthesising a
+    # policy from its name would put a reusable name in an id field.
+    from mcp.shared.exceptions import McpError
+    config_manager.add_agent("bob")
+    config_manager.config.agents["bob"].id = None
+    gateway = make_gateway(config_manager)
+
+    with pytest.raises(McpError, match="no usable identity"):
+        gateway._load_agent_policy("bob")
+
+
+@pytest.mark.asyncio
+async def test_a_grant_naming_a_server_that_is_gone_is_skipped(config_manager):
+    # A policy can outlive its server if it is edited by hand or restored from a
+    # backup taken before the server was removed.
+    config_manager.add_server("srv", command="echo")
+    config_manager.add_agent("agent")
+    config_manager.grant_permission("agent", "srv", tool="*")
+    policy = config_manager.load_policy("agent")
+    policy.permissions["srv_0000000000000000"] = policy.permissions[
+        config_manager._server_id("srv")]
+    gateway = make_gateway(config_manager)
+    proc = make_mock_process("srv", ["t"])
+    proc.session = MagicMock()
+    gateway.daemon.shared_processes["srv"] = proc
+
+    # Register a process under the key the unresolvable id would look up, so the
+    # test fails if the "server is gone" guard is removed rather than passing
+    # because get_shared_process(None) happens to return None.
+    gateway.daemon.shared_processes[None] = proc
+
+    reachable = [name for _sid, name, _p in gateway._iter_accessible_processes(policy)]
+    assert reachable == ["srv"]

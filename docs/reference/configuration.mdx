@@ -14,8 +14,8 @@ description: Config files, directory layout, and platform support.
 ├── events-000002.jsonl
 ├── update-check.json       # cached "update available" check
 └── policies/
-    ├── coding-agent.json
-    └── research-agent.json
+    ├── agt_9f2a1c4e7b3d05a1.json
+    └── agt_5c30bb81f6e2d94a.json
 ```
 
 ```bash Windows
@@ -25,8 +25,8 @@ description: Config files, directory layout, and platform support.
 ├── events-000002.jsonl
 ├── update-check.json
 └── policies\
-    ├── coding-agent.json
-    └── research-agent.json
+    ├── agt_9f2a1c4e7b3d05a1.json
+    └── agt_5c30bb81f6e2d94a.json
 ```
 
 </CodeGroup>
@@ -63,6 +63,7 @@ per-user `AppData` already provides this isolation via ACLs.
     },
     "remote-api": {
       "name": "remote-api",
+      "id": "srv_0d83f6b1ce49a27f",
       "url": "http://localhost:8000/mcp",
       "server_type": "http"
     }
@@ -81,12 +82,20 @@ per-user `AppData` already provides this isolation via ACLs.
 }
 ```
 
+### Top-level fields
+
+| Field | Type | Description |
+|---|---|---|
+| `servers` | `object` | Docked servers, keyed by name |
+| `agents` | `object` | Registered agents, keyed by name |
+| `audit` | `object` | Audit-log retention |
+
 ### Server fields
 
 | Field | Type | Description |
 |---|---|---|
 | `name` | `string` | Unique identifier; reusable once a server is removed |
-| `id` | `string` | Immutable id, minted at creation. `null` for servers created before ids existed |
+| `id` | `string` | Immutable id, minted at creation and kept across `holm modify server`. Grants point at this, not at the name. `null` for servers added before ids existed |
 | `command` | `string` | Full launch command (stdio servers) |
 | `url` | `string` | Server URL (HTTP servers) |
 | `env` | `object` | Extra environment variables passed to a stdio server |
@@ -109,7 +118,7 @@ per-user `AppData` already provides this isolation via ACLs.
 | Field | Type | Description |
 |---|---|---|
 | `name` | `string` | Unique identifier; reusable once an agent is removed |
-| `id` | `string` | Immutable id, minted at creation and kept across key rotation. `null` for agents created before ids existed |
+| `id` | `string` | Immutable id, minted at creation and kept across key rotation. Names the agent's policy file, and grants point at this rather than the name. `null` for agents added before ids existed |
 | `key_prefix` | `string` | First 15 chars of the access key (display only) |
 
 The `id` is what distinguishes two agents that have shared a name — the

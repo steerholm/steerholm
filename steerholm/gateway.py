@@ -196,24 +196,38 @@ class SteerholmGateway:
     def _load_agent_policy(self, agent_name: str) -> AgentPolicy:
         policy = self.config_manager.load_policy(agent_name)
         if not policy:
-            return AgentPolicy(agent_name=agent_name, permissions={})
+            agent = self.config_manager.get_agent(agent_name)
+            # Grants key on the id, so an agent without one cannot hold any.
+            # Synthesising a policy from the name would put a reusable name in a
+            # field the rest of the system reads as an immutable principal.
+            if not agent or not agent.id:
+                raise authorization_denied(
+                    f"Agent '{agent_name}' has no usable identity; it cannot be "
+                    "granted access. Re-add the agent."
+                )
+            return AgentPolicy(agent_id=agent.id, permissions={})
         return policy
 
     def _iter_accessible_processes(self, policy: AgentPolicy):
-        for server_name in policy.permissions:
+        """Yield (server id, name, process) for each granted, running server."""
+        names = {s.id: s.name for s in self.config_manager.list_servers() if s.id}
+        for server_id in policy.permissions:
+            server_name = names.get(server_id)
+            if server_name is None:
+                continue  # the granted server no longer exists
             process = self.daemon.get_shared_process(server_name)
             if process and process.session:
-                yield server_name, process
+                yield server_id, server_name, process
 
     async def _list_allowed_tools(self, agent_name: str) -> List[Tool]:
         policy = self._load_agent_policy(agent_name)
         all_tools = []
 
-        for server_name, process in self._iter_accessible_processes(policy):
+        for server_id, server_name, process in self._iter_accessible_processes(policy):
             try:
                 server_tools = await process.list_tools()
                 for tool in server_tools.tools:
-                    for perm in policy.permissions.get(server_name, []):
+                    for perm in policy.permissions.get(server_id, []):
                         if fnmatch(tool.name, perm.name):
                             all_tools.append(tool)
                             break
@@ -225,7 +239,7 @@ class SteerholmGateway:
     async def _resolve_tool_server(self, agent_name: str, tool_name: str) -> Optional[str]:
         policy = self._load_agent_policy(agent_name)
 
-        for server_name, process in self._iter_accessible_processes(policy):
+        for _server_id, server_name, process in self._iter_accessible_processes(policy):
             try:
                 server_tools = await process.list_tools()
                 for tool in server_tools.tools:
@@ -259,7 +273,9 @@ class SteerholmGateway:
                 reason = f"Server '{server_name}' is not running."
                 raise server_unavailable(server_name)
 
-            engine.check_permission(server_name, name, arguments)
+            granted = self.config_manager.get_server(server_name)
+            engine.check_permission(granted.id if granted else None, name, arguments,
+                                    server_name=server_name)
             decision = "allowed"
 
             logger.info(f"Routing tool '{name}' to server '{server_name}'")

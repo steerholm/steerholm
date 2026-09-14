@@ -74,6 +74,39 @@ def _restrict(path, mode: int) -> None:
 _ENV_KEY_RE = re.compile(r"[-._a-zA-Z][-._a-zA-Z0-9]*")
 
 
+# Names end up as path segments (policies/<agent id>.json) and as audit-log
+# identifiers, so they have to be inert in both. Letters, digits, '_', '-', '.',
+# starting with a letter or '_' — the same shape as the env-var rule, and it
+# excludes the separators and '..' that would let a name escape its directory.
+_NAME_RE = re.compile(r"[_a-zA-Z][-._a-zA-Z0-9]*")
+_ID_PREFIXES = ("agt_", "srv_")
+
+
+def validate_entity_name(kind: str, name: str) -> None:
+    """Reject agent/server names that are unsafe as a filename or ambiguous with
+    an id.
+
+    Two hazards. A name containing a path separator or '..' can escape the
+    policies directory wherever a name is still used to build a path. A name
+    shaped like an id ('agt_<hex>') can collide with another entity's real id,
+    which would let one principal's policy file be mistaken for another's.
+    """
+    if not name:
+        raise ValueError(f"{kind} name cannot be empty.")
+    if not _NAME_RE.fullmatch(name):
+        raise ValueError(
+            f"Invalid {kind.lower()} name {name!r}: names must consist of letters, "
+            "digits, '_', '-', or '.', and must start with a letter or '_'."
+        )
+    # Case-folded: macOS and Windows filesystems are case-insensitive, so
+    # `AGT_<hex>` would resolve to the same policy file as a real `agt_<hex>` id.
+    if name.lower().startswith(_ID_PREFIXES):
+        raise ValueError(
+            f"Invalid {kind.lower()} name {name!r}: {'/'.join(_ID_PREFIXES)} is "
+            "reserved for ids, which must not be confusable with names."
+        )
+
+
 def _new_server_id() -> str:
     """Mint an immutable server id, set once at creation, so the audit log can
     tell a re-added name apart from the server it replaced."""
@@ -162,6 +195,7 @@ class ConfigManager:
     def add_server(self, name: str, command: str = None, url: str = None,
                    env: dict = None) -> Server:
         """Dock a server. Provide command (stdio) or url (http), not both."""
+        validate_entity_name("Server", name)
         if name in self.config.servers:
             raise ValueError(f"Server '{name}' already exists.")
         if command and url:
@@ -233,15 +267,6 @@ class ConfigManager:
         self.save_config()
         return server
 
-    def agents_with_grants(self, server_name: str) -> List[str]:
-        """Agents holding any grant on a server, so a change can say who it affects."""
-        names = []
-        for agent_name in self.config.agents:
-            policy = self.load_policy(agent_name)
-            if policy and server_name in policy.permissions:
-                names.append(agent_name)
-        return names
-
     # --- Audit log retention ---
     def audit_kwargs(self) -> dict:
         """The audit settings as EventLog constructor/configure arguments.
@@ -276,17 +301,31 @@ class ConfigManager:
         """
         if name not in self.config.servers:
             raise ValueError(f"Server '{name}' not found.")
+        # Resolve the id before the server is gone; the grants are keyed on it.
+        server_id = self._server_id(name)
         del self.config.servers[name]
         self.save_config()
 
         affected = []
-        for agent_name in self.config.agents:
+        for agent_name in list(self.config.agents):
             policy = self.load_policy(agent_name)
-            if policy and name in policy.permissions:
-                del policy.permissions[name]
-                self.save_policy(policy)
+            if policy and server_id in policy.permissions:
+                del policy.permissions[server_id]
+                self.save_policy(agent_name, policy)
                 affected.append(agent_name)
         return affected
+
+    def agents_with_grants(self, server_name: str) -> List[str]:
+        """Agents holding any grant on a server, so a change can say who it affects."""
+        server_id = self._server_id(server_name)
+        if server_id is None:
+            return []
+        names = []
+        for agent_name in self.config.agents:
+            policy = self.load_policy(agent_name)
+            if policy and server_id in policy.permissions:
+                names.append(agent_name)
+        return names
 
     def get_server(self, name: str) -> Optional[Server]:
         return self.config.servers.get(name)
@@ -308,6 +347,7 @@ class ConfigManager:
     def add_agent(self, name: str) -> str:
         """Create an agent, generate an access key, hash it, store in keyring.
         Returns the access key. Only available at creation time."""
+        validate_entity_name("Agent", name)
         if name in self.config.agents:
             raise ValueError(f"Agent '{name}' already exists.")
         access_key = self._generate_access_key(name)
@@ -347,29 +387,74 @@ class ConfigManager:
             # must not be able to authenticate a removed agent.
             logger.warning("Could not delete keyring entry for '%s': %s", name, e)
         if name in self.config.agents:
+            stale = []
+            try:
+                stale.append(self.policy_path_for(name))
+            except ValueError:
+                pass          # no id: nothing id-keyed to remove
+            # A policy file left over from the name-keyed layout would otherwise
+            # be grafted onto whoever next takes this name. Only follow the name
+            # when it is safe to build a path from.
+            try:
+                validate_entity_name("Agent", name)
+            except ValueError:
+                logger.warning(
+                    "Not removing a pre-v2 policy for %r: the name is not safe to "
+                    "use as a filename.", name,
+                )
+            else:
+                stale.append(POLICIES_DIR / f"{name}.json")
+
             del self.config.agents[name]
             self.save_config()
-            policy_path = self._get_policy_path(name)
-            if policy_path.exists():
-                try:
-                    policy_path.unlink()
-                except OSError:
-                    pass
+            for policy_path in stale:
+                if policy_path.exists():
+                    try:
+                        policy_path.unlink()
+                    except OSError:
+                        pass
 
     def list_agents(self) -> list:
         return list(self.config.agents.values())
 
     # --- Policy Management ---
-    def _get_policy_path(self, agent_name: str) -> Path:
-        return POLICIES_DIR / f"{agent_name}.json"
+    def _agent_id(self, agent_name: str) -> Optional[str]:
+        agent = self.config.agents.get(agent_name)
+        return agent.id if agent else None
+
+    def _server_id(self, server_name: str) -> Optional[str]:
+        server = self.config.servers.get(server_name)
+        return server.id if server else None
+
+    def policy_path_for(self, agent_name: str) -> Path:
+        """Where this agent's policy lives, resolved from the config.
+
+        Always from the config's id, never from an `agent_id` read out of a
+        policy file: if the two disagree, a write keyed on the file's own field
+        would land somewhere else and silently leave the real grant in place.
+        """
+        agent_id = self._agent_id(agent_name)
+        if agent_id is None:
+            raise ValueError(f"Agent '{agent_name}' not found.")
+        return POLICIES_DIR / f"{agent_id}.json"
 
     def create_policy(self, agent_name: str) -> AgentPolicy:
-        policy = AgentPolicy(agent_name=agent_name, permissions={})
-        self.save_policy(policy)
+        agent_id = self._agent_id(agent_name)
+        if agent_id is None:
+            if agent_name in self.config.agents:
+                raise ValueError(
+                    f"Agent '{agent_name}' has no id, so it cannot hold grants. "
+                    f"Remove and re-add it with 'holm add agent {agent_name}'."
+                )
+            raise ValueError(f"Agent '{agent_name}' not found.")
+        policy = AgentPolicy(agent_id=agent_id, permissions={})
+        self.save_policy(agent_name, policy)
         return policy
 
-    def save_policy(self, policy: AgentPolicy):
-        path = self._get_policy_path(policy.agent_name)
+    def save_policy(self, agent_name: str, policy: AgentPolicy):
+        """Persist a policy. Takes the agent NAME so the path comes from the
+        config rather than from the document being written."""
+        path = self.policy_path_for(agent_name)
         with open(path, "w") as f:
             f.write(policy.model_dump_json(indent=2))
         _restrict(path, 0o600)
@@ -380,6 +465,13 @@ class ConfigManager:
         arg_policies: list of 'arg=pattern' or 'arg=re:pattern' strings."""
         if agent_name not in self.config.agents:
             raise ValueError(f"Agent '{agent_name}' not found.")
+        server_id = self._server_id(server_name)
+        if server_id is None:
+            # A grant records the server's id, so there is nothing to point at.
+            raise ValueError(
+                f"Server '{server_name}' not found. Add it first with "
+                f"'holm add server {server_name}'."
+            )
         policies = []
         for arg_str in (arg_policies or []):
             if "=" not in arg_str:
@@ -396,11 +488,11 @@ class ConfigManager:
         if not policy:
             policy = self.create_policy(agent_name)
 
-        if server_name not in policy.permissions:
-            policy.permissions[server_name] = []
+        if server_id not in policy.permissions:
+            policy.permissions[server_id] = []
 
-        policy.permissions[server_name].append(ToolPermission(name=tool, policies=policies))
-        self.save_policy(policy)
+        policy.permissions[server_id].append(ToolPermission(name=tool, policies=policies))
+        self.save_policy(agent_name, policy)
 
     def revoke_permission(self, agent_name: str, server_name: str,
                           tool: str = None) -> bool:
@@ -410,34 +502,42 @@ class ConfigManager:
         if agent_name not in self.config.agents:
             raise ValueError(f"Agent '{agent_name}' not found.")
         policy = self.load_policy(agent_name)
-        if not policy or server_name not in policy.permissions:
+        if not policy:
+            return False
+        server_id = self._server_id(server_name)
+        if server_id is None and server_name in policy.permissions:
+            # The server is gone but its grant outlived the cascade. `holm show
+            # agent` prints such a grant as a raw id, so accept that id here —
+            # otherwise it names something no command can address.
+            server_id = server_name
+        if server_id is None or server_id not in policy.permissions:
             return False
 
         if tool is None:
-            del policy.permissions[server_name]
-            self.save_policy(policy)
+            del policy.permissions[server_id]
+            self.save_policy(agent_name, policy)
             return True
 
-        remaining = [p for p in policy.permissions[server_name] if p.name != tool]
-        if len(remaining) == len(policy.permissions[server_name]):
+        remaining = [p for p in policy.permissions[server_id] if p.name != tool]
+        if len(remaining) == len(policy.permissions[server_id]):
             return False  # no matching grant
         if remaining:
-            policy.permissions[server_name] = remaining
+            policy.permissions[server_id] = remaining
         else:
-            del policy.permissions[server_name]  # last grant for the server
-        self.save_policy(policy)
+            del policy.permissions[server_id]  # last grant for the server
+        self.save_policy(agent_name, policy)
         return True
 
     def load_policy(self, agent_name: str) -> Optional[AgentPolicy]:
-        path = self._get_policy_path(agent_name)
+        if self._agent_id(agent_name) is None:
+            return None
+        path = self.policy_path_for(agent_name)
         if not path.exists():
             return None
         try:
             with open(path, "r") as f:
                 data = json.load(f)
-            if isinstance(data, dict) and "identity_name" in data and "agent_name" not in data:
-                data["agent_name"] = data.pop("identity_name")  # legacy policy file
             return AgentPolicy(**data)
         except Exception as e:
-            print(f"Error loading policy for {agent_name}: {e}")
+            logger.error("Could not load the policy for %r: %s", agent_name, e)
             return None

@@ -13,7 +13,7 @@ from steerholm.errors import AUTHORIZATION_DENIED_CODE
 @pytest.fixture
 def engine_read_only():
     policy = AgentPolicy(
-        agent_name="readonly",
+        agent_id="readonly",
         permissions={
             "filesystem": [
                 ToolPermission(
@@ -35,7 +35,7 @@ def engine_read_only():
 @pytest.fixture
 def engine_wildcard():
     policy = AgentPolicy(
-        agent_name="admin",
+        agent_id="admin",
         permissions={"filesystem": [ToolPermission(name="*", policies=[])]},
     )
     return PermissionEngine(policy)
@@ -44,7 +44,7 @@ def engine_wildcard():
 @pytest.fixture
 def engine_glob_tools():
     policy = AgentPolicy(
-        agent_name="reader",
+        agent_id="reader",
         permissions={"filesystem": [ToolPermission(name="read_*", policies=[])]},
     )
     return PermissionEngine(policy)
@@ -53,7 +53,7 @@ def engine_glob_tools():
 @pytest.fixture
 def engine_multi_policy():
     policy = AgentPolicy(
-        agent_name="strict",
+        agent_id="strict",
         permissions={
             "database": [
                 ToolPermission(
@@ -153,7 +153,7 @@ class TestArgumentPolicy:
         # Regression: `--tool "*" --args "path=..."` must not reject tools that
         # have no `path` argument.
         policy = AgentPolicy(
-            agent_name="fs",
+            agent_id="fs",
             permissions={
                 "filesystem": [
                     ToolPermission(
@@ -214,14 +214,14 @@ class TestArgumentPolicy:
 
 class TestEdgeCases:
     def test_empty_policy(self):
-        engine = PermissionEngine(AgentPolicy(agent_name="empty", permissions={}))
+        engine = PermissionEngine(AgentPolicy(agent_id="empty", permissions={}))
         with pytest.raises(McpError) as exc_info:
             engine.check_permission("any", "any")
         assert_authorization_denied(exc_info)
 
     def test_policy_with_empty_tool_list(self):
         engine = PermissionEngine(
-            AgentPolicy(agent_name="no_tools", permissions={"filesystem": []})
+            AgentPolicy(agent_id="no_tools", permissions={"filesystem": []})
         )
         with pytest.raises(McpError) as exc_info:
             engine.check_permission("filesystem", "read_file")
@@ -246,7 +246,7 @@ class TestErrorCodes:
 class TestMultipleToolPermissions:
     def test_multiple_patterns_on_same_server(self):
         engine = PermissionEngine(AgentPolicy(
-            agent_name="agent",
+            agent_id="agent",
             permissions={"fs": [
                 ToolPermission(name="read_*"),
                 ToolPermission(name="write_file"),
@@ -260,7 +260,7 @@ class TestMultipleToolPermissions:
 
     def test_first_matching_permission_wins(self):
         engine = PermissionEngine(AgentPolicy(
-            agent_name="agent",
+            agent_id="agent",
             permissions={"fs": [
                 ToolPermission(name="read_file", policies=[
                     ArgumentPolicy(arg_name="path", match_type="glob", pattern="/safe/**"),
@@ -276,7 +276,7 @@ class TestMultipleToolPermissions:
 class TestRegexAnchoring:
     def test_regex_anchored_at_start_not_end(self):
         engine = PermissionEngine(AgentPolicy(
-            agent_name="agent",
+            agent_id="agent",
             permissions={"db": [
                 ToolPermission(name="query", policies=[
                     ArgumentPolicy(arg_name="sql", match_type="regex", pattern=r"^SELECT"),
@@ -287,7 +287,7 @@ class TestRegexAnchoring:
 
     def test_regex_full_match_with_dollar(self):
         engine = PermissionEngine(AgentPolicy(
-            agent_name="agent",
+            agent_id="agent",
             permissions={"db": [
                 ToolPermission(name="query", policies=[
                     ArgumentPolicy(arg_name="sql", match_type="regex", pattern=r"^SELECT\s+\w+$"),
@@ -297,3 +297,33 @@ class TestRegexAnchoring:
         assert engine.check_permission("db", "query", {"sql": "SELECT users"})
         with pytest.raises(McpError):
             engine.check_permission("db", "query", {"sql": "SELECT users; DROP TABLE"})
+
+
+class TestDenialMessagesUseNames:
+    """Enforcement matches on ids, but operators must still see names."""
+
+    def _engine(self):
+        return PermissionEngine(AgentPolicy(
+            agent_id="agt_1111111111111111",
+            permissions={"srv_2222222222222222": [ToolPermission(name="read_*")]},
+        ))
+
+    def test_an_ungranted_server_is_named_not_shown_as_an_id(self):
+        with pytest.raises(McpError) as exc:
+            self._engine().check_permission(
+                "srv_9999999999999999", "read_file", server_name="database")
+        assert "database" in str(exc.value)
+        assert "srv_9999999999999999" not in str(exc.value)
+
+    def test_an_ungranted_tool_names_its_server(self):
+        with pytest.raises(McpError) as exc:
+            self._engine().check_permission(
+                "srv_2222222222222222", "write_file", server_name="git")
+        assert "git" in str(exc.value)
+        assert "srv_2222222222222222" not in str(exc.value)
+
+    def test_the_id_is_the_fallback_when_no_name_is_known(self):
+        # A grant whose server has been removed has no name to show.
+        with pytest.raises(McpError) as exc:
+            self._engine().check_permission("srv_9999999999999999", "read_file")
+        assert "srv_9999999999999999" in str(exc.value)

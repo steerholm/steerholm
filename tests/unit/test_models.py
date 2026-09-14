@@ -90,14 +90,14 @@ class TestToolPermission:
 class TestAgentPolicy:
     def test_create(self):
         p = AgentPolicy(
-            agent_name="test",
+            agent_id="test",
             permissions={"filesystem": [ToolPermission(name="read_file")]},
         )
         assert "filesystem" in p.permissions
         assert len(p.permissions["filesystem"]) == 1
 
     def test_empty_permissions(self):
-        p = AgentPolicy(agent_name="empty", permissions={})
+        p = AgentPolicy(agent_id="empty", permissions={})
         assert p.permissions == {}
 
 
@@ -125,7 +125,7 @@ class TestJsonRoundtrip:
 
     def test_policy_roundtrip(self):
         p = AgentPolicy(
-            agent_name="agent",
+            agent_id="agent",
             permissions={
                 "fs": [
                     ToolPermission(

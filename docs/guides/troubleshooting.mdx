@@ -71,11 +71,11 @@ If `holm serve` reports the port is taken, another Steerholm instance (or some
 other process) is on `127.0.0.1:4767`. Stop the other one, or bind a different
 port with `holm serve --port <port>` (and point the agent at the new port).
 
-## "Server 'X' is not currently added" when granting
+## "Server 'X' not found" when granting
 
-`holm grant` warns when the server name isn't registered yet. Grants are
-allowed to reference a not-yet-added server, but usually this means a typo or a
-missing `holm add server`. Check `holm list servers`.
+A grant records the server's immutable id, so the server has to be added before
+it can be granted. Usually this is a typo or a missing `holm add server` — check
+`holm list servers`, then grant.
 
 ## A tool call returns AUTHORIZATION_DENIED (-31001)
 

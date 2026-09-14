@@ -13,7 +13,7 @@ class Server(BaseModel):
     # Immutable id, minted once at creation. A name can be reused by removing and
     # re-adding a server — pointing it at a different command — so the audit log
     # records the id to tell those apart.
-    # Optional: servers created before this field exist load as None.
+    # Optional: entries written before ids existed load as None.
     id: Optional[str] = Field(default=None, description="Immutable server id (minted at creation)")
     command: str = Field(default="", description="Full command to execute (stdio servers)")
     url: str = Field(default="", description="Server URL (http servers)")
@@ -44,9 +44,12 @@ class ToolPermission(BaseModel):
 
 
 class AgentPolicy(BaseModel):
-    agent_name: str
+    # Keyed by immutable ids, not names: a name can be reused by removing and
+    # re-adding, and a grant that outlived its subject must not attach to
+    # whatever takes the name next.
+    agent_id: str
     permissions: Dict[str, List[ToolPermission]] = Field(
-        ..., description="Map of server_name -> list of allowed tools"
+        ..., description="Map of server id -> list of allowed tools"
     )
 
 
@@ -54,7 +57,7 @@ class Agent(BaseModel):
     name: str = Field(..., description="Name of the agent")
     # Immutable id, minted once at creation and kept across key rotation. Lets the
     # audit log distinguish a deleted-then-recreated name (same name, new principal).
-    # Optional: agents created before this field exist load as None (forward-only).
+    # Optional: entries written before ids existed load as None.
     id: Optional[str] = Field(default=None, description="Immutable agent id (minted at creation)")
     key_prefix: str = Field(..., description="First 15 chars of the access key for display")
 

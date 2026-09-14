@@ -312,11 +312,13 @@ def test_rotate_agent_not_found_errors(cli):
 # ─── grant / revoke / show agent ────────────────────────────────────
 
 
-def test_grant_warns_when_server_not_added(cli):
+def test_grant_errors_when_server_not_added(cli):
+    # A grant records the server's id, so there is nothing to point at.
     cli.add_agent("agent")
     result = runner.invoke(app, ["grant", "agent", "ghost"])
-    assert "not currently added" in result.output
-    assert "Granted" in result.output
+    assert result.exit_code == 1
+    assert "not found" in result.output
+    assert "Granted" not in result.output
 
 
 def test_grant_agent_not_found_errors_before_server_warning(cli):
@@ -325,7 +327,6 @@ def test_grant_agent_not_found_errors_before_server_warning(cli):
     result = runner.invoke(app, ["grant", "nobody", "ghost"])
     assert result.exit_code == 1
     assert "Agent 'nobody' not found" in result.output
-    assert "not currently added" not in result.output
 
 
 def test_grant_added_server(cli):
@@ -1704,10 +1705,12 @@ def test_remove_server_reports_revoked_grants(cli, monkeypatch):
     cli.add_server("git", command="x")
     cli.add_agent("coder")
     cli.grant_permission("coder", "git", tool="git_log")
+    server_id = cli._server_id("git")
     result = runner.invoke(app, ["remove", "server", "git"])
     assert result.exit_code == 0
     assert "Also revoked grants on 'git' for 1 agent: coder" in result.output
-    assert "git" not in cli.load_policy("coder").permissions
+    # Keyed by id, so asserting on the name would be vacuous.
+    assert server_id not in cli.load_policy("coder").permissions
 
 
 def test_remove_server_silent_when_no_grants(cli, monkeypatch):

@@ -3,15 +3,22 @@ title: Policy Format
 description: JSON schema for per-agent security policies.
 ---
 
-Policy files live at `policies/<agent_name>.json` inside the config directory.
+Policy files live at `policies/<agent_id>.json` inside the config directory.
+
+Both the filename and the keys inside are **ids**, not names. A name can be
+reused — remove an agent or a server, add another with the same name, and it is
+a different principal. Keying on the immutable id means a grant cannot survive
+the thing it was written for and reattach to whatever takes the name next. Read
+grants back in name form with `holm show agent <name>`; `holm show server <name>`
+prints a server's id.
 
 ## Example
 
 ```json
 {
-  "agent_name": "coding-agent",
+  "agent_id": "agt_4f2a9c1b7d3e5a80",
   "permissions": {
-    "git": [
+    "srv_9b1c4e77a205f3d6": [
       {
         "name": "git_log",
         "policies": [
@@ -26,18 +33,6 @@ Policy files live at `policies/<agent_name>.json` inside the config directory.
         "name": "git_diff",
         "policies": []
       }
-    ],
-    "database": [
-      {
-        "name": "query",
-        "policies": [
-          {
-            "arg_name": "sql",
-            "match_type": "regex",
-            "pattern": "^SELECT\\s.*"
-          }
-        ]
-      }
     ]
   }
 }
@@ -49,8 +44,8 @@ Policy files live at `policies/<agent_name>.json` inside the config directory.
 
 | Field | Type | Description |
 |---|---|---|
-| `agent_name` | `string` | Must match the agent name |
-| `permissions` | `object` | Map of server name → list of tool permissions |
+| `agent_id` | `string` | The agent's immutable id (`agt_…`) |
+| `permissions` | `object` | Map of server id (`srv_…`) → list of tool permissions |
 
 ### ToolPermission
 
@@ -77,3 +72,18 @@ Policy files live at `policies/<agent_name>.json` inside the config directory.
     Full regular expression, matched from the start of the value. Use `re:` prefix in CLI.
   </Card>
 </CardGroup>
+
+## Lifecycle
+
+A grant links two ids, so it lives and dies with both ends:
+
+- Removing an agent deletes its policy file.
+- Removing a server revokes every grant on it; `holm remove server` names the
+  agents it affected.
+- `holm modify server` changes a server in place and keeps its id, so grants
+  survive the edit.
+- `holm rotate` issues a new access key but keeps the agent's id, so grants
+  survive rotation.
+
+Granting on a server that has not been added is an error — there is no id to
+point at. Add the server first.
