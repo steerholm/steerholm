@@ -140,10 +140,77 @@ def validate_env_key(key: str) -> None:
         )
 
 
+class SchemaError(Exception):
+    """The on-disk state is a schema this build cannot safely read or write."""
+
+
+# sysexits.h EX_CONFIG, the exit code for a SchemaError from anything a service
+# manager runs. Named in the systemd unit's RestartPreventExitStatus: only
+# `holm migrate` can fix a schema mismatch, so restarting just loops every
+# RestartSec. Plain failure here is what that used to do.
+EX_CONFIG = 78
+
+
 class ConfigManager:
     def __init__(self):
         self._ensure_dirs()
+        self._stamp_if_new()
         self.config = self._load_config()
+
+    @staticmethod
+    def _stamp_if_new() -> None:
+        """Mark brand-new state as current. It has nothing to bring forward.
+
+        Without this the first `holm add server` would write a config with no
+        version marker, and every later command would read it as schema 0 and
+        refuse to run.
+        """
+        from . import migrations
+
+        store = migrations.MigrationStore(CONFIG_DIR)
+        if store.version_file.exists():
+            return
+        if CONFIG_FILE.exists() or store.policy_files():
+            # There is state here, and no marker, so it predates versioning and
+            # needs migrating. Stamping it current would skip that permanently
+            # and leave every policy unreadable. Policies count on their own:
+            # a crash between the config and policy renames can leave exactly
+            # that shape, and it is the one case this must not mistake for new.
+            return
+        store.version = migrations.CURRENT_VERSION
+
+    @staticmethod
+    def verify_schema() -> None:
+        """Refuse to run against state this build does not understand.
+
+        Verifies; never migrates. Deliberately not called from `__init__`: the
+        CLI builds a manager at import, so refusing there would take down `holm
+        migrate` — the one command that fixes it — along with everything else.
+        Callers invoke it once, before the config is used.
+        """
+        from . import migrations
+
+        store = migrations.MigrationStore(CONFIG_DIR)
+        if not CONFIG_FILE.exists() and not store.policy_files() \
+                and not store.version_file.exists():
+            return                      # genuinely empty: nothing to be behind
+        try:
+            version = migrations.resolve_version(store)
+        except migrations.store.StateError as e:
+            raise SchemaError(str(e)) from e
+        if version == migrations.CURRENT_VERSION:
+            return
+        if version > migrations.CURRENT_VERSION:
+            raise SchemaError(
+                f"{CONFIG_DIR} is schema v{version}; this build of Steerholm "
+                f"understands v{migrations.CURRENT_VERSION}. Upgrade Steerholm."
+            )
+        raise SchemaError(
+            f"{CONFIG_DIR} is schema v{version}; this build of Steerholm expects "
+            f"v{migrations.CURRENT_VERSION}. Reinstall with the official "
+            "installer, which migrates it:\n"
+            "  curl -fsSL https://steerholm.ai/install.sh | bash"
+        )
 
     def _ensure_dirs(self):
         # The config holds server secrets (--env), agent policies, and grants, so
