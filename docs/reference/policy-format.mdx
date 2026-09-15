@@ -100,23 +100,31 @@ Steerholm refuses to run against a schema it does not understand rather than
 risk misreading it — an unmigrated policy would read as the agent having no
 grants at all.
 
-The pre-migration state is kept inside the config directory as
-`.pre-migration`, so the name-keyed originals are recoverable if a rekey looks
-wrong. It holds a copy of `config.json`, including any `--env` values, which is
-why it lives there rather than beside the config directory: it inherits the same
-owner-only permissions and moves with your state. There is only ever one, and
-you do not have to clean it up — the next migration replaces it rather than
-adding to it.
+The state as it was before the migration is kept inside the config directory as
+`.pre-migration`. It holds a copy of `config.json`, including any `--env`
+values, which is why it lives there rather than beside the config directory: it
+inherits the same owner-only permissions and moves with your state. There is
+only ever one, and you do not have to clean it up — the next migration replaces
+it rather than adding to it.
+
+It is there so you can **see** what a migration did. If grants look wrong
+afterwards, comparing `.pre-migration/policies/` against `policies/` shows
+exactly what changed, and that comparison is the most useful thing to attach to
+a bug report.
 
 <Warning>
-  There are no reverse migrations. An older Steerholm refuses to run against a
-  newer schema rather than silently misreading it, so downgrading means going
-  back to the pre-migration state.
+  It is not a way to go back. There are no reverse migrations, and copying the
+  directory back over your config does not produce a working state: the schema
+  marker would still read the new version over old data, every agent would
+  resolve to no grants, and `holm migrate` would report the state as already
+  current.
 
-  Copying `.pre-migration` back over your config is **not** enough on its own:
-  the schema marker would still read the new version over old data, every agent
-  would resolve to no grants, and `holm migrate` would report the state as
-  already current. Restoring correctly means replacing what the backup holds
-  *and removing what it does not*, including `migrations/`. Ask for help rather
-  than doing it piecemeal.
+  Nor would a complete revert be coherent. The audit log is not part of the
+  snapshot and cannot be — it is append-only history. Its entries identify
+  agents and servers by the immutable ids that the migration introduced, so a
+  reverted config would no longer be able to resolve anything the log recorded
+  after the migration.
+
+  If a migration gets something wrong, report it with the comparison above. It
+  will be fixed forward, in a new migration.
 </Warning>

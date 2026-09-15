@@ -712,14 +712,15 @@ def _migrate_now() -> None:
             f"to schema v{migrations.CURRENT_VERSION} "
             f"({applied} step{'s' if applied != 1 else ''})."
         )
-        # Say where the originals went. Otherwise the only mention of the backup
-        # is a docs page, and the installer is what usually runs this.
+        # Say where the originals went, and what they are for. Otherwise the
+        # only mention of the backup is a docs page, and the installer is what
+        # usually runs this.
         kept = migrations.backup_path(CONFIG_DIR)
         if kept.exists():
             console.print(
-                f"The previous state is at {escape(str(kept))}. "
-                "It holds a copy of your config, secrets included, and is "
-                "replaced by the next migration rather than added to."
+                f"The state as it was before is at {escape(str(kept))}, so you "
+                "can compare if anything looks wrong. It holds a copy of your "
+                "config, secrets included, and the next migration replaces it."
             )
     else:
         console.print(
