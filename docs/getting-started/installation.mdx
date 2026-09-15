@@ -85,6 +85,19 @@ uv pip install -e ".[dev]"
 
 This installs in editable mode — changes to the source take effect immediately.
 
+<Note>
+  A source install never runs the installer, so it never runs the schema
+  migration the installer performs. If Steerholm refuses to start because the
+  state on disk is an older schema, bring it up to date with:
+
+  ```bash
+  holm migrate
+  ```
+
+  It is hidden from `holm --help` deliberately — for a normal install the
+  installer runs it, and nobody should have to think about it.
+</Note>
+
 ```bash
 # Run tests
 pytest

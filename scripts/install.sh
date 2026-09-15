@@ -202,6 +202,23 @@ fi
 HOLM_BIN="${INSTALL_DIR}/holm"
 info "Installed holm at ${HOLM_BIN}"
 
+# ── Migrate the on-disk state ─────────────────────────────────────
+
+# Run by the NEWLY installed binary, not the one that started this script: the
+# process running `holm update` is the old version and cannot contain the new
+# schema steps. The daemon is stopped (step 3) and not started until step 5, so
+# nothing is reading or writing the state while this runs.
+if ! "$HOLM_BIN" migrate; then
+    # Set BEFORE reporting: `error` exits, so anything after it never runs. The
+    # EXIT trap would otherwise restart the daemon, and against an un-migrated
+    # state that daemon refuses to serve — a restart loop instead of one clear
+    # message.
+    DAEMON_STOPPED=0
+    warn "The new binary is installed but the state was not migrated, so the"
+    warn "daemon will refuse to start against it. It has been left stopped."
+    error "Could not migrate the Steerholm state. Fix the cause above, then re-run this installer."
+fi
+
 # ── 5. Register service ───────────────────────────────────────────
 
 if [ -n "${STEERHOLM_NO_SERVICE:-}" ]; then
@@ -229,6 +246,10 @@ Type=simple
 ExecStart=${HOLM_BIN} serve
 Restart=on-failure
 RestartSec=5
+# 78 is EX_CONFIG: the daemon refusing a state whose schema it cannot read.
+# Restarting cannot fix that, and without this it would retry every RestartSec
+# forever. See entry_holmd.py.
+RestartPreventExitStatus=78
 
 [Install]
 WantedBy=default.target

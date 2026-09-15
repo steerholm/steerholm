@@ -35,5 +35,15 @@ logging.basicConfig(
 )
 
 if __name__ == "__main__":
+    from steerholm.config import EX_CONFIG, SchemaError
+
     logging.info("Starting Steerholm daemon on http://%s:%s/mcp", DEFAULT_HOST, DEFAULT_PORT)
-    asyncio.run(SteerholmGateway().serve(DEFAULT_HOST, DEFAULT_PORT))
+    try:
+        asyncio.run(SteerholmGateway().serve(DEFAULT_HOST, DEFAULT_PORT))
+    except SchemaError as e:
+        # Expected and diagnosable, not a crash. Retrying cannot fix it — only
+        # `holm migrate` can — so exit with a code the unit is told not to
+        # restart on. Plain failure here would loop every RestartSec forever,
+        # which is what this used to do.
+        logging.error("%s", e)
+        raise SystemExit(EX_CONFIG)

@@ -87,3 +87,36 @@ A grant links two ids, so it lives and dies with both ends:
 
 Granting on a server that has not been added is an error — there is no id to
 point at. Add the server first.
+
+## Upgrading from an older Steerholm
+
+Policies written before this format were keyed by name — `policies/<agent
+name>.json`, with server names as the permission keys. The installer migrates
+them: it stops the daemon, replaces the binary, brings the state up to the
+current schema, and starts the daemon again.
+
+The state directory records the schema it is in, at `migrations/version`.
+Steerholm refuses to run against a schema it does not understand rather than
+risk misreading it — an unmigrated policy would read as the agent having no
+grants at all.
+
+The pre-migration state is kept inside the config directory as
+`.pre-migration`, so the name-keyed originals are recoverable if a rekey looks
+wrong. It holds a copy of `config.json`, including any `--env` values, which is
+why it lives there rather than beside the config directory: it inherits the same
+owner-only permissions and moves with your state. There is only ever one, and
+you do not have to clean it up — the next migration replaces it rather than
+adding to it.
+
+<Warning>
+  There are no reverse migrations. An older Steerholm refuses to run against a
+  newer schema rather than silently misreading it, so downgrading means going
+  back to the pre-migration state.
+
+  Copying `.pre-migration` back over your config is **not** enough on its own:
+  the schema marker would still read the new version over old data, every agent
+  would resolve to no grants, and `holm migrate` would report the state as
+  already current. Restoring correctly means replacing what the backup holds
+  *and removing what it does not*, including `migrations/`. Ask for help rather
+  than doing it piecemeal.
+</Warning>

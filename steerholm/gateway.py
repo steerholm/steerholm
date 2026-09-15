@@ -529,6 +529,11 @@ class SteerholmGateway:
 
     async def serve(self, host: str, port: int):
         """Run the gateway over Streamable HTTP."""
+        # entry_holmd.py starts the daemon without going through the CLI, so the
+        # check the root callback does for commands has to happen here too.
+        # Refuse rather than serve state this build may misread: an unmigrated
+        # config reads as every agent having no grants.
+        self.config_manager.verify_schema()
         self.config_manager.reload()
         await self.reconcile_servers()
         # Create the control token now so it exists before the CLI's first call
