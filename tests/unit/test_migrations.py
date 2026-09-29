@@ -57,7 +57,7 @@ def test_state_without_a_marker_reads_as_pre_versioning(state):
 
 def test_the_marker_lives_beside_the_state_not_inside_the_config(state):
     migrations.run(state)
-    assert (state / "migrations" / "version").read_text().strip() == "1"
+    assert (state / "migrations" / "version").read_text().strip() == str(migrations.CURRENT_VERSION)
     # It describes the whole directory, so it is not a config field.
     assert "version" not in json.loads((state / "config.json").read_text())
 
@@ -192,7 +192,7 @@ def test_policies_are_converted_even_when_the_config_has_no_agents(tmp_path):
 
 
 def test_running_twice_applies_nothing_the_second_time(state):
-    assert migrations.run(state) == 1
+    assert migrations.run(state) == migrations.CURRENT_VERSION
     assert migrations.run(state) == 0
 
 
@@ -201,7 +201,7 @@ def test_the_marker_and_the_data_move_together(state):
     store = MigrationStore(state)
     agent_id = json.loads((state / "config.json").read_text())["agents"]["bob"]["id"]
     # the marker never claims a shape the files are not in
-    assert store.version == 1
+    assert store.version == migrations.CURRENT_VERSION
     assert (state / "policies" / f"{agent_id}.json").exists()
 
 
@@ -257,8 +257,8 @@ def test_state_newer_than_this_build_is_refused(state):
 def test_an_empty_directory_migrates_to_nothing(tmp_path):
     empty = tmp_path / "empty"
     empty.mkdir()
-    assert migrations.run(empty) == 1        # the step runs and finds nothing
-    assert MigrationStore(empty).version == 1
+    assert migrations.run(empty) == migrations.CURRENT_VERSION   # steps run, find nothing
+    assert MigrationStore(empty).version == migrations.CURRENT_VERSION
 
 
 # ─── how the rest of the code reacts ────────────────────────────────
@@ -269,7 +269,7 @@ def test_a_command_refuses_against_unmigrated_state(config_manager):
     # The fixture's manager stamped the fresh dir; an upgrading install has a
     # config but no marker, which is what schema 0 looks like.
     MigrationStore(_cfg.CONFIG_DIR).version_file.unlink()
-    with pytest.raises(SchemaError, match="expects v1"):
+    with pytest.raises(SchemaError, match=f"expects v{migrations.CURRENT_VERSION}"):
         ConfigManager.verify_schema()
 
 
@@ -337,7 +337,7 @@ def test_a_swap_that_fails_at_the_last_name_still_rolls_back(state):
     assert (state / "policies" / "bob.json").exists()      # name-keyed original
     assert "id" not in json.loads((state / "config.json").read_text())["agents"]["bob"]
     assert migrations.resolve_version(MigrationStore(state)) == 0
-    assert migrations.run(state) == 1                      # and still migratable
+    assert migrations.run(state) == migrations.CURRENT_VERSION                      # and still migratable
 
 
 def test_a_swap_that_fails_puts_back_what_it_moved(state):
@@ -361,7 +361,7 @@ def test_a_swap_that_fails_puts_back_what_it_moved(state):
     assert (state / "policies" / "bob.json").exists()
     assert migrations.resolve_version(MigrationStore(state)) == 0
     # and re-running still works from that state
-    assert migrations.run(state) == 1
+    assert migrations.run(state) == migrations.CURRENT_VERSION
 
 
 def test_a_state_with_no_policies_directory_migrates(tmp_path):
@@ -369,7 +369,7 @@ def test_a_state_with_no_policies_directory_migrates(tmp_path):
     (state / "policies").rmdir()
     assert MigrationStore(state).policy_files() == []
     migrations.run(state)
-    assert MigrationStore(state).version == 1
+    assert MigrationStore(state).version == migrations.CURRENT_VERSION
 
 
 
@@ -484,7 +484,7 @@ def test_only_one_migration_runs_at_a_time(state):
     with pytest.raises(MigrationError, match="Another migration is running"):
         migrations.run(state)
     lock.unlink()
-    assert migrations.run(state) == 1
+    assert migrations.run(state) == migrations.CURRENT_VERSION
 
 
 @pytest.mark.skipif(os.name == "nt", reason="os.kill cannot ask this on Windows")
@@ -496,7 +496,7 @@ def test_a_lock_left_by_a_dead_process_does_not_block_forever(state):
     done.wait()
     (state / ".migrating.lock").write_text(f"{done.pid}\n")
 
-    assert migrations.run(state) == 1
+    assert migrations.run(state) == migrations.CURRENT_VERSION
     assert not (state / ".migrating.lock").exists()
 
 
@@ -516,7 +516,7 @@ def test_the_lock_is_released_when_a_step_fails(state):
         with pytest.raises(MigrationError):
             migrations.run(state)
     assert not (state / ".migrating.lock").exists()
-    assert migrations.run(state) == 1          # and the retry is not blocked
+    assert migrations.run(state) == migrations.CURRENT_VERSION          # and the retry is not blocked
 
 
 def test_a_swap_that_displaced_nothing_keeps_staging_for_the_retry(state):
@@ -539,7 +539,7 @@ def test_a_swap_that_displaced_nothing_keeps_staging_for_the_retry(state):
     if os.name != "nt":
         assert oct(staging.stat().st_mode)[-3:] == "700"   # a copy of the state
 
-    assert migrations.run(state) == 1
+    assert migrations.run(state) == migrations.CURRENT_VERSION
     assert not staging.exists()
     config = json.loads((state / "config.json").read_text())
     assert (state / "policies" / f"{config['agents']['bob']['id']}.json").exists()
@@ -570,12 +570,12 @@ def test_a_swap_that_fails_during_a_resume_does_not_cost_the_originals(state):
         with pytest.raises(MigrationError):
             migrations.run(state)
 
-    assert migrations.run(state) == 1
+    assert migrations.run(state) == migrations.CURRENT_VERSION
 
     kept = migrations.backup_path(state)
     assert (kept / "config.json").read_bytes() == original
     assert (kept / "policies" / "bob.json").exists()
-    assert migrations.resolve_version(MigrationStore(state)) == 1
+    assert migrations.resolve_version(MigrationStore(state)) == migrations.CURRENT_VERSION
 
 
 def test_a_marker_that_is_not_decodable_text_is_reported(state):
@@ -589,7 +589,7 @@ def test_a_marker_that_is_not_decodable_text_is_reported(state):
 def test_the_lock_survives_a_missing_state_directory(tmp_path):
     # run() is given a directory that does not exist yet.
     fresh = tmp_path / "never-created"
-    assert migrations.run(fresh) == 1
+    assert migrations.run(fresh) == migrations.CURRENT_VERSION
     assert not (fresh / ".migrating.lock").exists()
 
 
@@ -724,7 +724,7 @@ def test_a_reset_state_beside_an_old_backup_still_migrates(state):
     migrations.run(state)
     shutil.rmtree(state)
 
-    assert migrations.run(state) == 1        # nothing pending, nothing to strand
+    assert migrations.run(state) == migrations.CURRENT_VERSION        # nothing pending, nothing to strand
 
 
 def test_a_backup_that_cannot_be_created_is_reported_and_leaks_nothing(state):
@@ -841,12 +841,12 @@ def test_a_crash_at_the_marker_rename_recovers_without_losing_grants(state):
     assert (state / "policies" / f"{agent_id}.json").exists()   # swapped in
     assert not (state / "migrations" / "version").exists()      # marker did not
 
-    assert migrations.run(state) == 1
+    assert migrations.run(state) == migrations.CURRENT_VERSION
 
     doc = json.loads((state / "policies" / f"{agent_id}.json").read_text())
     assert doc["permissions"], "the grant was dropped on retry"
     assert not (state / "policies" / "unmigrated").exists()
-    assert migrations.resolve_version(MigrationStore(state)) == 1
+    assert migrations.resolve_version(MigrationStore(state)) == migrations.CURRENT_VERSION
 
 
 class TestTheKeptBackup:
@@ -906,19 +906,22 @@ class TestTheKeptBackup:
         # it is the state before a migration that is already done. The NEXT
         # migration should leave the user holding what they were actually
         # running, not a snapshot from two schemas back.
+        settled = migrations.CURRENT_VERSION
         migrations.run(state)
         assert migrations.resolve_version(MigrationStore(migrations.backup_path(state))) == 0
-        (state / "policies" / "added-while-on-v1.json").write_text(
+        (state / "policies" / "added-after-settling.json").write_text(
             json.dumps({"agent_id": "agt_" + "c" * 16, "permissions": {}}))
 
-        monkeypatch.setitem(migrations.MIGRATIONS, 2, lambda store: None)
-        monkeypatch.setattr(migrations, "CURRENT_VERSION", 2)
+        # A step ABOVE whatever ships today, so this keeps testing "the next
+        # migration" as real ones are added rather than colliding with them.
+        monkeypatch.setitem(migrations.MIGRATIONS, settled + 1, lambda store: None)
+        monkeypatch.setattr(migrations, "CURRENT_VERSION", settled + 1)
         assert migrations.run(state) == 1
 
         kept = migrations.backup_path(state)
-        assert migrations.resolve_version(MigrationStore(kept)) == 1
-        assert (kept / "policies" / "added-while-on-v1.json").exists(), \
-            "kept the v0 snapshot instead of the state the user was running"
+        assert migrations.resolve_version(MigrationStore(kept)) == settled
+        assert (kept / "policies" / "added-after-settling.json").exists(), \
+            "kept the older snapshot instead of the state the user was running"
 
     def test_nothing_is_left_behind_beside_the_state(self, state):
         migrations.run(state)
@@ -966,10 +969,10 @@ class TestResumingAnInterruptedSwap:
                 migrations.run(state)
         assert len(runs) == 1
 
-        assert migrations.run(state) == 1
+        assert migrations.run(state) == migrations.CURRENT_VERSION
 
         assert len(runs) == 1, "the step was handed its own output"
-        assert migrations.resolve_version(MigrationStore(state)) == 1
+        assert migrations.resolve_version(MigrationStore(state)) == migrations.CURRENT_VERSION
 
     def test_the_remaining_names_are_what_is_left_in_staging(self, state):
         with self._crash_at("version"):
@@ -990,7 +993,7 @@ class TestResumingAnInterruptedSwap:
         (staging / "policies").mkdir(parents=True)
         (staging / "policies" / "junk.json").write_text("{ not json")
 
-        assert migrations.run(state) == 1
+        assert migrations.run(state) == migrations.CURRENT_VERSION
 
         assert len(runs) == 1
         assert not (state / "policies" / "junk.json").exists()
@@ -1093,7 +1096,7 @@ def test_a_swap_interrupted_between_names_is_resumed_not_refused(state):
     assert not (state / "policies").exists()               # mid-swap
     assert (migrations.backup_path(state) / "policies" / "bob.json").exists()
 
-    assert migrations.run(state) == 1
+    assert migrations.run(state) == migrations.CURRENT_VERSION
 
     config = json.loads((state / "config.json").read_text())
     assert (state / "policies" / f"{config['agents']['bob']['id']}.json").exists()
@@ -1165,7 +1168,7 @@ def test_a_rolled_back_swap_is_redone_not_resumed(state):
     assert not (state / ".migrating-v1").exists(), "kept an invalid resume source"
     assert json.loads((state / "config.json").read_text())["agents"]["bob"].get("id") is None
 
-    assert migrations.run(state) == 1
+    assert migrations.run(state) == migrations.CURRENT_VERSION
 
     config = json.loads((state / "config.json").read_text())
     agent_id = config["agents"]["bob"]["id"]
@@ -1210,34 +1213,37 @@ def test_the_marker_is_replaced_atomically_never_absent(monkeypatch, state):
 
 def test_a_crash_committing_the_marker_of_a_later_step_still_recovers(monkeypatch, state):
     # The regression this guards: with the marker moved aside first, a crash
-    # here left v2 data reporting v0 and every retry failed identically.
-    def m0002(store):
+    # here left the new data reporting v0 and every retry failed identically.
+    settled = migrations.CURRENT_VERSION
+    nxt = settled + 1                       # above whatever ships today
+
+    def later_step(store):
         doc = store.read_config()
-        doc["v2"] = True
+        doc["touched_by_the_later_step"] = True
         store.write_config(doc)
 
-    monkeypatch.setitem(migrations.MIGRATIONS, 2, m0002)
-    monkeypatch.setattr(migrations, "CURRENT_VERSION", 2)
+    migrations.run(state)                   # settle at the current version first
+    monkeypatch.setitem(migrations.MIGRATIONS, nxt, later_step)
+    monkeypatch.setattr(migrations, "CURRENT_VERSION", nxt)
     real = os.replace
 
-    def die_committing_v2(src, dst, *a, **k):
-        if (".migrating-v2" in str(src) and ".migrating-v" not in str(dst)
+    def die_committing_the_new_marker(src, dst, *a, **k):
+        if (f".migrating-v{nxt}" in str(src) and ".migrating-v" not in str(dst)
                 and str(dst).endswith(os.sep + "version")):
             raise KeyboardInterrupt("power cut")
         return real(src, dst, *a, **k)
 
-    with mock.patch("os.replace", side_effect=die_committing_v2):
+    with mock.patch("os.replace", side_effect=die_committing_the_new_marker):
         with pytest.raises(KeyboardInterrupt):
             migrations.run(state)
-    assert migrations.resolve_version(MigrationStore(state)) == 1, "marker went missing"
+    assert migrations.resolve_version(MigrationStore(state)) == settled, "marker went missing"
 
     assert migrations.run(state) == 1
 
-    assert migrations.resolve_version(MigrationStore(state)) == 2
-    assert json.loads((state / "config.json").read_text())["v2"] is True
+    assert migrations.resolve_version(MigrationStore(state)) == nxt
+    assert json.loads((state / "config.json").read_text())["touched_by_the_later_step"] is True
     assert not list(state.glob(".displaced-v*"))
     assert not list(state.glob(".migrating-v*"))
-
 
 def test_grants_still_resolve_through_the_product_after_migrating(tmp_path, monkeypatch):
     """The acceptance criterion: what m0001 writes is what the gateway reads.
@@ -1306,3 +1312,91 @@ def test_a_truncated_policy_names_the_file_it_could_not_read(state):
     assert ".migrating-v" not in str(e.value)          # names the live path
     assert (state / "policies" / "bob.json").exists()  # nothing was changed
     assert migrations.resolve_version(MigrationStore(state)) == 0
+
+
+class TestKeyHashesLeaveTheKeyring:
+    """m0002. The keyring is read, never written — the engine's staging and
+    rollback only cover the state directory, so a step must not mutate
+    anything outside it."""
+
+    def _v1_state(self, tmp_path, agents=("bob",)):
+        state = _v0_state(tmp_path / "s", agents=agents, grants=False)
+        migrations.run(state)          # settle at the version before m0002
+        return state
+
+    def _fake_keyring(self, entries, locked=()):
+        import keyring
+        from keyring.backend import KeyringBackend
+
+        class Fake(KeyringBackend):
+            priority = 99
+
+            def get_password(self, service, user):
+                if user in locked:
+                    raise Exception("org.freedesktop.Secret.Error.IsLocked")
+                return entries.get(user)
+
+            def set_password(self, service, user, value):
+                entries[user] = value
+
+            def delete_password(self, service, user):
+                entries.pop(user, None)
+
+        return mock.patch.object(keyring, "get_keyring", return_value=Fake())
+
+    def _run_m0002(self, state, entries, locked=()):
+        import keyring
+        saved = keyring.get_keyring()
+        with self._fake_keyring(entries, locked):
+            keyring.set_keyring(keyring.get_keyring())
+            try:
+                store = MigrationStore(state)
+                migrations.MIGRATIONS[2](store)
+            finally:
+                keyring.set_keyring(saved)
+
+    def test_the_hash_is_carried_into_the_config(self, tmp_path):
+        state = self._v1_state(tmp_path)
+        self._run_m0002(state, {"bob": "$2b$12$carried"})
+
+        agents = json.loads((state / "config.json").read_text())["agents"]
+        assert agents["bob"]["key_hash"] == "$2b$12$carried"
+
+    def test_a_locked_entry_is_skipped_not_invented(self, tmp_path, caplog):
+        # The state m0002 has to tolerate: the entry exists but this session
+        # cannot read it. Writing nothing is right — the entry is untouched, so
+        # unlocking and re-running picks it up.
+        state = self._v1_state(tmp_path, agents=("bob", "amy"))
+        with caplog.at_level("WARNING"):
+            self._run_m0002(state, {"bob": "$2b$12$ok", "amy": "$2b$12$hidden"},
+                            locked={"amy"})
+
+        agents = json.loads((state / "config.json").read_text())["agents"]
+        assert agents["bob"]["key_hash"] == "$2b$12$ok"
+        assert agents["amy"].get("key_hash") is None
+        assert "amy" in caplog.text and "rotate agent" in caplog.text
+
+    def test_re_running_picks_up_what_was_skipped(self, tmp_path):
+        state = self._v1_state(tmp_path, agents=("bob", "amy"))
+        entries = {"bob": "$2b$12$ok", "amy": "$2b$12$later"}
+        self._run_m0002(state, entries, locked={"amy"})
+        self._run_m0002(state, entries)            # keyring unlocked, run again
+
+        agents = json.loads((state / "config.json").read_text())["agents"]
+        assert agents["amy"]["key_hash"] == "$2b$12$later"
+
+    def test_an_already_carried_hash_is_not_reread(self, tmp_path):
+        state = self._v1_state(tmp_path)
+        self._run_m0002(state, {"bob": "$2b$12$first"})
+        self._run_m0002(state, {"bob": "$2b$12$DIFFERENT"})
+
+        agents = json.loads((state / "config.json").read_text())["agents"]
+        assert agents["bob"]["key_hash"] == "$2b$12$first"
+
+    def test_the_keyring_entries_are_left_alone(self, tmp_path):
+        # Deleting them would be a mutation outside the state directory, which
+        # a rollback could not undo.
+        state = self._v1_state(tmp_path)
+        entries = {"bob": "$2b$12$carried"}
+        self._run_m0002(state, entries)
+        assert entries == {"bob": "$2b$12$carried"}

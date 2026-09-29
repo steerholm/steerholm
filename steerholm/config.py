@@ -6,9 +6,8 @@ import logging
 import secrets
 import string
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Tuple
 import bcrypt
-import keyring
 from .models import (
     AuditSettings, Config, Server, Agent, AgentPolicy, ToolPermission,
     ArgumentPolicy, ServerType,
@@ -34,26 +33,58 @@ POLICIES_DIR = CONFIG_DIR / "policies"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 4767
 
-# The control token lives under its OWN keyring service, separate from the
-# "steerholm" service used for agent access keys, so no agent name can ever
-# collide with it.
-CONTROL_SERVICE = "steerholm-control"
-CONTROL_ACCOUNT = "token"
+# Its own file rather than a field in config.json: not user-facing
+# configuration, and it would otherwise show up in every dump of that model.
+#
+# Resolved at call time, not bound at import: CONFIG_DIR is re-pointed in tests
+# and a constant captured here would keep addressing the directory it had when
+# the module loaded.
+def control_token_path() -> Path:
+    return CONFIG_DIR / "control-token"
+
+
+def read_control_token() -> Optional[str]:
+    """The loopback control-plane token, or None if it has not been created.
+
+    Everything except daemon startup reads: the CLI only reaches here after
+    `_daemon_up()`, so the daemon has already created it, and the verifier is
+    checking against whatever is on disk. Minting one here instead would be the
+    worst answer available — a token nobody was issued, so the CLI would present
+    a value the daemon rejects and a missing file would surface as a silent 401.
+    """
+    path = control_token_path()
+    if not path.exists():
+        return None
+    return path.read_text(encoding="utf-8").strip() or None
 
 
 def get_or_create_control_token() -> str:
-    """Return the loopback control-plane token, creating it on first use.
+    """Create the control token if absent and return it. Daemon startup only.
 
-    Unlike agent keys (only a hash is stored), this is stored raw so the CLI —
-    running as the same user — can read it and present it to the daemon. The
-    control channel is loopback-only, so both ends share the user's keyring.
+    Stored raw, unlike agent keys: the CLI has to present the value, so both
+    ends need the real thing. Owner-only, the same protection `config.json`
+    gets for the `--env` values it already holds.
+
+    Written via a temp file and a rename so a reader never catches it
+    half-written. Two daemons racing to start would both write, and that is
+    harmless: nothing caches the token, so whichever value lands is what every
+    later read — verifier and CLI alike — agrees on.
     """
-    token = keyring.get_password(CONTROL_SERVICE, CONTROL_ACCOUNT)
-    if not token:
-        token = "steer_ctl_" + "".join(
-            secrets.choice(string.ascii_letters + string.digits) for _ in range(32)
-        )
-        keyring.set_password(CONTROL_SERVICE, CONTROL_ACCOUNT, token)
+    existing = read_control_token()
+    if existing:
+        return existing
+    token = "steer_ctl_" + "".join(
+        secrets.choice(string.ascii_letters + string.digits) for _ in range(32)
+    )
+    path = control_token_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"control-token.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(token + "\n", encoding="utf-8")
+        _restrict(tmp, 0o600)
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
     return token
 
 
@@ -389,25 +420,27 @@ class ConfigManager:
         return list(self.config.servers.values())
 
     # --- Agent Management ---
-    def _generate_access_key(self, name: str) -> str:
-        """Mint a fresh access key, hash it, and store the hash in the keyring.
-        Returns the raw key — only available at creation/rotation time."""
+    def _generate_access_key(self) -> Tuple[str, str]:
+        """Mint a fresh access key. Returns (raw key, bcrypt hash).
+
+        The raw key is returned once, at creation or rotation, and never
+        stored; only the hash is kept.
+        """
         alphabet = string.ascii_letters + string.digits
         token = "".join(secrets.choice(alphabet) for _ in range(32))
         access_key = f"steer_sk_{token}"
-        hashed = bcrypt.hashpw(access_key.encode(), bcrypt.gensalt())
-        keyring.set_password("steerholm", name, hashed.decode())
-        return access_key
+        return access_key, bcrypt.hashpw(access_key.encode(), bcrypt.gensalt()).decode()
 
     def add_agent(self, name: str) -> str:
-        """Create an agent, generate an access key, hash it, store in keyring.
-        Returns the access key. Only available at creation time."""
+        """Create an agent and generate its access key.
+        Returns the key. Only available at creation time; only a hash is kept."""
         validate_entity_name("Agent", name)
         if name in self.config.agents:
             raise ValueError(f"Agent '{name}' already exists.")
-        access_key = self._generate_access_key(name)
+        access_key, key_hash = self._generate_access_key()
         self.config.agents[name] = Agent(
-            name=name, id=_new_agent_id(), key_prefix=access_key[:15] + "..."
+            name=name, id=_new_agent_id(), key_prefix=access_key[:15] + "...",
+            key_hash=key_hash,
         )
         self.save_config()
         return access_key
@@ -417,11 +450,12 @@ class ConfigManager:
         Returns the new key; the old one stops working immediately."""
         if name not in self.config.agents:
             raise ValueError(f"Agent '{name}' not found.")
-        access_key = self._generate_access_key(name)
+        access_key, key_hash = self._generate_access_key()
         # Rotation is a new credential for the same principal — keep the id (and a
         # legacy agent's absent id stays absent; it's minted only at creation).
         self.config.agents[name] = Agent(
-            name=name, id=self.config.agents[name].id, key_prefix=access_key[:15] + "..."
+            name=name, id=self.config.agents[name].id,
+            key_prefix=access_key[:15] + "...", key_hash=key_hash,
         )
         self.save_config()
         return access_key
@@ -430,44 +464,35 @@ class ConfigManager:
         return self.config.agents.get(name)
 
     def remove_agent(self, name: str):
-        """Remove an agent, its keyring entry, and its policy."""
+        """Remove an agent and its policy. The key hash goes with the entry."""
         if name not in self.config.agents:
             raise ValueError(f"Agent '{name}' not found.")
+        stale = []
         try:
-            keyring.delete_password("steerholm", name)
-        except keyring.errors.PasswordDeleteError:
-            pass  # entry already absent — nothing to remove
-        except Exception as e:
-            # Don't fail the removal, but surface it: a lingering keyring entry
-            # must not be able to authenticate a removed agent.
-            logger.warning("Could not delete keyring entry for '%s': %s", name, e)
-        if name in self.config.agents:
-            stale = []
-            try:
-                stale.append(self.policy_path_for(name))
-            except ValueError:
-                pass          # no id: nothing id-keyed to remove
-            # A policy file left over from the name-keyed layout would otherwise
-            # be grafted onto whoever next takes this name. Only follow the name
-            # when it is safe to build a path from.
-            try:
-                validate_entity_name("Agent", name)
-            except ValueError:
-                logger.warning(
-                    "Not removing a name-keyed policy for %r: the name is not "
-                    "safe to use as a filename.", name,
-                )
-            else:
-                stale.append(POLICIES_DIR / f"{name}.json")
+            stale.append(self.policy_path_for(name))
+        except ValueError:
+            pass          # no id: nothing id-keyed to remove
+        # A policy file left over from the name-keyed layout would otherwise
+        # be grafted onto whoever next takes this name. Only follow the name
+        # when it is safe to build a path from.
+        try:
+            validate_entity_name("Agent", name)
+        except ValueError:
+            logger.warning(
+                "Not removing a name-keyed policy for %r: the name is not "
+                "safe to use as a filename.", name,
+            )
+        else:
+            stale.append(POLICIES_DIR / f"{name}.json")
 
-            del self.config.agents[name]
-            self.save_config()
-            for policy_path in stale:
-                if policy_path.exists():
-                    try:
-                        policy_path.unlink()
-                    except OSError:
-                        pass
+        del self.config.agents[name]
+        self.save_config()
+        for policy_path in stale:
+            if policy_path.exists():
+                try:
+                    policy_path.unlink()
+                except OSError:
+                    pass
 
     def list_agents(self) -> list:
         return list(self.config.agents.values())

@@ -361,13 +361,17 @@ def _notify_daemon_reconcile() -> None:
     """
     import json
     import urllib.request
-    from .config import DEFAULT_HOST, DEFAULT_PORT, get_or_create_control_token
+    from .config import DEFAULT_HOST, DEFAULT_PORT, read_control_token
 
     if not _daemon_up(DEFAULT_HOST, DEFAULT_PORT):
         console.print("[yellow]Daemon is not running; the change applies when it starts.[/yellow]")
         return
     try:
-        token = get_or_create_control_token()
+        token = read_control_token()
+        if not token:
+            console.print("[yellow]The daemon is running but its control token is "
+                          "missing; restart it with 'holm stop && holm start'.[/yellow]")
+            return
         req = urllib.request.Request(
             f"http://{DEFAULT_HOST}:{DEFAULT_PORT}/control/reconcile",
             method="POST",
@@ -394,12 +398,14 @@ def _daemon_server_status() -> Optional[dict]:
     """Fetch live per-server status from the running daemon, or None if it's down."""
     import json
     import urllib.request
-    from .config import DEFAULT_HOST, DEFAULT_PORT, get_or_create_control_token
+    from .config import DEFAULT_HOST, DEFAULT_PORT, read_control_token
 
     if not _daemon_up(DEFAULT_HOST, DEFAULT_PORT):
         return None
     try:
-        token = get_or_create_control_token()
+        token = read_control_token()
+        if not token:
+            return None
         req = urllib.request.Request(
             f"http://{DEFAULT_HOST}:{DEFAULT_PORT}/control/servers",
             headers={"Authorization": f"Bearer {token}"},

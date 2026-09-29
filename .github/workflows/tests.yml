@@ -16,8 +16,9 @@ permissions:
   contents: read
 
 env:
-  # The frozen binary bundles keyrings.alt; select the file backend so identity
-  # creation/verification works headless on every OS.
+  # Pin the backend the migration tests read from, so they behave the same on
+  # every runner rather than following whatever secret store the OS offers.
+  # Nothing else in Steerholm touches the keyring any more; only m0002 does.
   PYTHON_KEYRING_BACKEND: keyrings.alt.file.PlaintextKeyring
   # The CLI's update-available check would call the GitHub API on every command;
   # disable it in CI (shared-runner IPs get rate-limited, and it adds latency).

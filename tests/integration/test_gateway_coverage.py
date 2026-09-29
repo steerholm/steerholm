@@ -37,13 +37,16 @@ def test_auth_cache_hit_returns_without_rebcrypt(config_manager, monkeypatch):
     spy.assert_not_called()
 
 
-def test_auth_cache_hit_keyring_error_invalidates(config_manager, monkeypatch):
-    import steerholm.gateway as gw
+def test_auth_cache_is_invalidated_when_the_stored_hash_goes(config_manager):
+    # The cache is trusted only while the agent's stored hash is unchanged, so
+    # a hash that disappears from the config invalidates the cached token at
+    # once rather than letting it keep authenticating.
     token = config_manager.add_agent("a")
     gateway = make_gateway(config_manager)
     assert gateway._resolve_agent_from_token(token) == "a"  # populate cache
 
-    monkeypatch.setattr(gw.keyring, "get_password", MagicMock(side_effect=RuntimeError("boom")))
+    config_manager.config.agents["a"].key_hash = None
+    config_manager.save_config()
     assert gateway._resolve_agent_from_token(token) is None  # invalidated, then miss
 
 
@@ -418,3 +421,29 @@ async def test_a_grant_naming_a_server_that_is_gone_is_skipped(config_manager):
 
     reachable = [name for _sid, name, _p in gateway._iter_accessible_processes(policy)]
     assert reachable == ["srv"]
+
+
+def test_control_requests_are_refused_when_the_token_is_missing(config_manager, monkeypatch):
+    # The verifier reads; it must not create. Creating here would start
+    # accepting a token that was never issued to anyone.
+    import steerholm.gateway as gw
+
+    gateway = make_gateway(config_manager)
+    monkeypatch.setattr(gw, "read_control_token", lambda: None)
+
+    assert gateway._check_control_token("steer_ctl_anything") is False
+
+
+def test_a_hashless_agent_is_reported_once_not_per_attempt(config_manager, caplog):
+    # The check sits in the authentication path, so warning on every attempt
+    # would put a line in the daemon log per tool call.
+    config_manager.add_agent("hashless")
+    config_manager.config.agents["hashless"].key_hash = None
+    config_manager.save_config()
+    gateway = make_gateway(config_manager)
+
+    with caplog.at_level("WARNING"):
+        for _ in range(25):
+            gateway._resolve_agent_from_token("steer_sk_" + "z" * 32)
+
+    assert caplog.text.count("has no stored key hash") == 1

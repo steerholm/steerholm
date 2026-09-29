@@ -34,9 +34,20 @@ jobs:
           pip install -e .
           pip install pyinstaller keyrings.alt
 
-      # keyrings.alt is collected so a file-based keyring backend is available
-      # in headless environments (no OS Secret Service). It is only used when
-      # PYTHON_KEYRING_BACKEND is set; real users still get the native backend.
+      # keyrings.alt is collected because MIGRATION m0002 needs to read it.
+      #
+      # Steerholm no longer stores anything in the keyring — agent key hashes
+      # live in config.json — but installs that predate that change kept them
+      # there, and m0002 carries them across. On a headless box keyring selects
+      # keyrings.alt's PlaintextKeyring automatically (no PYTHON_KEYRING_BACKEND
+      # needed: with no D-Bus, SecretService is not viable and PlaintextKeyring
+      # is), so that is where those users' hashes are. Without this the
+      # migration silently recovers nothing and every such user has to reissue
+      # every access key.
+      #
+      # It can only be dropped once no un-migrated install is left, which is a
+      # judgement call, not something the code can decide. See
+      # steerholm/migrations/m0002_key_hash_in_config.py.
       - name: Build holm
         run: pyinstaller --onefile --name holm --collect-all keyrings.alt entry_holm.py
 

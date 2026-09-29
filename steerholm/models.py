@@ -62,6 +62,11 @@ class Agent(BaseModel):
     # Optional: entries written before ids existed load as None.
     id: Optional[str] = Field(default=None, description="Immutable agent id (minted at creation)")
     key_prefix: str = Field(..., description="First 15 chars of the access key for display")
+    # bcrypt hash of the access key. A verifier, not a secret — it cannot be
+    # reversed into a key — and it sits beside the `--env` values this file
+    # already holds in plaintext. Optional: entries written while the hash still
+    # lived in the OS keyring load as None and need `holm rotate agent`.
+    key_hash: Optional[str] = Field(default=None, description="bcrypt hash of the access key")
 
 
 class AuditSettings(BaseModel):

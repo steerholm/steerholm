@@ -407,14 +407,19 @@ def test_get_config_dir_override(monkeypatch, tmp_path):
     assert _cfg._get_config_dir() == tmp_path
 
 
-def test_get_or_create_control_token_creates_then_reuses(monkeypatch):
-    store = {}
-    monkeypatch.setattr(_cfg.keyring, "get_password", lambda svc, acc: store.get((svc, acc)))
-    monkeypatch.setattr(_cfg.keyring, "set_password",
-                        lambda svc, acc, v: store.__setitem__((svc, acc), v))
+def test_get_or_create_control_token_creates_then_reuses(config_manager):
     t1 = _cfg.get_or_create_control_token()
     assert t1.startswith("steer_ctl_")
+    assert _cfg.control_token_path().exists()
     assert _cfg.get_or_create_control_token() == t1  # reused, not regenerated
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes; Windows uses ACLs")
+def test_the_control_token_file_is_owner_only(config_manager):
+    # Stored raw, so the CLI can present it to the daemon. It gets the same
+    # protection as config.json, which already holds `--env` values.
+    _cfg.get_or_create_control_token()
+    assert oct(_cfg.control_token_path().stat().st_mode)[-3:] == "600"
 
 
 def test_load_config_corrupt_returns_empty(config_manager):
@@ -423,19 +428,6 @@ def test_load_config_corrupt_returns_empty(config_manager):
     assert config_manager.config.servers == {}
 
 
-def test_remove_agent_swallows_missing_keyring_entry(config_manager, monkeypatch):
-    config_manager.add_agent("agent")
-    monkeypatch.setattr(_cfg.keyring, "delete_password",
-                        _MM(side_effect=_kerr.PasswordDeleteError("gone")))
-    config_manager.remove_agent("agent")
-    assert "agent" not in config_manager.config.agents
-
-
-def test_remove_agent_logs_keyring_error_but_removes(config_manager, monkeypatch):
-    config_manager.add_agent("agent")
-    monkeypatch.setattr(_cfg.keyring, "delete_password", _MM(side_effect=RuntimeError("boom")))
-    config_manager.remove_agent("agent")
-    assert "agent" not in config_manager.config.agents
 
 
 def test_remove_agent_swallows_policy_unlink_error(config_manager, monkeypatch):
@@ -821,3 +813,22 @@ def test_granting_on_a_server_that_does_not_exist_raises(config_manager):
         config_manager.grant_permission("bob", "ghost")
 
     assert config_manager.load_policy("bob") is None   # and nothing was written
+
+
+def test_only_the_daemon_creates_the_control_token(config_manager):
+    # The CLI and the verifier reach this only after the daemon is answering, so
+    # it has already been created. Minting one there would hand out a token
+    # nobody was issued — the CLI would present a value the daemon rejects.
+    assert _cfg.read_control_token() is None
+
+    created = _cfg.get_or_create_control_token()
+
+    assert _cfg.read_control_token() == created
+    assert _cfg.get_or_create_control_token() == created   # not regenerated
+
+
+def test_a_half_written_token_is_never_visible(config_manager):
+    # Written via a temp file and renamed, so a reader sees the old value or the
+    # new one, never part of one.
+    _cfg.get_or_create_control_token()
+    assert not list(_cfg.control_token_path().parent.glob("control-token.*.tmp"))

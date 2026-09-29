@@ -77,14 +77,14 @@ def test_daemon_server_status_none_when_down(monkeypatch):
 
 def test_daemon_server_status_returns_dict_when_up(monkeypatch):
     monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
-    monkeypatch.setattr("steerholm.config.get_or_create_control_token", lambda: "tok")
+    monkeypatch.setattr("steerholm.config.read_control_token", lambda: "tok")
     with patch("urllib.request.urlopen", return_value=_fake_urlopen({"srv": {"state": "running"}})):
         assert m._daemon_server_status() == {"srv": {"state": "running"}}
 
 
 def test_daemon_server_status_none_on_error(monkeypatch):
     monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
-    monkeypatch.setattr("steerholm.config.get_or_create_control_token", lambda: "tok")
+    monkeypatch.setattr("steerholm.config.read_control_token", lambda: "tok")
     with patch("urllib.request.urlopen", side_effect=OSError("boom")):
         assert m._daemon_server_status() is None
 
@@ -100,7 +100,7 @@ def test_notify_reconcile_noop_when_down(monkeypatch, capsys):
 
 def test_notify_reconcile_reports_started_stopped(monkeypatch, capsys):
     monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
-    monkeypatch.setattr("steerholm.config.get_or_create_control_token", lambda: "tok")
+    monkeypatch.setattr("steerholm.config.read_control_token", lambda: "tok")
     payload = {"started": ["a"], "stopped": ["b"], "failed": ["c"]}
     with patch("urllib.request.urlopen", return_value=_fake_urlopen(payload)):
         m._notify_daemon_reconcile()
@@ -110,7 +110,7 @@ def test_notify_reconcile_reports_started_stopped(monkeypatch, capsys):
 
 def test_notify_reconcile_reports_unreachable(monkeypatch, capsys):
     monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
-    monkeypatch.setattr("steerholm.config.get_or_create_control_token", lambda: "tok")
+    monkeypatch.setattr("steerholm.config.read_control_token", lambda: "tok")
     with patch("urllib.request.urlopen", side_effect=OSError("nope")):
         m._notify_daemon_reconcile()
     assert "Could not reach the daemon" in capsys.readouterr().out
@@ -1744,7 +1744,9 @@ def test_migrate_reports_the_steps_it_applied(cli):
 
     assert result.exit_code == 0
     assert "migrated" in " ".join(result.output.lower().split())
-    assert "1 step" in " ".join(result.output.split())
+    from steerholm import migrations
+    steps = migrations.CURRENT_VERSION
+    assert f"{steps} step" in " ".join(result.output.split())
 
 
 def test_a_command_refuses_against_unmigrated_state(cli):
@@ -1849,7 +1851,8 @@ class TestUpdateFinishesAnInterruptedMigration:
 
         assert result.exit_code == 0
         assert "still behind" in result.output
-        assert MigrationStore(_c.CONFIG_DIR).version == 1
+        from steerholm import migrations
+        assert MigrationStore(_c.CONFIG_DIR).version == migrations.CURRENT_VERSION
 
     def test_it_refuses_while_something_holds_the_port(self, cli, monkeypatch):
         import json
@@ -2010,3 +2013,17 @@ class TestInstallersInvokeRealCommands:
         # Hidden on purpose — the installer runs it and a user should not need
         # to think about it — which is exactly why --help cannot vouch for it.
         assert "migrate" in self._names()
+
+
+def test_reconcile_says_so_when_the_control_token_is_missing(monkeypatch, capsys):
+    # The daemon answers but its token is gone. Minting one would present a
+    # value the daemon rejects, surfacing as a bare 401 with no explanation.
+    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
+    monkeypatch.setattr("steerholm.config.read_control_token", lambda: None)
+
+    m._notify_daemon_reconcile()
+
+    # Normalised: rich wraps, and the wrap point moves with the path length.
+    out = " ".join(capsys.readouterr().out.split())
+    assert "control token is missing" in out
+    assert "holm stop" in out

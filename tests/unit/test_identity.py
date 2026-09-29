@@ -25,12 +25,16 @@ class TestResolveAgentFromToken:
         gateway = make_gateway(config_manager)
         assert gateway._resolve_agent_from_token("steer_sk_any") is None
 
-    def test_handles_keyring_error_gracefully(self, config_manager):
-        config_manager.add_agent("agent")
+    def test_an_agent_with_no_stored_hash_cannot_authenticate(self, config_manager):
+        # The state m0002 leaves behind when it could not read the keyring: the
+        # agent is in the config but has no verifier. It must deny, and say why
+        # — the CLI shows such an agent as perfectly normal.
+        token = config_manager.add_agent("agent")
+        config_manager.config.agents["agent"].key_hash = None
+        config_manager.save_config()
         gateway = make_gateway(config_manager)
 
-        with patch("steerholm.gateway.keyring.get_password", side_effect=Exception("keyring broke")):
-            assert gateway._resolve_agent_from_token("steer_sk_test") is None
+        assert gateway._resolve_agent_from_token(token) is None
 
     def test_does_not_match_partial_token(self, config_manager):
         token = config_manager.add_agent("agent")

@@ -252,6 +252,7 @@ def make_gateway(config_manager) -> SteerholmGateway:
     gateway.event_log = EventLog()
     gateway._auth_cache = OrderedDict()
     gateway._auth_cache_max = 4096
+    gateway._warned_no_hash = set()
     gateway._reconcile_lock = asyncio.Lock()
     gateway._register_handlers()
     return gateway

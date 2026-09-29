@@ -12,7 +12,6 @@ from http import HTTPStatus
 from typing import List, Optional
 
 import bcrypt
-import keyring
 import mcp.types as types
 from mcp.server import Server
 from mcp.server.streamable_http import MCP_SESSION_ID_HEADER
@@ -24,7 +23,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from . import __version__
-from .config import ConfigManager, get_or_create_control_token
+from .config import ConfigManager, get_or_create_control_token, read_control_token
 from .errors import AUTHORIZATION_DENIED_CODE, authorization_denied, server_unavailable
 from .events import DecisionEvent, EventLog, now_iso, summarize_args
 from .models import AgentPolicy
@@ -117,6 +116,11 @@ class SteerholmGateway:
         # per-request O(agents) bcrypt; invalidated when the stored hash changes.
         self._auth_cache: "OrderedDict[str, tuple[str, str]]" = OrderedDict()
         self._auth_cache_max = 4096
+        # Agents already reported as having no key hash. The check sits in the
+        # authentication path, so warning on every attempt would put a line in
+        # the log per tool call — and once per hashless agent, not once per
+        # attempt, is what an operator needs.
+        self._warned_no_hash = set()
         # Serializes lifecycle reconciliation (startup, control plane, supervisor).
         self._reconcile_lock = asyncio.Lock()
         self._register_handlers()
@@ -148,10 +152,8 @@ class SteerholmGateway:
         cached = self._auth_cache.get(token_hash)
         if cached is not None:
             name, cached_key = cached
-            try:
-                current_key = keyring.get_password("steerholm", name)
-            except Exception:
-                current_key = None
+            agent = self.config_manager.config.agents.get(name)
+            current_key = agent.key_hash if agent else None
             # Trust the cache only while the agent is still in config AND its
             # stored hash is unchanged, so a removed or rotated key invalidates the
             # cached token at once (config membership is the authoritative source,
@@ -165,17 +167,25 @@ class SteerholmGateway:
                 return name
             self._auth_cache.pop(token_hash, None)
 
-        for name in self.config_manager.config.agents:
-            try:
-                hashed_key = keyring.get_password("steerholm", name)
-                if hashed_key and bcrypt.checkpw(token.encode(), hashed_key.encode()):
-                    self._auth_cache[token_hash] = (name, hashed_key)
-                    self._auth_cache.move_to_end(token_hash)
-                    while len(self._auth_cache) > self._auth_cache_max:
-                        self._auth_cache.popitem(last=False)
-                    return name
-            except Exception as e:
-                logger.error(f"Keyring error checking agent '{name}': {e}")
+        for name, agent in self.config_manager.config.agents.items():
+            hashed_key = agent.key_hash
+            if not hashed_key:
+                # Its hash never made it out of the OS keyring. It cannot
+                # authenticate until the key is reissued, and this is the only
+                # place that becomes visible — but say it once, not per attempt.
+                if name not in self._warned_no_hash:
+                    self._warned_no_hash.add(name)
+                    logger.warning(
+                        "Agent %r has no stored key hash; run `holm rotate agent %s`",
+                        name, name)
+                continue
+            self._warned_no_hash.discard(name)   # reported again if it goes missing
+            if bcrypt.checkpw(token.encode(), hashed_key.encode()):
+                self._auth_cache[token_hash] = (name, hashed_key)
+                self._auth_cache.move_to_end(token_hash)
+                while len(self._auth_cache) > self._auth_cache_max:
+                    self._auth_cache.popitem(last=False)
+                return name
         return None
 
     def _extract_bearer_token(self, authorization: Optional[str]) -> Optional[str]:
@@ -450,9 +460,13 @@ class SteerholmGateway:
         if not token:
             return False
         try:
-            expected = get_or_create_control_token()
+            expected = read_control_token()
         except Exception as e:
             logger.error(f"Could not read control token: {e}")
+            return False
+        if not expected:
+            # Creating one here would start accepting a token nobody was issued.
+            logger.error("No control token on disk; refusing control requests.")
             return False
         return hmac.compare_digest(token, expected)
 

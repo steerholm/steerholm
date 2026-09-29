@@ -26,11 +26,12 @@ from pathlib import Path
 
 from .store import MigrationStore, StateError, restrict
 from . import m0001_id_keyed_grants
+from . import m0002_key_hash_in_config
 
 logger = logging.getLogger("steerholm.migrations")
 
 # What this build knows how to produce.
-CURRENT_VERSION = 1
+CURRENT_VERSION = 2
 
 # State with no version marker predates versioning. Both releases that could
 # have written one (0.1.0, 0.1.1) wrote the same shape, so the baseline is a
@@ -71,6 +72,7 @@ SCRATCH_DIR = ".displaced-v{step}"
 # retry finishes the swap instead of redoing the work.
 MIGRATIONS = {
     1: m0001_id_keyed_grants.migrate,
+    2: m0002_key_hash_in_config.migrate,
 }
 
 MARKER_DIR, MARKER_FILE = "migrations", "version"
