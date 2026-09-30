@@ -15,6 +15,11 @@
     "light": "/logo/light.svg",
     "dark": "/logo/dark.svg"
   },
+  "seo": {
+    "metatags": {
+      "google-site-verification": "iqsL0KIhQ8mie_fZiWuyM1o5ycJODpBZcw7KMiCwQHU"
+    }
+  },
   "navbar": {
     "links": [
       {

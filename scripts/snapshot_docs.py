@@ -68,7 +68,7 @@ def branding(cfg: dict, schema: str) -> dict:
     """Map either schema's top-level branding into docs.json shape."""
     if schema == "docs.json":
         keep = ("$schema", "theme", "name", "colors", "logo", "favicon",
-                "appearance", "navbar", "footer")
+                "appearance", "navbar", "footer", "seo")
         out = {k: cfg[k] for k in keep if k in cfg}
         out.setdefault("$schema", "https://mintlify.com/docs.json")
         out.setdefault("theme", "mint")
