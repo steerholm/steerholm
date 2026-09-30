@@ -20,11 +20,15 @@ def test_version_command():
 def test_package_version_matches_distribution_metadata():
     # __init__.py is the single source; pyproject derives from it. Guard the two
     # against drifting apart on a future bump.
+    # Compared as versions, not strings: the metadata is PEP 440-normalised, so
+    # a pre-release written 0.2.0-rc.1 is recorded as 0.2.0rc1.
     import importlib.metadata
+
+    from packaging.version import Version
 
     from steerholm import __version__
 
-    assert importlib.metadata.version("steerholm") == __version__
+    assert Version(importlib.metadata.version("steerholm")) == Version(__version__)
 
 
 def test_update_check_reports_available_update():
