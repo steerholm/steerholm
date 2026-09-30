@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import platform
+import re
 import shutil
 import subprocess
 import tempfile
@@ -43,21 +44,29 @@ def normalize_tag(version: str) -> str:
     return version if version.startswith("v") else f"v{version}"
 
 
-def _version_tuple(version: str) -> tuple[int, ...]:
-    version = version.strip().lstrip("v")
-    parts = []
-    for part in version.split("."):
-        digits = ""
-        for char in part:
-            if not char.isdigit():
-                break
-            digits += char
-        parts.append(int(digits or 0))
-    return tuple(parts)
+# `0.2.0`, and pre-releases of it in either spelling: `0.2.0-rc.1`, `0.2.0rc1`.
+_VERSION = re.compile(r"v?(\d+(?:\.\d+)*)(?:-?([a-z]+)\.?(\d*))?", re.IGNORECASE)
+
+
+def _version_key(version: str) -> tuple:
+    """Order versions so that a pre-release sorts BEFORE its final release.
+
+    Without that, `0.2.0-rc.1` reads as 0.2.0.1 — newer than 0.2.0 — and a tester
+    on the release candidate is never offered the release. Labels compare by
+    name, which already orders alpha < beta < rc (and a < b < rc).
+    """
+    match = _VERSION.match(version.strip())
+    if not match:
+        return ((0,), 1, "", 0)
+    release = tuple(int(part) for part in match.group(1).split("."))
+    label, number = match.group(2), match.group(3)
+    if label is None:
+        return (release, 1, "", 0)  # a final release outranks any pre-release of it
+    return (release, 0, label.lower(), int(number or 0))
 
 
 def is_newer(candidate: str, current: str) -> bool:
-    return _version_tuple(candidate) > _version_tuple(current)
+    return _version_key(candidate) > _version_key(current)
 
 
 def platform_asset_name(system: Optional[str] = None, machine: Optional[str] = None) -> str:

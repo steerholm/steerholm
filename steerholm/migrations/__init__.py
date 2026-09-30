@@ -9,6 +9,10 @@ have been applied anywhere, editing it is undetectable and unfixable: someone's
 state is stamped with a number that no longer means what it meant when they ran
 it. Corrections arrive as a new step, never as an edit to an old one.
 
+A pre-release does not freeze a step. Testing the migrations is part of what a
+pre-release is for, so a step may still change before the release; testers on
+it accept that they may have to start fresh.
+
 Which steps run is decided at two ends that neither derives from the other:
 
     source  <- the state's own marker (`migrations/version`); what has been applied here

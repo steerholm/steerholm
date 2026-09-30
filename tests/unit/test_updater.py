@@ -271,9 +271,16 @@ def _cm(read_bytes):
     return cm
 
 
-def test_version_tuple_handles_prerelease_suffix():
-    assert _u._version_tuple("0.1.2rc1") == (0, 1, 2)
-    assert _u.is_newer("0.2.0beta", "0.1.5") is True
+def test_a_prerelease_sorts_before_its_release():
+    # Otherwise a tester on the release candidate is never offered the release.
+    assert _u.is_newer("v0.2.0", "0.2.0-rc.1") is True
+    assert _u.is_newer("v0.2.0", "0.2.0rc1") is True
+    assert _u.is_newer("v0.2.0-rc.1", "0.2.0") is False
+    assert _u.is_newer("v0.2.0-rc.2", "0.2.0-rc.1") is True
+    assert _u.is_newer("v0.2.0-rc.10", "0.2.0-rc.9") is True   # numerically
+    assert _u.is_newer("v0.2.0-rc.1", "0.2.0-beta.3") is True
+    assert _u.is_newer("v0.2.0-rc.1", "0.1.5") is True
+    assert _u.is_newer("v0.2.0beta", "0.1.5") is True
 
 
 def test_installer_asset_name_unsupported():

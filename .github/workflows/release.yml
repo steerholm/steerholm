@@ -66,6 +66,10 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           body_path: notes.md
+          # A tag with a suffix (v0.2.0-rc.1) is a pre-release: GitHub leaves it out
+          # of /releases/latest, which is what `holm update` and the installers
+          # follow, so only `--tag` / STEERHOLM_VERSION can reach it.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: ${{ steps.notes.outputs.generate }}
           files: |
             steerholm-linux-x64.tar.gz
