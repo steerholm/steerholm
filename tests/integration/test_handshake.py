@@ -134,7 +134,7 @@ class TestControlPlane:
         token = get_or_create_control_token()
         assert token.startswith("steer_ctl_")
         # An agent whose name would collide with the old control account must
-        # not corrupt the control token (it lives in a separate keyring service).
+        # not corrupt the control token (it lives in its own file, not in config.json).
         config_manager.add_agent("__control__")
         config_manager.add_agent("token")
         assert get_or_create_control_token() == token

@@ -76,7 +76,7 @@ Agents are created with `holm add agent <name>`. Each gets:
 - A **name** (stored in `config.json`) — reusable once an agent is removed
 - An immutable **id**, minted at creation and kept across key rotation
 - A **key prefix** for display (stored in `config.json`)
-- A **bcrypt-hashed access key** (stored in system keyring — never in config files)
+- A **bcrypt-hashed access key** (stored in `config.json`) — the raw key is shown once at creation and never stored
 
 The agent authenticates by sending the access key as `Authorization: Bearer <key>` to the daemon's Streamable HTTP MCP endpoint. The daemon resolves the agent by checking the access key against all stored hashes.
 

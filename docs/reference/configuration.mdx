@@ -28,6 +28,7 @@ description: Config files, directory layout, and platform support.
 ├── update-check.json
 ├── migrations\
 │   └── version
+├── control-token
 └── policies\
     ├── agt_9f2a1c4e7b3d05a1.json
     └── agt_5c30bb81f6e2d94a.json
@@ -35,7 +36,12 @@ description: Config files, directory layout, and platform support.
 
 </CodeGroup>
 
-Access-key hashes are stored in the system keyring, not in config files.
+`config.json` holds the bcrypt hash of each agent's access key. A hash verifies a
+key; it cannot be turned back into one, and the raw key is shown once at creation
+and never stored. `control-token` holds the credential the CLI uses to talk to a
+running daemon — stored raw, because the CLI has to present it, and owner-only
+like everything else here. The daemon creates it when it first starts, so it is
+absent until then.
 
 Set `STEERHOLM_CONFIG_DIR` to override the config directory (both the CLI and
 the daemon read it) — useful for isolated setups or testing:

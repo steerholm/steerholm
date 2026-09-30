@@ -52,6 +52,42 @@ The Bearer token is missing, malformed, or not a valid access key.
   tool with the new key.
 - If you **removed and re-created** the agent, its old key is dead even if the
   name is the same.
+- If you upgraded from a version that kept key hashes in the OS keyring and the
+  keyring could not be read at the time, the agent has no hash to check against
+  and the daemon log says so. Re-run `holm migrate` with the keyring unlocked,
+  or issue a fresh key with `holm rotate agent <name>`.
+
+## Steerholm refuses to run: "is schema vN; this build of Steerholm expects vM"
+
+The stored data was written by a different version than the one installed.
+Reinstalling runs the upgrade for you:
+
+```bash
+curl -fsSL https://steerholm.ai/install.sh | bash
+```
+
+Steerholm refuses rather than guessing, because reading an older layout with a
+newer build would look like every agent having no grants at all. Your data is
+untouched; nothing is migrated until it can be done completely.
+
+## "config.json cannot be loaded"
+
+The file exists but Steerholm cannot read it. The message says why:
+
+- **`<key>: Extra inputs are not permitted`** — a key Steerholm does not
+  recognise, usually a typo from editing the file by hand.
+- **A JSON error** such as *Unterminated string* — the file was cut off, most
+  often by a full disk while it was being written.
+
+Steerholm refuses to carry on rather than start from an empty configuration in
+its place. Nothing is written to the file while it is in this state, so fixing
+it restores everything as it was. `holm version`, `holm status` and
+`holm migrate` still run; commands that read or change the configuration do not.
+A running daemon denies every request and leaves its servers running until the
+file loads again.
+
+Fix the file, or move it aside to start fresh. Prefer the CLI over editing it
+directly.
 
 ## The daemon isn't running
 
