@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 from . import __version__
-from .config import ConfigManager, EX_CONFIG, SchemaError
+from .config import ConfigManager, EX_CONFIG, UnusableStateError
 from .models import ServerType
 from .updater import UpdateError, run_update_installer, update_binary
 
@@ -59,7 +59,8 @@ def _root(
     ):
         try:
             config_manager.verify_schema()
-        except SchemaError as e:
+            config_manager.verify_loaded()
+        except UnusableStateError as e:
             err_console.print(f"[bold red]Error:[/bold red] {escape(str(e))}")
             # `serve` is what the service manager runs — the systemd unit is
             # `ExecStart=holm serve`, Restart=on-failure. Exiting 1 there loops
@@ -575,7 +576,7 @@ def serve(
     sys.stderr.write(f"Starting Steerholm daemon (http://{serve_host}:{serve_port}/mcp)...\n")
     try:
         asyncio.run(gateway.serve(serve_host, serve_port))
-    except SchemaError as e:
+    except UnusableStateError as e:
         # Diagnosable, not a crash. The systemd unit and the Windows logon task
         # both restart on failure, so a traceback here would loop every few
         # seconds instead of reporting once.

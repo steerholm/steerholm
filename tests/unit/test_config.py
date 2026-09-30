@@ -422,10 +422,100 @@ def test_the_control_token_file_is_owner_only(config_manager):
     assert oct(_cfg.control_token_path().stat().st_mode)[-3:] == "600"
 
 
-def test_load_config_corrupt_returns_empty(config_manager):
-    _cfg.CONFIG_FILE.write_text("{ not valid json")
-    config_manager.reload()
-    assert config_manager.config.servers == {}
+class TestAConfigThatWillNotLoad:
+    """A config.json that EXISTS but will not load must never be replaced.
+
+    It used to load as empty with a printed warning, and the next write saved
+    that empty stand-in over the file: one mistyped key, then `holm add server`,
+    and every other server and agent was gone.
+    """
+
+    def _break(self, content):
+        _cfg.CONFIG_FILE.write_text(content)
+
+    def test_an_unrecognised_key_is_refused_not_emptied(self, config_manager):
+        config_manager.add_server("git", command="uvx x", env={"T": "SECRET"})
+        good = json.loads(_cfg.CONFIG_FILE.read_text())
+        good["serverz"] = {}
+        self._break(json.dumps(good))
+        before = _cfg.CONFIG_FILE.read_bytes()
+
+        config_manager.reload()
+
+        with pytest.raises(_cfg.ConfigError, match="serverz"):
+            config_manager.add_server("fs", command="echo")
+        assert _cfg.CONFIG_FILE.read_bytes() == before, "the file was written over"
+
+    def test_a_truncated_file_is_refused_not_emptied(self, config_manager):
+        # What a full disk mid-write leaves behind.
+        self._break('{"servers": {"git": {"name": "gi')
+        before = _cfg.CONFIG_FILE.read_bytes()
+
+        config_manager.reload()
+
+        with pytest.raises(_cfg.ConfigError):
+            config_manager.save_config()
+        assert _cfg.CONFIG_FILE.read_bytes() == before
+
+    def test_valid_json_that_is_not_an_object_is_refused(self, config_manager):
+        self._break("[1, 2, 3]")
+        config_manager.reload()
+        with pytest.raises(_cfg.ConfigError):
+            config_manager.verify_loaded()
+
+    def test_reading_the_config_raises_rather_than_standing_in_an_empty_one(
+            self, config_manager):
+        # A substitute would be acted on as though it were the user's
+        # configuration: saved over the file, or reconciled against.
+        config_manager.add_server("git", command="x")
+        self._break("{ not valid json")
+        config_manager.reload()
+        with pytest.raises(_cfg.ConfigError):
+            config_manager.config
+        with pytest.raises(_cfg.ConfigError):
+            config_manager.list_servers()
+
+    def test_construction_does_not_raise(self, config_manager):
+        # The CLI builds a manager at import. Raising here would take down every
+        # command, including `holm migrate` and `holm version`.
+        self._break("{ not valid json")
+        manager = _cfg.ConfigManager()
+        with pytest.raises(_cfg.ConfigError):
+            manager.verify_loaded()
+
+    def test_it_is_an_unusable_state_error(self, config_manager):
+        # So the gate, `holm serve` and the daemon entry point, which all catch
+        # the base, refuse on it without being told about it separately.
+        self._break("{ not valid json")
+        config_manager.reload()
+        with pytest.raises(_cfg.UnusableStateError):
+            config_manager.verify_loaded()
+
+    def test_it_recovers_when_the_file_is_fixed(self, config_manager):
+        config_manager.add_server("git", command="x")
+        good = _cfg.CONFIG_FILE.read_text()
+        self._break("{ not valid json")
+        config_manager.reload()
+
+        _cfg.CONFIG_FILE.write_text(good)
+        config_manager.reload()
+
+        config_manager.verify_loaded()                     # no longer raises
+        assert "git" in config_manager.config.servers
+
+    def test_an_absent_file_is_a_fresh_install_not_an_error(self, config_manager):
+        _cfg.CONFIG_FILE.unlink(missing_ok=True)
+        config_manager.reload()
+        config_manager.verify_loaded()
+        assert config_manager.config.servers == {}
+
+    def test_the_daemon_reports_it_once_not_per_reload(self, config_manager, caplog):
+        # The daemon reloads on every authentication.
+        self._break("{ not valid json")
+        with caplog.at_level("ERROR", logger="steerholm.config"):
+            for _ in range(20):
+                config_manager.reload()
+        assert caplog.text.count("cannot be loaded") == 1
 
 
 

@@ -23,7 +23,9 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from . import __version__
-from .config import ConfigManager, get_or_create_control_token, read_control_token
+from .config import (
+    ConfigError, ConfigManager, get_or_create_control_token, read_control_token,
+)
 from .errors import AUTHORIZATION_DENIED_CODE, authorization_denied, server_unavailable
 from .events import DecisionEvent, EventLog, now_iso, summarize_args
 from .models import AgentPolicy
@@ -201,7 +203,10 @@ class SteerholmGateway:
         if not token:
             return None
         self.config_manager.reload()
-        return self._resolve_agent_from_token(token)
+        try:
+            return self._resolve_agent_from_token(token)
+        except ConfigError:
+            return None  # no config, no agents: deny (reload() logged why)
 
     def _load_agent_policy(self, agent_name: str) -> AgentPolicy:
         policy = self.config_manager.load_policy(agent_name)
@@ -427,6 +432,8 @@ class SteerholmGateway:
                 await self._restart_unhealthy_servers()
                 self.config_manager.reload()
                 await self.reconcile_servers()
+            except ConfigError:
+                pass  # leave servers and retention as they are; reload() logged why
             except Exception as e:
                 logger.error(f"Periodic reconcile failed: {e}")
 
@@ -549,6 +556,7 @@ class SteerholmGateway:
         # config reads as every agent having no grants.
         self.config_manager.verify_schema()
         self.config_manager.reload()
+        self.config_manager.verify_loaded()
         await self.reconcile_servers()
         # Create the control token now so it exists before the CLI's first call
         # (avoids a first-use race where each side would mint a different token).

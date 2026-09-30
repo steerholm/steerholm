@@ -104,6 +104,59 @@ async def test_reconcile_reports_failed_stop(config_manager):
     assert result["failed"] == ["ghost"]
 
 
+@pytest.mark.asyncio
+async def test_periodic_reconcile_leaves_everything_alone_while_the_config_will_not_load(
+        config_manager, monkeypatch, caplog):
+    # Acting on an empty config would stop every running server and apply
+    # default audit retention, deleting history the user chose to keep.
+    import json
+    import steerholm.config as cfg
+    import steerholm.gateway as gw
+    config_manager.add_server("srv", command="echo")
+    config_manager.set_audit_settings(max_files=50)
+    gateway = make_gateway(config_manager)
+    gateway.event_log.configure(max_files=50)
+    gateway._restart_unhealthy_servers = AsyncMock()
+    gateway.daemon.shared_processes["srv"] = make_mock_process("srv", ["t"])
+    gateway.daemon.stop_shared_server = AsyncMock()
+    for i in range(1, 21):
+        (gateway.event_log.dir / f"events-{i:06d}.jsonl").write_text("{}\n")
+
+    data = json.loads(cfg.CONFIG_FILE.read_text())
+    data["serverz"] = {}
+    cfg.CONFIG_FILE.write_text(json.dumps(data))
+
+    calls = {"n": 0}
+
+    async def fake_sleep(_):
+        calls["n"] += 1
+        if calls["n"] > 3:
+            raise asyncio.CancelledError()
+
+    monkeypatch.setattr(gw.asyncio, "sleep", fake_sleep)
+    with caplog.at_level("ERROR"), pytest.raises(asyncio.CancelledError):
+        await gateway._reconcile_loop(interval=0)
+
+    gateway.daemon.stop_shared_server.assert_not_awaited()
+    assert "srv" in gateway.daemon.shared_processes
+    assert len(list(gateway.event_log.dir.glob("events-*.jsonl"))) == 20
+    assert "Periodic reconcile failed" not in caplog.text   # reload() reported it, once
+    assert caplog.text.count("cannot be loaded") == 1
+
+
+def test_authentication_is_denied_while_the_config_will_not_load(config_manager):
+    import json
+    import steerholm.config as cfg
+    token = config_manager.add_agent("a")
+    gateway = make_gateway(config_manager)
+    assert gateway._authenticate_authorization_header(f"Bearer {token}") == "a"
+
+    data = json.loads(cfg.CONFIG_FILE.read_text())
+    data["agentz"] = {}
+    cfg.CONFIG_FILE.write_text(json.dumps(data))
+    assert gateway._authenticate_authorization_header(f"Bearer {token}") is None
+
+
 # ─── supervisor / liveness ──────────────────────────────────────────
 
 

@@ -1876,6 +1876,18 @@ class TestUpdateFinishesAnInterruptedMigration:
         assert "still behind" not in result.output
 
 
+
+def _serve_must_not_start(monkeypatch):
+    """Make `holm serve` fail fast if the refusal regresses.
+
+    These tests invoke the real command. If the gate stopped refusing, serve
+    would start a daemon and block forever — a regression would hang the suite
+    rather than fail it.
+    """
+    def started(*a, **k):
+        raise AssertionError("holm serve started against state it should refuse")
+    monkeypatch.setattr("steerholm.gateway.SteerholmGateway.serve", started)
+
 class TestSchemaGateExitCodes:
     """`serve` is run by the service manager; everything else by a person."""
 
@@ -1886,12 +1898,13 @@ class TestSchemaGateExitCodes:
         MigrationStore(_c.CONFIG_DIR).version_file.unlink()
         _c.CONFIG_FILE.write_text(json.dumps({"servers": {}, "agents": {}}))
 
-    def test_serve_exits_with_the_code_the_unit_will_not_restart_on(self, cli):
+    def test_serve_exits_with_the_code_the_unit_will_not_restart_on(self, cli, monkeypatch):
         # ExecStart=holm serve, Restart=on-failure, RestartSec=5. Exiting 1 here
         # loops every five seconds forever; only `holm migrate` can fix it.
         from steerholm.config import EX_CONFIG
 
         self._behind()
+        _serve_must_not_start(monkeypatch)
         result = runner.invoke(app, ["serve"])
 
         assert result.exit_code == EX_CONFIG == 78
@@ -2027,3 +2040,38 @@ def test_reconcile_says_so_when_the_control_token_is_missing(monkeypatch, capsys
     out = " ".join(capsys.readouterr().out.split())
     assert "control token is missing" in out
     assert "holm stop" in out
+
+
+class TestAnUnloadableConfigAtTheCli:
+    """Through the real commands, since the gate is where a user meets it."""
+
+    def _break(self):
+        import json
+        import steerholm.config as _c
+        data = json.loads(_c.CONFIG_FILE.read_text()) if _c.CONFIG_FILE.exists() else {}
+        data["serverz"] = {}
+        _c.CONFIG_FILE.write_text(json.dumps(data))
+        m.config_manager.reload()
+
+    def test_a_writing_command_refuses_and_names_the_key(self, cli):
+        import steerholm.config as _c
+        runner.invoke(app, ["add", "server", "git", "--command", "echo"])
+        self._break()
+        before = _c.CONFIG_FILE.read_bytes()
+
+        result = runner.invoke(app, ["add", "server", "fs", "--command", "echo"])
+
+        assert result.exit_code == 1
+        assert "serverz" in " ".join(result.output.split())
+        assert _c.CONFIG_FILE.read_bytes() == before
+
+    def test_recovery_commands_still_run(self, cli):
+        # Refusing at import would have taken these down with everything else.
+        self._break()
+        assert runner.invoke(app, ["version"]).exit_code == 0
+
+    def test_serve_exits_the_code_the_unit_will_not_restart_on(self, cli, monkeypatch):
+        from steerholm.config import EX_CONFIG
+        self._break()
+        _serve_must_not_start(monkeypatch)
+        assert runner.invoke(app, ["serve"]).exit_code == EX_CONFIG

@@ -8,6 +8,7 @@ import string
 from pathlib import Path
 from typing import Optional, List, Tuple
 import bcrypt
+from pydantic import ValidationError
 from .models import (
     AuditSettings, Config, Server, Agent, AgentPolicy, ToolPermission,
     ArgumentPolicy, ServerType,
@@ -171,22 +172,72 @@ def validate_env_key(key: str) -> None:
         )
 
 
-class SchemaError(Exception):
+class UnusableStateError(Exception):
+    """The on-disk state cannot be used as it stands, so Steerholm refuses to.
+
+    The base for every such case, so the places that must refuse — the CLI's
+    gate, `holm serve`, the daemon entry point — catch one thing and any later
+    case reaches them without each being edited. Every subclass is something a
+    restart cannot fix, which is why they share EX_CONFIG below.
+    """
+
+
+class SchemaError(UnusableStateError):
     """The on-disk state is a schema this build cannot safely read or write."""
 
 
-# sysexits.h EX_CONFIG, the exit code for a SchemaError from anything a service
+class ConfigError(UnusableStateError):
+    """config.json exists but cannot be loaded.
+
+    Distinct from the file being ABSENT, which is a fresh install and loads as
+    an empty configuration. Collapsing the two is how a typo lost data: the
+    load failed, an empty config stood in for the real one, and the next write
+    saved it over every server and agent the file held.
+    """
+
+
+# sysexits.h EX_CONFIG, the exit code for an UnusableStateError from anything a service
 # manager runs. Named in the systemd unit's RestartPreventExitStatus: only
 # `holm migrate` can fix a schema mismatch, so restarting just loops every
 # RestartSec. Plain failure here is what that used to do.
 EX_CONFIG = 78
 
 
+def _describe_load_failure(e: Exception) -> str:
+    """Say what is wrong with config.json in one line.
+
+    A validation error is rendered as `field: problem` rather than pydantic's
+    multi-line report, so an unrecognised key reads as `serverz: Extra inputs
+    are not permitted` instead of a block with a documentation URL in it.
+    """
+    if isinstance(e, ValidationError):
+        return "; ".join(
+            f"{'.'.join(str(part) for part in err['loc']) or 'top level'}: {err['msg']}"
+            for err in e.errors()
+        )
+    return str(e)
+
+
 class ConfigManager:
     def __init__(self):
         self._ensure_dirs()
         self._stamp_if_new()
-        self.config = self._load_config()
+        # Recorded, not raised: the CLI builds a manager at import, so raising
+        # here would take down every command — including `holm migrate` and
+        # `holm version`, the ones a user reaches for when the state is wrong.
+        # It is raised when something reads `config` instead.
+        self._load()
+
+    @property
+    def config(self) -> Config:
+        """The loaded configuration. Raises ConfigError if it did not load.
+
+        There is deliberately no stand-in. Anything handed a substitute would
+        act on it as though it were the user's configuration — saving it over
+        the real file, or reconciling against it and stopping every server.
+        """
+        self.verify_loaded()
+        return self._config
 
     @staticmethod
     def _stamp_if_new() -> None:
@@ -259,23 +310,56 @@ class ConfigManager:
             _restrict(policy, 0o600)
 
     def _load_config(self) -> Config:
+        """Load config.json. Absent loads as empty; present but broken raises.
+
+        ValueError covers malformed JSON, undecodable bytes and a failed
+        validation — including a key the models do not recognise; TypeError
+        covers valid JSON that is not an object; OSError covers a file that
+        exists but cannot be read.
+        """
         if not CONFIG_FILE.exists():
             return Config()
         try:
-            with open(CONFIG_FILE, "r") as f:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
             return Config(**data)
-        except Exception as e:
-            print(f"Warning: Could not load config: {e}")
-            return Config()
+        except (ValueError, TypeError, OSError) as e:
+            raise ConfigError(
+                f"{CONFIG_FILE} cannot be loaded — {_describe_load_failure(e)}. "
+                "Steerholm will not carry on with an empty configuration in its "
+                "place: the next change would save that over every server and "
+                "agent in the file. Fix it, or move it aside to start fresh."
+            ) from e
+
+    def _load(self) -> None:
+        """Load config.json, or record why it would not load."""
+        try:
+            self._config, self._load_error = self._load_config(), None
+        except ConfigError as e:
+            self._config, self._load_error = None, e
+
+    def verify_loaded(self) -> None:
+        """Raise the ConfigError from the last load, if there was one."""
+        if self._load_error is not None:
+            raise self._load_error
 
     def save_config(self):
+        # Before the open, not left to `self.config` below: "w" empties the file
+        # first, and this must never write over one it could not read.
+        self.verify_loaded()
         with open(CONFIG_FILE, "w") as f:
             f.write(self.config.model_dump_json(indent=2))
         _restrict(CONFIG_FILE, 0o600)
 
     def reload(self):
-        self.config = self._load_config()
+        before = self._load_error
+        self._load()
+        # The daemon reloads on every authentication, so report the transitions
+        # only — a line per tool call would bury the one that matters.
+        if self._load_error is not None and str(self._load_error) != str(before):
+            logger.error("%s Denying every request until it loads.", self._load_error)
+        elif before is not None and self._load_error is None:
+            logger.info("%s loads again.", CONFIG_FILE)
 
     # --- Server Management ---
     def add_server(self, name: str, command: str = None, url: str = None,
