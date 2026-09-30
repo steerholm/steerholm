@@ -26,7 +26,7 @@
     "primary": {
       "type": "button",
       "label": "Install",
-      "href": "/v0.1/getting-started/installation"
+      "href": "/latest/getting-started/installation"
     }
   },
   "footer": {
@@ -37,41 +37,41 @@
   "navigation": {
     "versions": [
       {
-        "version": "v0.1",
+        "version": "v0.1 (latest)",
         "groups": [
           {
             "group": "Getting Started",
             "pages": [
-              "v0.1/getting-started/introduction",
-              "v0.1/getting-started/installation",
-              "v0.1/getting-started/quickstart"
+              "latest/getting-started/introduction",
+              "latest/getting-started/installation",
+              "latest/getting-started/quickstart"
             ]
           },
           {
             "group": "Guides",
             "pages": [
-              "v0.1/guides/add-an-agent",
-              "v0.1/guides/add-a-server",
-              "v0.1/guides/managing-access",
-              "v0.1/guides/troubleshooting"
+              "latest/guides/add-an-agent",
+              "latest/guides/add-a-server",
+              "latest/guides/managing-access",
+              "latest/guides/troubleshooting"
             ]
           },
           {
             "group": "Concepts",
             "pages": [
-              "v0.1/concepts/control-plane",
-              "v0.1/concepts/architecture",
-              "v0.1/concepts/permissions",
-              "v0.1/concepts/error-codes"
+              "latest/concepts/control-plane",
+              "latest/concepts/architecture",
+              "latest/concepts/permissions",
+              "latest/concepts/error-codes"
             ]
           },
           {
             "group": "Reference",
             "pages": [
-              "v0.1/reference/cli",
-              "v0.1/reference/mcp-endpoint",
-              "v0.1/reference/configuration",
-              "v0.1/reference/policy-format"
+              "latest/reference/cli",
+              "latest/reference/mcp-endpoint",
+              "latest/reference/configuration",
+              "latest/reference/policy-format"
             ]
           }
         ],
@@ -82,37 +82,42 @@
   "redirects": [
     {
       "source": "/",
-      "destination": "/v0.1/getting-started/introduction",
+      "destination": "/latest/getting-started/introduction",
       "permanent": false
     },
     {
       "source": "/latest",
-      "destination": "/v0.1/getting-started/introduction",
+      "destination": "/latest/getting-started/introduction",
       "permanent": false
     },
     {
-      "source": "/latest/:slug*",
-      "destination": "/v0.1/:slug*",
+      "source": "/v0.1",
+      "destination": "/latest/getting-started/introduction",
+      "permanent": false
+    },
+    {
+      "source": "/v0.1/:slug*",
+      "destination": "/latest/:slug*",
       "permanent": false
     },
     {
       "source": "/getting-started/:slug*",
-      "destination": "/v0.1/getting-started/:slug*",
+      "destination": "/latest/getting-started/:slug*",
       "permanent": false
     },
     {
       "source": "/guides/:slug*",
-      "destination": "/v0.1/guides/:slug*",
+      "destination": "/latest/guides/:slug*",
       "permanent": false
     },
     {
       "source": "/concepts/:slug*",
-      "destination": "/v0.1/concepts/:slug*",
+      "destination": "/latest/concepts/:slug*",
       "permanent": false
     },
     {
       "source": "/reference/:slug*",
-      "destination": "/v0.1/reference/:slug*",
+      "destination": "/latest/reference/:slug*",
       "permanent": false
     }
   ]
