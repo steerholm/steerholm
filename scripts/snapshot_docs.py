@@ -12,10 +12,16 @@ Usage:
         --content-source content/docs \
         --config-source main/docs \
         --dest live/docs
+    ...once per version, then once:
+    snapshot_docs.py --finalize --dest live/docs
 
 The content source supplies the version's pages and navigation (docs.json or the legacy
 mint.json are both accepted, so older release tags can be snapshotted). The config source
 supplies shared branding. The dest is the docs root of the docs-live branch.
+
+--finalize serves the newest version at /latest/... rather than redirecting there.
+Mintlify has redirects but no rewrites, and a page's URL is its file path, so the
+newest version's content has to live in latest/. Older versions keep vX.Y/.
 """
 from __future__ import annotations
 
@@ -28,6 +34,8 @@ from pathlib import Path
 CONTENT_DIRS = ("getting-started", "guides", "concepts", "reference")
 # Shared assets copied to the docs root (referenced as /logo, /favicon.svg, ...).
 ASSET_PATHS = ("logo", "images", "favicon.svg", "custom.css")
+# Where the newest version is served from.
+LATEST = "latest"
 
 
 def load_json(path: Path) -> dict:
@@ -118,15 +126,23 @@ def version_key(entry: dict) -> tuple:
         return (0,)
 
 
-def prefix_pages(groups: list, version: str) -> list:
+def map_pages(groups: list, fn) -> list:
     def fix(page):
         if isinstance(page, str):
-            return f"{version}/{page}"
+            return fn(page)
         if isinstance(page, dict) and "pages" in page:  # nested group
             return {**page, "pages": [fix(p) for p in page["pages"]]}
         return page
 
     return [{**g, "pages": [fix(p) for p in g.get("pages", [])]} for g in groups]
+
+
+def prefix_pages(groups: list, version: str) -> list:
+    return map_pages(groups, lambda page: f"{version}/{page}")
+
+
+def unprefix_pages(groups: list, version: str) -> list:
+    return map_pages(groups, lambda page: page.removeprefix(f"{version}/"))
 
 
 def copy_content(content_src: Path, version_dir: Path) -> None:
@@ -150,15 +166,79 @@ def copy_assets(config_src: Path, dest_root: Path) -> None:
             shutil.copy2(src, dest_root / name)
 
 
+def first_leaf(groups: list) -> str | None:
+    for g in groups:
+        for p in g.get("pages", []):
+            if isinstance(p, str):
+                return p
+            if isinstance(p, dict) and p.get("pages"):
+                leaf = first_leaf([p])
+                if leaf:
+                    return leaf
+    return None
+
+
+def finalize(dest: Path) -> None:
+    """Move the default (highest) version to latest/ and point everything else at it.
+
+    Run once, after every version is snapshotted: which version is newest is only
+    known then, and the per-version passes all write vX.Y/.
+    """
+    dest_docs = dest / "docs.json"
+    out = load_json(dest_docs)
+    versions = out["navigation"]["versions"]
+    newest = versions[0]["version"]  # sorted highest-first by the snapshot passes
+
+    latest_dir = dest / LATEST
+    if latest_dir.exists():
+        shutil.rmtree(latest_dir)
+    (dest / newest).rename(latest_dir)
+    versions[0]["groups"] = prefix_pages(unprefix_pages(versions[0]["groups"], newest), LATEST)
+    versions[0]["version"] = f"{newest} ({LATEST})"  # the URL says latest; so does the dropdown
+
+    primary = (out.get("navbar") or {}).get("primary")
+    if primary and isinstance(primary.get("href"), str) and primary["href"].startswith("/"):
+        primary["href"] = f"/{LATEST}{primary['href']}"
+
+    landing = "/" + (first_leaf(versions[0]["groups"]) or f"{LATEST}/{CONTENT_DIRS[0]}")
+    # Temporary (307), never permanent (308): /vX.Y stops pointing at latest/ the
+    # release after, when it gets a folder of its own again, and the bare
+    # section paths follow whichever version is newest.
+    redirects = [
+        {"source": "/", "destination": landing, "permanent": False},
+        {"source": f"/{LATEST}", "destination": landing, "permanent": False},
+        {"source": f"/{newest}", "destination": landing, "permanent": False},
+        {"source": f"/{newest}/:slug*", "destination": f"/{LATEST}/:slug*", "permanent": False},
+    ]
+    for content_dir in CONTENT_DIRS:
+        redirects.append({
+            "source": f"/{content_dir}/:slug*",
+            "destination": f"/{LATEST}/{content_dir}/:slug*",
+            "permanent": False,
+        })
+    out["redirects"] = redirects
+
+    dest_docs.write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8")
+    print(f"finalized: {newest} served at /{LATEST}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--version", required=True, help="version label, e.g. v0.2")
-    ap.add_argument("--content-source", required=True,
+    ap.add_argument("--finalize", action="store_true",
+                    help="after all versions: serve the newest at /latest")
+    ap.add_argument("--version", help="version label, e.g. v0.2")
+    ap.add_argument("--content-source",
                     help="docs dir supplying this version's content + navigation")
-    ap.add_argument("--config-source", required=True,
+    ap.add_argument("--config-source",
                     help="docs dir supplying shared branding (the current docs)")
     ap.add_argument("--dest", required=True, help="docs root of the docs-live branch")
     args = ap.parse_args()
+
+    if args.finalize:
+        finalize(Path(args.dest))
+        return
+    if not (args.version and args.content_source and args.config_source):
+        ap.error("--version, --content-source and --config-source are required")
 
     version = args.version
     content_src = Path(args.content_source)
@@ -191,42 +271,6 @@ def main() -> None:
         v.pop("default", None)
     versions[0]["default"] = True
     out["navigation"] = {"versions": versions}
-
-    # 6. point the navbar CTA at the default (highest) version's page
-    default_version = versions[0]["version"]
-    primary = (out.get("navbar") or {}).get("primary")
-    if primary and isinstance(primary.get("href"), str) and primary["href"].startswith("/"):
-        primary["href"] = f"/{default_version}{primary['href']}"
-
-    # 7. alias the bare root and /latest onto the default (highest) version, so
-    #    /..., /latest/..., and /vX.Y/... all reach the newest docs. Recomputed
-    #    every build, so "latest" follows the highest version automatically.
-    def first_leaf(groups: list) -> str | None:
-        for g in groups:
-            for p in g.get("pages", []):
-                if isinstance(p, str):
-                    return p
-                if isinstance(p, dict) and p.get("pages"):
-                    leaf = first_leaf([p])
-                    if leaf:
-                        return leaf
-        return None
-
-    landing = first_leaf(versions[0].get("groups", [])) or f"{default_version}/{CONTENT_DIRS[0]}"
-    # Temporary (307), never permanent (308): these targets move to the next
-    # version on every release, so they must not be hard-cached by browsers/CDNs.
-    redirects = [
-        {"source": "/", "destination": f"/{landing}", "permanent": False},
-        {"source": "/latest", "destination": f"/{landing}", "permanent": False},
-        {"source": "/latest/:slug*", "destination": f"/{default_version}/:slug*", "permanent": False},
-    ]
-    for content_dir in CONTENT_DIRS:
-        redirects.append({
-            "source": f"/{content_dir}/:slug*",
-            "destination": f"/{default_version}/{content_dir}/:slug*",
-            "permanent": False,
-        })
-    out["redirects"] = redirects
 
     dest_docs.write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8")
     print(f"snapshotted {version}: {len(entry['groups'])} groups; "

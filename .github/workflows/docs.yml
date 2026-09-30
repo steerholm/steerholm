@@ -3,7 +3,7 @@ name: Docs
 # Publishes versioned docs to the `docs-live` branch, which Mintlify deploys.
 # `docs-live` is rebuilt deterministically from the release tags: every vX.Y.Z tag is
 # grouped by its minor line (vX.Y), the latest patch per line is frozen as that version,
-# and the highest line becomes the default. The working docs on `main` stay a single,
+# and the highest line becomes the default, served at /latest/... (older lines at /vX.Y/...). The working docs on `main` stay a single,
 # flat "next" version (served only via Mintlify PR previews).
 #
 # Runs automatically on each release tag, and can be re-run manually with no inputs
@@ -82,6 +82,7 @@ jobs:
               --config-source docs \
               --dest live/docs
           done
+          python3 scripts/snapshot_docs.py --finalize --dest live/docs
 
       - name: Commit and push docs-live
         shell: bash
