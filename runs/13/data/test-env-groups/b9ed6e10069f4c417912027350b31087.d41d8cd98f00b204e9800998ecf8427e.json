@@ -1,0 +1,1 @@
+{"id":"b9ed6e10069f4c417912027350b31087.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.integration.test_handshake.TestHealthEndpoint#test_healthz_needs_no_auth","name":"test_healthz_needs_no_auth","status":"passed","testResultsByEnv":{"default":"78f148b2dbab447e857522595989a600"}}

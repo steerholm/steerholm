@@ -1,0 +1,1 @@
+WARNING  steerholm.events:events.py:301 Could not apply retention to C:\Users\runneradmin\AppData\Local\Temp\pytest-of-runneradmin\pytest-0\test_undeletable_segment_is_lo0\events-000019.jsonl: locked

@@ -1,0 +1,17 @@
+INFO     uvicorn.access:h11_impl.py:477 127.0.0.1:60374 - "POST /mcp HTTP/1.1" 200
+INFO     uvicorn.access:h11_impl.py:477 127.0.0.1:60378 - "POST /mcp HTTP/1.1" 202
+INFO     uvicorn.access:h11_impl.py:477 127.0.0.1:60386 - "GET /mcp HTTP/1.1" 200
+INFO     uvicorn.access:h11_impl.py:477 127.0.0.1:60388 - "POST /mcp HTTP/1.1" 200
+INFO     uvicorn.access:h11_impl.py:477 127.0.0.1:60396 - "POST /mcp HTTP/1.1" 202
+INFO     uvicorn.access:h11_impl.py:477 127.0.0.1:60410 - "GET /mcp HTTP/1.1" 200
+INFO     uvicorn.access:h11_impl.py:477 127.0.0.1:60418 - "POST /mcp HTTP/1.1" 200
+INFO     uvicorn.access:h11_impl.py:477 127.0.0.1:60430 - "POST /mcp HTTP/1.1" 200
+ERROR    uvicorn.error:on.py:134 Traceback (most recent call last):
+  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/starlette/routing.py", line 661, in lifespan
+    await receive()
+  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/site-packages/uvicorn/lifespan/on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.12.15/x64/lib/python3.12/asyncio/queues.py", line 158, in get
+    await getter
+asyncio.exceptions.CancelledError
