@@ -1,6 +1,7 @@
 """Coverage for the CLI commands and helpers in steerholm.main."""
 import inspect
 import json
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1807,29 +1808,52 @@ def test_migrate_refuses_while_the_daemon_is_running(cli, monkeypatch):
     assert "holm stop" in result.output
 
 
-def test_migrate_refuses_when_the_daemon_is_up_but_slow_to_answer(cli, monkeypatch):
-    # `_daemon_up` reports False for a timeout as readily as for a refused
-    # connection, so a daemon busy spawning stdio servers reads as absent.
-    # Migrating on that guess moves config.json out from under a live daemon.
-    import socket
+class TestPortInUse:
+    """Real sockets: the point is what each OS answers, not what we assume."""
 
-    def timed_out(*a, **k):
-        raise socket.timeout("timed out")
+    def test_a_listener_holds_the_port_even_when_it_never_answers(self):
+        # `_daemon_up` reads a daemon too busy to answer as absent. Migrating on
+        # that guess moves config.json out from under a live daemon.
+        import socket
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen()        # never accepts
+            assert m._port_in_use("127.0.0.1", listener.getsockname()[1])
 
-    monkeypatch.setattr(socket, "create_connection", timed_out)
-    result = runner.invoke(app, ["migrate"])
-    assert result.exit_code == 1
-    assert "holm stop" in result.output
+    def test_a_closed_port_is_free_at_once(self):
+        # Asked by connecting, Windows took ~2s to refuse and the check gave up
+        # first, stopping every Windows install at migrate.
+        import socket
+        import time
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        started = time.monotonic()
+        assert not m._port_in_use("127.0.0.1", port)
+        assert time.monotonic() - started < 0.5
+
+    def test_connections_left_by_a_stopped_daemon_do_not_hold_it(self):
+        # The installer stops the daemon and migrates straight after; the
+        # closed connections sit in TIME_WAIT on the server side.
+        import socket
+        with socket.socket() as listener:
+            if sys.platform != "win32":
+                # As the daemon's: uvicorn listens through asyncio, which sets
+                # this on POSIX. Linux only lets a bind past TIME_WAIT when the
+                # socket that left it had it too.
+                listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            listener.bind(("127.0.0.1", 0))
+            listener.listen()
+            port = listener.getsockname()[1]
+            client = socket.create_connection(("127.0.0.1", port))
+            served, _ = listener.accept()
+            served.close()           # server closes first: TIME_WAIT is on its side
+            client.close()
+        assert not m._port_in_use("127.0.0.1", port)
 
 
-def test_migrate_proceeds_when_the_port_is_refused(cli, monkeypatch):
-    # Refused is the one answer that actually means nothing is there.
-    import socket
-
-    def refused(*a, **k):
-        raise ConnectionRefusedError()
-
-    monkeypatch.setattr(socket, "create_connection", refused)
+def test_migrate_proceeds_when_nothing_holds_the_port(cli):
+    # conftest points DEFAULT_PORT at 0, which always binds.
     result = runner.invoke(app, ["migrate"])
     assert result.exit_code == 0
 
@@ -2050,6 +2074,7 @@ class TestInstallersInvokeRealCommands:
         assert "migrate" in self._names()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="install.sh is the Unix installer")
 class TestInstallerUndoesAnOldBinarysLibraryPath:
     """`holm update` from 0.1.0 / 0.1.1 runs install.sh with its PyInstaller
     LD_LIBRARY_PATH, which made the installer's curl load the bundled OpenSSL and

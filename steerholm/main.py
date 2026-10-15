@@ -606,24 +606,37 @@ def _daemon_up(host: str, port: int, timeout: float = 1.0) -> bool:
         return False
 
 
-def _port_in_use(host: str, port: int, timeout: float = 1.0) -> bool:
+def _port_in_use(host: str, port: int) -> bool:
     """Whether anything at all holds host:port.
 
-    `_daemon_up` answers a different question and answers it optimistically: it
-    returns False for a refused connection AND for a timeout, so a daemon busy
-    spawning stdio servers reads as absent. That is the right trade for `status`
-    and `stop`; it is the wrong one for `migrate`, where guessing "down" means
-    moving config.json out from under a live daemon. Here only a refused
-    connection counts as free — anything else is treated as occupied.
+    `_daemon_up` answers a different question and answers it optimistically: a
+    daemon busy spawning stdio servers reads as absent. That is the right trade
+    for `status` and `stop`; it is the wrong one for `migrate`, where guessing
+    "down" means moving config.json out from under a live daemon.
+
+    Asked by binding the port, not connecting to it. A connect only answers
+    clearly where a closed port is refused at once: Windows retries for about
+    two seconds first, which read as "occupied" and stopped every Windows
+    install at migrate. A bind is answered by the OS without waiting, and a
+    daemon too busy to answer still holds the port.
     """
     import socket
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
+    import sys
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        if sys.platform == "win32":
+            # Otherwise Windows lets a specific address bind beside a listener
+            # on the wildcard address, and the port reads as free.
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            # Connections from a daemon just stopped linger in TIME_WAIT; they
+            # do not hold the port, and without this they would read as if
+            # they did. A listener still refuses the bind.
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind((host, port))
+        except OSError:
             return True
-    except (ConnectionRefusedError, socket.gaierror):
-        return False
-    except OSError:
-        return True         # timed out, or unreachable: not evidence of absence
+    return False
 
 
 @app.command()

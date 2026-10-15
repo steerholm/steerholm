@@ -394,6 +394,7 @@ def test_a_gap_in_the_table_is_caught_before_anything_is_applied(state):
     assert (state / "policies" / "bob.json").exists()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="chmod cannot make a file unreadable on Windows")
 def test_a_marker_that_cannot_be_read_is_reported_not_assumed(state):
     store = MigrationStore(state)
     store.version = 1
@@ -405,6 +406,7 @@ def test_a_marker_that_cannot_be_read_is_reported_not_assumed(state):
         store.version_file.chmod(0o600)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="chmod cannot make a file unreadable on Windows")
 def test_an_unreadable_marker_makes_commands_refuse_not_guess(config_manager):
     _v0_state(_cfg.CONFIG_DIR)
     store = MigrationStore(_cfg.CONFIG_DIR)
