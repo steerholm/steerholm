@@ -1,5 +1,12 @@
 $ErrorActionPreference = "Stop"
 
+# Run by `holm update` from 0.1.0 or 0.1.1, this script inherits PyInstaller's
+# bookkeeping from that frozen binary. With it, the NEW `holm migrate` below
+# takes itself for a child of the old `holm update` and loads the old build's
+# unpacked libraries instead of its own. Later releases start it without.
+Get-ChildItem Env: | Where-Object { $_.Name -like '_PYI_*' } |
+    ForEach-Object { Remove-Item "Env:$($_.Name)" }
+
 $Repo = "steerholm/steerholm"
 $TaskName = "Steerholm"
 $Platform = "windows-x64"

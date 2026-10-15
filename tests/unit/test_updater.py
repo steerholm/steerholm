@@ -206,7 +206,13 @@ def test_run_installer_passes_version_env():
     assert captured["command"][0] == "bash"
 
 
-def test_run_installer_without_version_inherits_env():
+def test_run_installer_gives_the_installer_the_users_environment(monkeypatch):
+    # Not the frozen binary's: its bundled OpenSSL made the installer's curl
+    # fail on Ubuntu 26.04.
+    import sys
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEI12345")
+    monkeypatch.delenv("LD_LIBRARY_PATH_ORIG", raising=False)
     captured = {}
 
     def fake_run(command, check, env):
@@ -216,7 +222,8 @@ def test_run_installer_without_version_inherits_env():
          patch("pathlib.Path.chmod"):
         run_installer(Path("/tmp/install.sh"), system="Linux")
 
-    assert captured["env"] is None
+    assert "LD_LIBRARY_PATH" not in captured["env"]
+    assert "STEERHOLM_VERSION" not in captured["env"]
 
 
 def test_run_update_installer_aborts_on_bad_checksum():

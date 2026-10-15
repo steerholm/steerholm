@@ -1,6 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Run by `holm update` from 0.1.0 or 0.1.1, this script inherits that frozen
+# binary's environment. Later releases start it with these undone already.
+#
+# PyInstaller's bookkeeping: with it, the NEW `holm migrate` below takes itself
+# for a child of the old `holm update` and loads the old build's unpacked
+# libraries instead of its own.
+unset _PYI_ARCHIVE_FILE _PYI_APPLICATION_HOME_DIR _PYI_PARENT_PROCESS_LEVEL \
+      _PYI_LINUX_PROCESS_NAME _PYI_SPLASH_IPC
+# Its bundled libraries come first on LD_LIBRARY_PATH, so curl and systemctl
+# below would load ITS OpenSSL — and fail to load at all where the system's is
+# newer (Ubuntu 26.04). Put back what the user had.
+case ":${LD_LIBRARY_PATH:-}:" in
+    *"/_MEI"*)
+        if [ -n "${LD_LIBRARY_PATH_ORIG+x}" ]; then
+            export LD_LIBRARY_PATH="$LD_LIBRARY_PATH_ORIG"
+        else
+            unset LD_LIBRARY_PATH
+        fi
+        unset LD_LIBRARY_PATH_ORIG
+        ;;
+esac
+
 REPO="steerholm/steerholm"
 SERVICE_NAME="steerholm"
 PLIST_FILE="${HOME}/Library/LaunchAgents/dev.steerholm.daemon.plist"
@@ -145,11 +167,10 @@ start_daemon() {
 # install would otherwise have its binary swapped underneath it and never be
 # restarted. install.ps1 orders it the same way, for the same reason.
 stop_daemon() {
-    # Reuse the CLI where it exists: `holm stop` already knows the per-platform
-    # stop and the plist path. On a fresh install there is no binary yet.
-    if [ -x "${INSTALL_DIR}/holm" ]; then
-        "${INSTALL_DIR}/holm" stop >/dev/null 2>&1 || true
-    elif [ "$OS" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
+    # The service manager directly, not the installed `holm stop`: that is the
+    # OLD binary, which re-applies its bundled libraries before calling
+    # systemctl — the failure the top of this script undoes for itself.
+    if [ "$OS" = "Linux" ] && command -v systemctl >/dev/null 2>&1; then
         systemctl --user stop "$SERVICE_NAME" 2>/dev/null || true
     elif [ "$OS" = "Darwin" ] && [ -f "$PLIST_FILE" ]; then
         launchctl unload "$PLIST_FILE" 2>/dev/null || true

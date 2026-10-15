@@ -514,6 +514,28 @@ def test_start_linux(monkeypatch):
     assert run.called
 
 
+@pytest.mark.parametrize("command", ["start", "stop", "status"])
+@pytest.mark.parametrize("platform", ["linux", "darwin", "win32"])
+def test_service_commands_give_the_service_manager_the_users_environment(
+        monkeypatch, command, platform):
+    # Not the frozen binary's: with its bundled OpenSSL, systemctl failed to load
+    # on Ubuntu 26.04 and status printed "Daemon is .".
+    import sys
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEI12345")
+    monkeypatch.delenv("LD_LIBRARY_PATH_ORIG", raising=False)
+    monkeypatch.setattr("sys.platform", platform)
+    run = MagicMock(return_value=MagicMock(returncode=0, stdout="active\n", stderr=""))
+    monkeypatch.setattr("subprocess.run", run)
+    monkeypatch.setattr("time.sleep", lambda *_: None)
+    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: command == "start")
+    runner.invoke(app, [command])
+    # Windows `status` only probes the port; everything else runs a process.
+    assert run.called or (platform, command) == ("win32", "status")
+    for call in run.call_args_list:
+        assert "LD_LIBRARY_PATH" not in call.kwargs["env"]
+
+
 def test_start_darwin(monkeypatch):
     monkeypatch.setattr("sys.platform", "darwin")
     monkeypatch.setattr("subprocess.run", MagicMock())
@@ -1813,8 +1835,8 @@ def test_migrate_proceeds_when_the_port_is_refused(cli, monkeypatch):
 
 
 def test_service_commands_are_not_schema_gated(cli):
-    # install.sh calls `holm stop` during its own retry, and stop/status read no
-    # versioned state. `start` IS gated — see the test below.
+    # install.sh's failure message tells the user to run `holm stop`, and
+    # stop/status read no versioned state. `start` IS gated — see the test below.
     import json
     import steerholm.config as _c
     from steerholm.migrations import MigrationStore
@@ -2026,6 +2048,50 @@ class TestInstallersInvokeRealCommands:
         # Hidden on purpose — the installer runs it and a user should not need
         # to think about it — which is exactly why --help cannot vouch for it.
         assert "migrate" in self._names()
+
+
+class TestInstallerUndoesAnOldBinarysLibraryPath:
+    """`holm update` from 0.1.0 / 0.1.1 runs install.sh with its PyInstaller
+    LD_LIBRARY_PATH, which made the installer's curl load the bundled OpenSSL and
+    fail on Ubuntu 26.04. Those binaries cannot be changed; the script can."""
+
+    def _run_preamble(self, env):
+        import os
+        import shutil
+        import subprocess
+        from pathlib import Path
+
+        if shutil.which("bash") is None:
+            pytest.skip("needs bash")
+        sh = (Path(__file__).resolve().parents[2] / "scripts" / "install.sh").read_text()
+        preamble = sh[:sh.index("\nREPO=")]
+        probe = preamble + ('\nprintf "%s|%s|%s" "${LD_LIBRARY_PATH-unset}" '
+                            '"${LD_LIBRARY_PATH_ORIG-unset}" "$(env | grep -c ^_PYI_)"\n')
+        base = {k: v for k, v in os.environ.items()
+                if not k.startswith(("LD_LIBRARY_PATH", "_PYI_"))}
+        return subprocess.run(["bash", "-c", probe], env={**base, **env},
+                              capture_output=True, text=True, check=True).stdout
+
+    def test_restores_the_users_value(self):
+        out = self._run_preamble({"LD_LIBRARY_PATH": "/tmp/_MEIabc:/opt/lib",
+                                  "LD_LIBRARY_PATH_ORIG": "/opt/lib"})
+        assert out == "/opt/lib|unset|0"
+
+    def test_drops_it_when_the_user_had_none(self):
+        assert self._run_preamble({"LD_LIBRARY_PATH": "/tmp/_MEIabc"}) == "unset|unset|0"
+
+    def test_leaves_a_users_own_value_alone(self):
+        # Run by hand, the script must not strip a path the user set.
+        assert self._run_preamble({"LD_LIBRARY_PATH": "/opt/lib"}) == "/opt/lib|unset|0"
+
+    def test_drops_pyinstallers_bookkeeping(self):
+        # With it, the new `holm migrate` the installer runs reuses the old
+        # build's unpacked libraries and crashes.
+        out = self._run_preamble({"_PYI_APPLICATION_HOME_DIR": "/tmp/_MEIabc",
+                                  "_PYI_ARCHIVE_FILE": "/home/u/.local/bin/holm",
+                                  "_PYI_PARENT_PROCESS_LEVEL": "1",
+                                  "_PYI_LINUX_PROCESS_NAME": "holm"})
+        assert out.endswith("|0")
 
 
 def test_reconcile_says_so_when_the_control_token_is_missing(monkeypatch, capsys):

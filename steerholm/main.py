@@ -6,6 +6,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 from . import __version__
+from .childenv import child_env
 from .config import ConfigManager, EX_CONFIG, UnusableStateError
 from .models import ServerType
 from .updater import UpdateError, run_update_installer, update_binary
@@ -45,10 +46,9 @@ def _root(
     # binary swap and the migration leaves a new binary on unmigrated state, and
     # re-running `holm update` is the obvious thing to try.
     # Exempt: recovery paths (`migrate`, `update`), and the service-manager
-    # commands that read no versioned state. `install.sh` calls `holm stop`
-    # during its own retry, so gating it would break the path the failure
-    # message tells the user to take; `status` is how you diagnose a daemon that
-    # will not come up.
+    # commands that read no versioned state. `install.sh`'s failure message tells
+    # the user to run `holm stop`, so gating it would break the path out;
+    # `status` is how you diagnose a daemon that will not come up.
     #
     # `start` is NOT exempt. `systemctl start` returns as soon as a Type=simple
     # unit forks, so against a behind schema it reported "Daemon started." and
@@ -633,16 +633,16 @@ def start():
     import sys
 
     if sys.platform == "linux":
-        subprocess.run(["systemctl", "--user", "start", "steerholm"], check=True)
+        subprocess.run(["systemctl", "--user", "start", "steerholm"], check=True, env=child_env())
     elif sys.platform == "darwin":
         plist = f"{Path.home()}/Library/LaunchAgents/dev.steerholm.daemon.plist"
-        subprocess.run(["launchctl", "load", plist], check=True)
+        subprocess.run(["launchctl", "load", plist], check=True, env=child_env())
     elif sys.platform == "win32":
         import time
         from .config import DEFAULT_HOST, DEFAULT_PORT
         result = subprocess.run(
             ["schtasks", "/Run", "/TN", WIN_TASK_NAME],
-            capture_output=True, text=True,
+            capture_output=True, text=True, env=child_env(),
         )
         if result.returncode != 0:
             console.print(f"[bold red]Error:[/bold red] {escape(result.stderr.strip() or 'Failed to start daemon.')}")
@@ -742,10 +742,10 @@ def stop():
     import sys
 
     if sys.platform == "linux":
-        subprocess.run(["systemctl", "--user", "stop", "steerholm"], check=True)
+        subprocess.run(["systemctl", "--user", "stop", "steerholm"], check=True, env=child_env())
     elif sys.platform == "darwin":
         plist = f"{Path.home()}/Library/LaunchAgents/dev.steerholm.daemon.plist"
-        subprocess.run(["launchctl", "unload", plist], check=True)
+        subprocess.run(["launchctl", "unload", plist], check=True, env=child_env())
     elif sys.platform == "win32":
         import time
         from .config import DEFAULT_HOST, DEFAULT_PORT
@@ -753,7 +753,7 @@ def stop():
         # truth, so an already-stopped daemon is reported as stopped (exit 0).
         subprocess.run(
             ["schtasks", "/End", "/TN", WIN_TASK_NAME],
-            capture_output=True, text=True,
+            capture_output=True, text=True, env=child_env(),
         )
         for _ in range(10):
             if not _daemon_up(DEFAULT_HOST, DEFAULT_PORT):
@@ -779,7 +779,7 @@ def status():
     if sys.platform == "linux":
         result = subprocess.run(
             ["systemctl", "--user", "is-active", "steerholm"],
-            capture_output=True, text=True
+            capture_output=True, text=True, env=child_env(),
         )
         state = result.stdout.strip()
         if state == "active":
@@ -789,7 +789,7 @@ def status():
     elif sys.platform == "darwin":
         result = subprocess.run(
             ["launchctl", "list", "dev.steerholm.daemon"],
-            capture_output=True, text=True
+            capture_output=True, text=True, env=child_env(),
         )
         if result.returncode == 0:
             console.print("[bold green]Daemon is running.[/bold green]")

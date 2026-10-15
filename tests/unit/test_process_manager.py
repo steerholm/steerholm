@@ -129,6 +129,29 @@ async def test_serverprocess_start_stdio_success(monkeypatch):
 
 
 @_pytest.mark.asyncio
+async def test_a_stdio_server_gets_the_users_environment_plus_its_own(monkeypatch):
+    # Not the frozen daemon's: its bundled OpenSSL would be loaded by anything
+    # the server runs that uses the system's (git over HTTPS, Python, curl).
+    import sys
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/tmp/_MEI12345")
+    monkeypatch.delenv("LD_LIBRARY_PATH_ORIG", raising=False)
+    captured = {}
+
+    def fake_stdio_client(params):
+        captured["env"] = params.env
+        return _AsyncCM(("r", "w"))
+
+    monkeypatch.setattr(_pm, "stdio_client", fake_stdio_client)
+    monkeypatch.setattr(_pm, "ClientSession", lambda r, w: _AsyncCM(_session_mock()))
+    proc = _pm.ServerProcess(_Server(name="x", command="echo hi", server_type=_ST.stdio,
+                                     env={"STEERVAL_TOKEN": "t"}))
+    await proc.start()
+    assert "LD_LIBRARY_PATH" not in captured["env"]
+    assert captured["env"]["STEERVAL_TOKEN"] == "t"
+
+
+@_pytest.mark.asyncio
 async def test_serverprocess_start_http_success(monkeypatch):
     monkeypatch.setattr(_pm, "streamable_http_client", lambda url: _AsyncCM(("r", "w", None)))
     session = _session_mock()

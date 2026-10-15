@@ -1,7 +1,6 @@
 import hashlib
 import json
 import logging
-import os
 import platform
 import re
 import shutil
@@ -14,6 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import __version__
+from .childenv import child_env
 
 logger = logging.getLogger("steerholm.updater")
 
@@ -240,9 +240,7 @@ def run_installer(installer_path: Path, system: Optional[str] = None, version: O
     else:
         raise UpdateError(f"Unsupported platform: {system}")
 
-    env = None
-    if version:
-        env = {**os.environ, "STEERHOLM_VERSION": version}
+    env = child_env({"STEERHOLM_VERSION": version} if version else None)
 
     try:
         subprocess.run(command, check=True, env=env)

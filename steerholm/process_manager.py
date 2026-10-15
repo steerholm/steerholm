@@ -1,6 +1,5 @@
 import asyncio
 import contextlib
-import os
 import logging
 import shlex
 import time
@@ -11,6 +10,7 @@ import anyio
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
+from .childenv import child_env
 from .models import Server, ServerType
 
 logger = logging.getLogger("steerholm")
@@ -87,7 +87,7 @@ class ServerProcess:
                 params = StdioServerParameters(
                     command=parts[0],
                     args=parts[1:],
-                    env={**os.environ, **self.server_config.env},
+                    env=child_env(self.server_config.env),
                 )
                 async with stdio_client(params) as (read, write):
                     await self._serve_session(read, write)
