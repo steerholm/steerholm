@@ -1,0 +1,1 @@
+{"id":"a02f806c25443b0a71e6639d40ac1748.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_events.TestAgeRetention#test_an_expired_current_segment_is_rolled_then_removed","name":"test_an_expired_current_segment_is_rolled_then_removed","status":"passed","testResultsByEnv":{"default":"f6a642b0d02bb9839e96ad63449581b1"}}

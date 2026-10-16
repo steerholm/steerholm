@@ -1,0 +1,1 @@
+{"id":"3aeca6bf482e53356d19dbd1298c9a3a.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands.TestInstallersInvokeRealCommands#test_every_subcommand_the_windows_installer_calls_exists","name":"test_every_subcommand_the_windows_installer_calls_exists","status":"passed","testResultsByEnv":{"default":"52b670131999dd8dc0badad5752c6052"}}

@@ -1,0 +1,1 @@
+{"id":"ed1b17124c0429b4aedb62f9e2f78910.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands#test_tail_withholds_a_complete_looking_line_until_its_newline","name":"test_tail_withholds_a_complete_looking_line_until_its_newline","status":"passed","testResultsByEnv":{"default":"26ed49627fc60421a58203dc4a48833e"}}

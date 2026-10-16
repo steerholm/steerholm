@@ -1,0 +1,1 @@
+{"id":"4accd58e6365e048576c69a832049bde.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands#test_log_rejects_group_options_before_a_subcommand","name":"test_log_rejects_group_options_before_a_subcommand","status":"passed","testResultsByEnv":{"default":"d51f2ac22659ff6d9671d5ffda0c561a"}}
