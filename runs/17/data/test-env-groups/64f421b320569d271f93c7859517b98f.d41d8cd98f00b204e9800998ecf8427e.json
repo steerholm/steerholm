@@ -1,0 +1,1 @@
+{"id":"64f421b320569d271f93c7859517b98f.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands.TestInstallersInvokeRealCommands#test_every_subcommand_the_unix_installer_calls_exists","name":"test_every_subcommand_the_unix_installer_calls_exists","status":"passed","testResultsByEnv":{"default":"eeeedd0d9528e1a38a901f135f0734b6"}}

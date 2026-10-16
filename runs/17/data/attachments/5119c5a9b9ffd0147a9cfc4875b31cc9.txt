@@ -1,0 +1,1 @@
+WARNING  steerholm.events:events.py:301 Could not apply retention to /private/var/folders/36/tjdph2t965j8snz9_vkdnw0r0000gn/T/pytest-of-runner/pytest-0/test_undeletable_segment_is_lo0/events-000019.jsonl: locked

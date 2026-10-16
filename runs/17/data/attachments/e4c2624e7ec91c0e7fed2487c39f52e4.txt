@@ -1,0 +1,1 @@
+WARNING  steerholm.events:events.py:324 Could not append to event log None: expected str, bytes or os.PathLike object, not NoneType
