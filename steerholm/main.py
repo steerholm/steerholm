@@ -232,13 +232,23 @@ def update(
     if not yes:
         typer.confirm(f"Install Steerholm {info.tag}?", abort=True)
 
+    # The installer replaces the binary this process is running from. A frozen
+    # build reads every module it has not loaded yet from that file, so the
+    # first new import after the swap reads the NEW build's archive at the old
+    # one's offsets and dies with zlib.error — after a successful update. Rich
+    # rendering markup was that import, and the interpreter's own shutdown
+    # would be another. So: plain writes, then leave before anything loads.
+    import os
+    import sys
     try:
         run_update_installer(info.tag)
     except UpdateError as e:
-        console.print(f"[bold red]Error:[/bold red] {escape(str(e))}")
-        raise typer.Exit(code=1)
-
-    console.print(f"[bold green]Updated Steerholm to {info.tag}.[/bold green]")
+        code, line = 1, f"Error: {e}\n"
+    else:
+        code, line = 0, f"Updated Steerholm to {info.tag}.\n"
+    sys.stdout.write(line)
+    sys.stdout.flush()
+    os._exit(code)
 
 
 # ─── Servers ─────────────────────────────────────────────────────────

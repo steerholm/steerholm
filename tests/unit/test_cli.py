@@ -1,4 +1,8 @@
+import os
+import sys
 from unittest.mock import patch
+
+import pytest
 
 from typer.testing import CliRunner
 
@@ -6,6 +10,14 @@ from steerholm.main import app
 from steerholm.updater import ReleaseAsset, ReleaseInfo, UpdateError
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _exit_without_ending_the_test_run(monkeypatch):
+    # `holm update` leaves with os._exit once the installer has run.
+    def exit_(code):
+        raise SystemExit(code)
+    monkeypatch.setattr(os, "_exit", exit_)
 
 
 def test_version_command():
@@ -114,6 +126,52 @@ def test_update_handles_installer_failure():
 
     assert result.exit_code == 1
     assert "installer exploded" in result.output
+
+
+class _RefuseImports:
+    """Fails any import of a module not loaded yet — what a frozen build does
+    once its file has been replaced underneath it."""
+
+    def find_spec(self, name, path=None, target=None):
+        raise AssertionError(f"imported {name} after the installer replaced the binary")
+
+
+@pytest.mark.parametrize("outcome", ["installed", "failed"])
+def test_update_loads_nothing_once_the_installer_has_run(monkeypatch, outcome):
+    # A successful update ended in a zlib.error traceback and exit code 1: the
+    # final message's markup imported a module from the replaced binary.
+    info = ReleaseInfo(
+        tag="v0.1.2",
+        asset=ReleaseAsset("steerholm-linux-x64.tar.gz", "https://example.com/release.tar.gz"),
+        update_available=True,
+    )
+    refuse = _RefuseImports()
+
+    def installer(tag):
+        sys.meta_path.insert(0, refuse)
+        if outcome == "failed":
+            raise UpdateError("installer exploded")
+
+    def exit_(code):
+        sys.meta_path.remove(refuse)     # reached without importing anything
+        raise SystemExit(code)
+
+    monkeypatch.setattr(os, "_exit", exit_)
+    try:
+        with patch("steerholm.main.update_binary", return_value=info), \
+             patch("steerholm.main.run_update_installer", side_effect=installer):
+            result = runner.invoke(app, ["update", "--yes"])
+    finally:
+        if refuse in sys.meta_path:
+            sys.meta_path.remove(refuse)
+
+    assert result.exception is None or isinstance(result.exception, SystemExit), result.exception
+    if outcome == "installed":
+        assert result.exit_code == 0
+        assert "Updated Steerholm to v0.1.2." in result.output
+    else:
+        assert result.exit_code == 1
+        assert "installer exploded" in result.output
 
 
 # ─── Update-available hint ──────────────────────────────────────────
