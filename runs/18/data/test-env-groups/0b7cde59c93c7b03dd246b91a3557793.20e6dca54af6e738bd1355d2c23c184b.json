@@ -1,0 +1,1 @@
+{"id":"0b7cde59c93c7b03dd246b91a3557793.20e6dca54af6e738bd1355d2c23c184b","fullName":"tests.unit.test_updater#test_update_says_plainly_when_the_release_server_fails","name":"test_update_says_plainly_when_the_release_server_fails[error1-Could not reach the release server]","status":"passed","testResultsByEnv":{"default":"c83b54d65a2958455799ab7ef49fdad9"}}

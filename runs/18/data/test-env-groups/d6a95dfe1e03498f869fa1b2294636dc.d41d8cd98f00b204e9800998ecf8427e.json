@@ -1,0 +1,1 @@
+{"id":"d6a95dfe1e03498f869fa1b2294636dc.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_events.TestRetentionRobustness#test_undeletable_segment_is_logged_not_raised","name":"test_undeletable_segment_is_logged_not_raised","status":"passed","testResultsByEnv":{"default":"00507962f6cc6ee6fd4b6a8f44db6549"}}

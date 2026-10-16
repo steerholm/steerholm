@@ -1,0 +1,1 @@
+{"id":"5b848f2d79b02d1064eeaf30ae671b6c.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_updater#test_missing_checksums_are_still_skipped_when_the_server_refuses","name":"test_missing_checksums_are_still_skipped_when_the_server_refuses","status":"passed","testResultsByEnv":{"default":"422ccb5bd3b5c6338134a4be9ed6414b"}}
