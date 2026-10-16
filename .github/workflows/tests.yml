@@ -233,12 +233,6 @@ jobs:
           curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/install.sh" \
             | STEERHOLM_NO_SERVICE=1 STEERHOLM_VERSION="$TAG" bash
           BIN="$HOME/.local/bin/holm"
-          # The latest published release must itself expose `holm update`;
-          # releases before the updater shipped cannot be self-update-tested.
-          if ! "$BIN" --help 2>&1 | grep -qw update; then
-            echo "SKIP: the latest published release predates 'holm update'; self-update E2E is pending an updater-capable release."
-            exit 0
-          fi
           "$BIN" version
           "$BIN" update --check
           "$BIN" update --yes
@@ -249,16 +243,15 @@ jobs:
         env:
           TAG: ${{ steps.latest.outputs.tag }}
         run: |
+          # Otherwise a failing native command does not stop the script, and
+          # only the last one's exit code decides the step.
+          $PSNativeCommandUseErrorActionPreference = $true
           $env:STEERHOLM_NO_SERVICE = "1"
           $env:STEERHOLM_VERSION = $env:TAG
           $installer = Join-Path $env:RUNNER_TEMP "install.ps1"
           Invoke-WebRequest "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:TAG/install.ps1" -OutFile $installer
           powershell -ExecutionPolicy Bypass -File $installer
           $bin = Join-Path $env:LOCALAPPDATA "steerholm\bin\holm.exe"
-          if ((& $bin --help 2>&1 | Out-String) -notmatch '\bupdate\b') {
-            Write-Host "SKIP: the latest published release predates 'holm update'; self-update E2E is pending an updater-capable release."
-            exit 0
-          }
           & $bin version
           & $bin update --check
           & $bin update --yes
