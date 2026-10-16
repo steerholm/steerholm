@@ -62,9 +62,17 @@ The Bearer token is missing, malformed, or not a valid access key.
 The stored data was written by a different version than the one installed.
 Reinstalling runs the upgrade for you:
 
-```bash
+<CodeGroup>
+
+```bash Linux / macOS
 curl -fsSL https://steerholm.ai/install.sh | bash
 ```
+
+```powershell Windows
+irm https://steerholm.ai/install.ps1 | iex
+```
+
+</CodeGroup>
 
 Steerholm refuses rather than guessing, because reading an older layout with a
 newer build would look like every agent having no grants at all. Your data is

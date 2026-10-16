@@ -287,11 +287,12 @@ class ConfigManager:
                 f"{CONFIG_DIR} is schema v{version}; this build of Steerholm "
                 f"understands v{migrations.CURRENT_VERSION}. Upgrade Steerholm."
             )
+        reinstall = ("irm https://steerholm.ai/install.ps1 | iex" if sys.platform == "win32"
+                     else "curl -fsSL https://steerholm.ai/install.sh | bash")
         raise SchemaError(
             f"{CONFIG_DIR} is schema v{version}; this build of Steerholm expects "
             f"v{migrations.CURRENT_VERSION}. Reinstall with the official "
-            "installer, which migrates it:\n"
-            "  curl -fsSL https://steerholm.ai/install.sh | bash"
+            f"installer, which migrates it:\n  {reinstall}"
         )
 
     def _ensure_dirs(self):

@@ -273,6 +273,22 @@ def test_a_command_refuses_against_unmigrated_state(config_manager):
         ConfigManager.verify_schema()
 
 
+@pytest.mark.parametrize("platform, command", [
+    ("win32", "irm https://steerholm.ai/install.ps1 | iex"),
+    ("linux", "curl -fsSL https://steerholm.ai/install.sh | bash"),
+    ("darwin", "curl -fsSL https://steerholm.ai/install.sh | bash"),
+])
+def test_the_refusal_names_the_installer_for_this_platform(config_manager, monkeypatch,
+                                                            platform, command):
+    # Windows was told to run the bash installer.
+    _v0_state(_cfg.CONFIG_DIR)
+    MigrationStore(_cfg.CONFIG_DIR).version_file.unlink()
+    monkeypatch.setattr("sys.platform", platform)
+    with pytest.raises(SchemaError) as refused:
+        ConfigManager.verify_schema()
+    assert command in str(refused.value)
+
+
 def test_a_command_refuses_against_state_from_a_newer_build(config_manager):
     _v0_state(_cfg.CONFIG_DIR)
     MigrationStore(_cfg.CONFIG_DIR).version = migrations.CURRENT_VERSION + 1
