@@ -1,4 +1,5 @@
 import hashlib
+import http.client
 import json
 import logging
 import platform
@@ -95,16 +96,44 @@ def installer_asset_name(system: Optional[str] = None) -> str:
     raise UpdateError(f"Unsupported platform: {system}")
 
 
+# Failures of the network, not of this machine: a local write error while saving
+# a download (disk full) is an OSError too, and is not the server's to answer for.
+_UNREACHABLE = (urllib.error.URLError, TimeoutError, ConnectionError, http.client.HTTPException)
+
+
+def _unreachable(url: str, e: Exception) -> UpdateError:
+    """The release server could not be reached or refused, said plainly.
+
+    Unhandled, these ended `holm update` in a traceback — an offline machine, a
+    proxy, a rate limit on a shared address.
+    """
+    if isinstance(e, urllib.error.HTTPError):
+        return UpdateError(f"The release server answered {e.code} {e.reason} for {url}.")
+    reason = e.reason if isinstance(e, urllib.error.URLError) else e
+    return UpdateError(f"Could not reach the release server ({url}): {reason}")
+
+
 def _github_json(url: str) -> dict:
     request = urllib.request.Request(url, headers={"User-Agent": "steerholm"})
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            body = response.read()
+    except _UNREACHABLE as e:
+        raise _unreachable(url, e) from e
+    try:
+        return json.loads(body.decode("utf-8"))
+    except ValueError as e:
+        raise UpdateError(f"The release server's answer for {url} could not be read.") from e
 
 
 def _download(url: str, destination: Path) -> None:
     request = urllib.request.Request(url, headers={"User-Agent": "steerholm"})
-    with urllib.request.urlopen(request, timeout=120) as response, destination.open("wb") as output:
-        shutil.copyfileobj(response, output)
+    with destination.open("wb") as output:
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                shutil.copyfileobj(response, output)
+        except _UNREACHABLE as e:
+            raise _unreachable(url, e) from e
 
 
 def _asset_from_release(release: dict, asset_name: str) -> ReleaseAsset:
@@ -195,8 +224,11 @@ def verify_checksum(path: Path, checksums_text: str) -> None:
 
 def download_text(url: str) -> str:
     request = urllib.request.Request(url, headers={"User-Agent": "steerholm"})
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return response.read().decode("utf-8")
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return response.read().decode("utf-8")
+    except _UNREACHABLE as e:
+        raise _unreachable(url, e) from e
 
 
 def download_installer(
@@ -211,7 +243,7 @@ def download_installer(
 
     try:
         checksums = download_text(checksum_asset_url(tag))
-    except urllib.error.URLError:
+    except UpdateError:
         checksums = None
     if checksums:
         verify_checksum(installer_path, checksums)

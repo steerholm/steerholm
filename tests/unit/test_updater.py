@@ -336,9 +336,68 @@ def test_download_installer_skips_when_no_checksums(tmp_path, monkeypatch):
     monkeypatch.setattr(_u, "fetch_installer_asset",
                         lambda tag, system=None, release=None: _u.ReleaseAsset("install.sh", "http://x"))
     monkeypatch.setattr(_u, "_download", lambda url, dest: dest.write_text("#!/bin/sh"))
-    monkeypatch.setattr(_u, "download_text", _MM(side_effect=_urlerr.URLError("404")))
+    monkeypatch.setattr(_u, "download_text", _MM(side_effect=_u.UpdateError("404")))
     p = _u.download_installer("v0.1.3", tmp_path, system="Linux")
     assert p.exists()  # verification skipped, no raise
+
+
+# ─── an unreachable or refusing release server ──────────────────────
+
+
+def _refuse(e):
+    def urlopen(*a, **k):
+        raise e
+    return urlopen
+
+
+@_pytest.mark.parametrize("error, expected", [
+    (_urlerr.HTTPError("u", 403, "rate limit exceeded", {}, None),
+     "The release server answered 403 rate limit exceeded"),
+    (_urlerr.URLError("[Errno -2] Name or service not known"),
+     "Could not reach the release server"),
+    (TimeoutError("timed out"), "Could not reach the release server"),
+    (ConnectionResetError("reset"), "Could not reach the release server"),
+])
+def test_update_says_plainly_when_the_release_server_fails(monkeypatch, error, expected):
+    # Unhandled, these ended `holm update` in a traceback.
+    from typer.testing import CliRunner
+    from steerholm.main import app
+    monkeypatch.setattr("urllib.request.urlopen", _refuse(error))
+    result = CliRunner().invoke(app, ["update", "--check"])
+    assert result.exit_code == 1
+    assert expected in " ".join(result.output.split())
+    assert not isinstance(result.exception, Exception) or isinstance(result.exception, SystemExit)
+
+
+def test_an_unreadable_answer_is_reported_not_raised(monkeypatch):
+    # A captive portal or proxy answering with HTML.
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: _cm(b"<html>sign in</html>"))
+    with _pytest.raises(_u.UpdateError, match="could not be read"):
+        _u._fetch_release(None)
+
+
+def test_a_local_write_failure_is_not_blamed_on_the_server(tmp_path, monkeypatch):
+    # Disk full while saving is this machine's failure; it must not read as
+    # "could not reach the release server".
+    import errno
+
+    class Full:
+        def write(self, _):
+            raise OSError(errno.ENOSPC, "No space left on device")
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: _cm(b"data"))
+    monkeypatch.setattr("shutil.copyfileobj", lambda src, dst: Full().write(src.read()))
+    with _pytest.raises(OSError) as raised:
+        _u._download("http://x/asset", tmp_path / "asset")
+    assert not isinstance(raised.value, _u.UpdateError)
+
+
+def test_missing_checksums_are_still_skipped_when_the_server_refuses(tmp_path, monkeypatch):
+    monkeypatch.setattr(_u, "fetch_installer_asset",
+                        lambda tag, system=None, release=None: _u.ReleaseAsset("install.sh", "http://x"))
+    monkeypatch.setattr(_u, "_download", lambda url, dest: dest.write_text("#!/bin/sh"))
+    monkeypatch.setattr("urllib.request.urlopen",
+                        _refuse(_urlerr.HTTPError("u", 404, "Not Found", {}, None)))
+    assert _u.download_installer("v0.1.3", tmp_path, system="Linux").exists()
 
 
 def test_run_installer_windows_command(tmp_path, monkeypatch):
