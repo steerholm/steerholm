@@ -261,7 +261,10 @@ try {
     } else {
         $action = New-ScheduledTaskAction -Execute $SteerholmBin -Argument "serve"
     }
-    $account   = "$env:USERDOMAIN\$env:USERNAME"
+    # From the logon token, not $env:USERDOMAIN: over OpenSSH that reads
+    # WORKGROUP, and registering for WORKGROUP\<user> fails with "No mapping
+    # between account names and security IDs".
+    $account   = [Security.Principal.WindowsIdentity]::GetCurrent().Name
     $trigger   = New-ScheduledTaskTrigger -AtLogOn -User $account
     $principal = New-ScheduledTaskPrincipal -UserId $account -LogonType Interactive -RunLevel Limited
     $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
@@ -281,7 +284,10 @@ try {
         Info "Registered logon task; daemon running on 127.0.0.1:4767"
     } else {
         Warn "Registered logon task, but the daemon is not listening on 127.0.0.1:4767 yet."
-        Warn "On a headless/non-interactive session it starts at your next logon, or run: holm start"
+        # The task runs only in a signed-in Windows session; an SSH session is not
+        # one, so `holm start` from it cannot start the task either.
+        Warn "It runs only while you are signed in to Windows (at the console or over Remote Desktop),"
+        Warn "not from an SSH session. It starts at your next sign-in, or run 'holm start' from such a session."
     }
 } catch {
     Warn "Could not register the autostart task: $($_.Exception.Message)"
