@@ -212,11 +212,26 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      # The published release is installed with ITS OWN installer, as a user
+      # gets it. The checkout's installer belongs to the unreleased build and
+      # runs steps the published binary does not have (`holm migrate`).
+      #
+      # The tag comes from an authenticated lookup and is pinned, so the Unix
+      # installer makes no GitHub API call of its own: unauthenticated calls
+      # from shared runner addresses are rate-limited (HTTP 403).
+      - name: Resolve the latest published release
+        id: latest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)" >> "$GITHUB_OUTPUT"
       - name: Install previous release then update (Unix)
         if: runner.os != 'Windows'
+        env:
+          TAG: ${{ steps.latest.outputs.tag }}
         run: |
-          STEERHOLM_NO_SERVICE=1 bash scripts/install.sh
+          curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/install.sh" \
+            | STEERHOLM_NO_SERVICE=1 STEERHOLM_VERSION="$TAG" bash
           BIN="$HOME/.local/bin/holm"
           # The latest published release must itself expose `holm update`;
           # releases before the updater shipped cannot be self-update-tested.
@@ -231,9 +246,14 @@ jobs:
       - name: Install previous release then update (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          TAG: ${{ steps.latest.outputs.tag }}
         run: |
           $env:STEERHOLM_NO_SERVICE = "1"
-          powershell -ExecutionPolicy Bypass -File scripts/install.ps1
+          $env:STEERHOLM_VERSION = $env:TAG
+          $installer = Join-Path $env:RUNNER_TEMP "install.ps1"
+          Invoke-WebRequest "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:TAG/install.ps1" -OutFile $installer
+          powershell -ExecutionPolicy Bypass -File $installer
           $bin = Join-Path $env:LOCALAPPDATA "steerholm\bin\holm.exe"
           if ((& $bin --help 2>&1 | Out-String) -notmatch '\bupdate\b') {
             Write-Host "SKIP: the latest published release predates 'holm update'; self-update E2E is pending an updater-capable release."
