@@ -4,6 +4,9 @@ $ErrorActionPreference = "Stop"
 # bookkeeping from that frozen binary. With it, the NEW `holm migrate` below
 # takes itself for a child of the old `holm update` and loads the old build's
 # unpacked libraries instead of its own. Later releases start it without.
+# Which file that updater reads its modules from is kept first — see
+# Stop-OldUpdater.
+$oldUpdaterArchive = $env:_PYI_ARCHIVE_FILE
 Get-ChildItem Env: | Where-Object { $_.Name -like '_PYI_*' } |
     ForEach-Object { Remove-Item "Env:$($_.Name)" }
 
@@ -15,6 +18,60 @@ $installDir = Join-Path $env:LOCALAPPDATA "steerholm\bin"
 function Info($msg)  { Write-Host "[+] $msg" -ForegroundColor Green }
 function Warn($msg)  { Write-Host "[!] $msg" -ForegroundColor Yellow }
 function Fail($msg)  { Write-Host "[x] $msg" -ForegroundColor Red; exit 1 }
+# `holm update` from 0.1.0 or 0.1.1 is a frozen binary that reads each Python
+# module from its own file, by path, the first time it imports it. Once this
+# script swaps holm.exe, the updater's next import — printing its last line, or
+# reporting an error — reads the NEW build at the old one's offsets and dies
+# with zlib.error. So that nothing of the old binary runs once the new one is in
+# place, this script reports for it and ends it, with the exit code it would
+# have had, as its own last act.
+#
+# 0.1.2 and later strip PyInstaller's variables before running the installer and
+# exit cleanly on their own, so this only ever matches an update started from
+# 0.1.0 or 0.1.1. Kept for as long as anyone may update from those.
+$oldUpdater = $null
+if ($oldUpdaterArchive -and
+    [string]::Equals([IO.Path]::GetFullPath($oldUpdaterArchive),
+                     [IO.Path]::GetFullPath((Join-Path $installDir "holm.exe")),
+                     [StringComparison]::OrdinalIgnoreCase)) {
+    # Best effort: failing to find it must not stop the install itself.
+    try { $oldUpdater = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID" -ErrorAction Stop).ParentProcessId }
+    catch { $oldUpdater = $null }
+}
+$binarySwapped = $false
+function Stop-OldUpdater([int]$code) {
+    if (-not $oldUpdater -or -not $binarySwapped) { return }
+    # Once: the trap below can call it again if anything here fails.
+    $script:oldUpdater = $null
+    if ($code -eq 0) { Write-Host "Updated Steerholm to $(if ($tag) { $tag } else { 'the new version' })." }
+    # Its temporary directory, which it would have removed; it holds this script.
+    $own = Split-Path -Parent $PSCommandPath
+    if ((Split-Path -Leaf $own) -like 'steerholm-update-*') {
+        Remove-Item $own -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $target = [int]$oldUpdater
+    try {
+        # TerminateProcess takes the exit code, so a successful update still
+        # reports 0. Add-Type compiles C#, which some locked-down machines refuse.
+        Add-Type -Namespace Steerholm -Name Native -MemberDefinition @'
+[DllImport("kernel32.dll", SetLastError = true)] public static extern System.IntPtr OpenProcess(uint access, bool inherit, int pid);
+[DllImport("kernel32.dll", SetLastError = true)] public static extern bool TerminateProcess(System.IntPtr handle, uint code);
+[DllImport("kernel32.dll")] public static extern bool CloseHandle(System.IntPtr handle);
+'@
+        $handle = [Steerholm.Native]::OpenProcess(0x0001, $false, $target)  # PROCESS_TERMINATE
+        if ($handle -eq [IntPtr]::Zero) { throw "OpenProcess failed" }
+        [void][Steerholm.Native]::TerminateProcess($handle, [uint32]$code)
+        [void][Steerholm.Native]::CloseHandle($handle)
+    } catch {
+        # Still end it — nothing of the old binary may run — at the cost of a
+        # non-zero exit code.
+        Stop-Process -Id $target -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# Any error that ends the script after the swap ends the old updater too.
+trap { Stop-OldUpdater 1; break }
+
 function Test-Steerholm($p) {
     # Confirm it is Steerholm answering, not just any process holding the port.
     try {
@@ -126,6 +183,7 @@ if (Test-Steerholm 4767) {
 }
 
 Install-Binary (Join-Path $sourceDir "holm.exe") $installDir "holm.exe"
+$binarySwapped = $true
 
 $daemonSource = Join-Path $sourceDir "holmd.exe"
 if (Test-Path $daemonSource) { Install-Binary $daemonSource $installDir "holmd.exe" }
@@ -158,6 +216,7 @@ if ($migrateExit -ne 0) {
     Write-Host "    so the daemon will refuse to start against it. Fix the cause" -ForegroundColor Red
     Write-Host "    above, then re-run this installer." -ForegroundColor Red
     if ($tmpDir -and (Test-Path $tmpDir)) { Remove-Item $tmpDir -Recurse -Force }
+    Stop-OldUpdater 1
     exit 1
 }
 
@@ -188,6 +247,7 @@ if ($env:STEERHOLM_NO_SERVICE) {
     Info "Run the daemon manually with: holm serve"
     Write-Host ""
     Info "Installation complete."
+    Stop-OldUpdater 0
     exit 0
 }
 
@@ -236,3 +296,4 @@ Write-Host "  holm start"
 
 Write-Host ""
 Info "Installation complete."
+Stop-OldUpdater 0

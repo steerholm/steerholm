@@ -2119,6 +2119,84 @@ class TestInstallerUndoesAnOldBinarysLibraryPath:
         assert out.endswith("|0")
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="install.sh is the Unix installer")
+class TestInstallerEndsAnOldUpdater:
+    """`holm update` from 0.1.0 / 0.1.1 reads its modules from the very binary
+    the installer replaces, so its next import after the swap died with
+    zlib.error. The installer ends it once the new binary is in place."""
+
+    def _run(self, tmp_path, *, inherited_archive=None, migrate_exit=0):
+        import os
+        import shutil
+        import subprocess
+        import tarfile
+        from pathlib import Path
+
+        home = tmp_path / "home"
+        bindir = home / ".local" / "bin"
+        bindir.mkdir(parents=True)
+        (bindir / "holm").write_text("the old binary")
+        # The service manager and the port probe, stubbed: run for real they
+        # would stop and restart a developer's own Steerholm daemon.
+        stubs = tmp_path / "stubs"
+        stubs.mkdir()
+        for name, code in {"systemctl": 0, "launchctl": 0, "curl": 7}.items():
+            (stubs / name).write_text(f"#!/bin/sh\nexit {code}\n")
+            (stubs / name).chmod(0o755)
+        # The new binary: only `holm migrate` is run.
+        new = tmp_path / "pkg" / "holm"
+        new.parent.mkdir()
+        new.write_text(f"#!/bin/sh\nexit {migrate_exit}\n")
+        new.chmod(0o755)
+        archive = tmp_path / "new.tar.gz"
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(new, arcname="holm")
+        # The updater runs the installer from its own temporary directory.
+        update_dir = tmp_path / "steerholm-update-abc123"
+        update_dir.mkdir()
+        shutil.copy(Path(__file__).resolve().parents[2] / "scripts" / "install.sh", update_dir)
+
+        env = {k: v for k, v in os.environ.items() if not k.startswith("_PYI_")}
+        env.update(HOME=str(home), PATH=f"{stubs}:{env['PATH']}",
+                   STEERHOLM_LOCAL_ARCHIVE=str(archive), STEERHOLM_NO_SERVICE="1")
+        if inherited_archive is not None:
+            env["_PYI_ARCHIVE_FILE"] = str(inherited_archive(bindir))
+        # Stands in for the updater: waits for the installer, then carries on.
+        parent = subprocess.run(
+            ["bash", "-c", f'bash "{update_dir / "install.sh"}"; echo UPDATER-CARRIED-ON'],
+            env=env, capture_output=True, text=True, timeout=120)
+        return parent, update_dir
+
+    def test_ends_the_old_updater_once_the_new_binary_is_in_place(self, tmp_path):
+        import signal
+        parent, update_dir = self._run(tmp_path, inherited_archive=lambda b: b / "holm")
+        assert parent.returncode == -signal.SIGTERM
+        assert "UPDATER-CARRIED-ON" not in parent.stdout
+        assert "Updated Steerholm to" in parent.stdout
+        assert not update_dir.exists()       # it holds the installer; the updater cannot remove it
+
+    def test_ends_it_too_when_the_install_fails_after_the_swap(self, tmp_path):
+        # Its error report would be an import from the replaced file as well.
+        import signal
+        parent, _ = self._run(tmp_path, inherited_archive=lambda b: b / "holm", migrate_exit=1)
+        assert parent.returncode == -signal.SIGTERM
+        assert "UPDATER-CARRIED-ON" not in parent.stdout
+        assert "Updated Steerholm to" not in parent.stdout
+
+    def test_leaves_alone_an_installer_not_run_by_an_old_updater(self, tmp_path):
+        # Run by hand, or by 0.1.2 and later, which pass no PyInstaller variables.
+        parent, update_dir = self._run(tmp_path)
+        assert parent.returncode == 0
+        assert "UPDATER-CARRIED-ON" in parent.stdout
+        assert "Updated Steerholm to" not in parent.stdout
+        assert update_dir.exists()
+
+    def test_leaves_alone_a_parent_reading_some_other_file(self, tmp_path):
+        parent, _ = self._run(tmp_path, inherited_archive=lambda b: b.parent / "elsewhere")
+        assert parent.returncode == 0
+        assert "UPDATER-CARRIED-ON" in parent.stdout
+
+
 def test_reconcile_says_so_when_the_control_token_is_missing(monkeypatch, capsys):
     # The daemon answers but its token is gone. Minting one would present a
     # value the daemon rejects, surfacing as a bare 401 with no explanation.

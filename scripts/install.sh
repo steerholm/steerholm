@@ -4,6 +4,10 @@ set -euo pipefail
 # Run by `holm update` from 0.1.0 or 0.1.1, this script inherits that frozen
 # binary's environment. Later releases start it with these undone already.
 #
+# Which file that updater reads its Python modules from, kept before the unset
+# below — see end_old_updater.
+OLD_UPDATER_ARCHIVE="${_PYI_ARCHIVE_FILE:-}"
+#
 # PyInstaller's bookkeeping: with it, the NEW `holm migrate` below takes itself
 # for a child of the old `holm update` and loads the old build's unpacked
 # libraries instead of its own.
@@ -185,6 +189,41 @@ stop_daemon() {
 
 DAEMON_STOPPED=0
 INSTALL_DONE=0
+BINARY_SWAPPED=0
+
+# `holm update` from 0.1.0 or 0.1.1 is a frozen binary that reads each Python
+# module from its own file, by path, the first time it imports it. Once this
+# script swaps that file, the updater's next import — printing its last line,
+# or reporting an error — reads the NEW build at the old one's offsets and dies
+# with zlib.error. So that nothing of the old binary runs once the new one is in
+# place, this script reports for it and ends it as its own last act.
+#
+# 0.1.2 and later strip PyInstaller's variables before running the installer and
+# exit cleanly on their own, so this only ever matches an update started from
+# 0.1.0 or 0.1.1. Kept for as long as anyone may update from those.
+OLD_UPDATER=""
+if [ -n "$OLD_UPDATER_ARCHIVE" ] && [ "$OLD_UPDATER_ARCHIVE" -ef "${INSTALL_DIR}/holm" ]; then
+    OLD_UPDATER="$PPID"
+fi
+
+end_old_updater() {
+    # Frozen first: from here it cannot run a single instruction.
+    kill -STOP "$OLD_UPDATER" 2>/dev/null || return 0
+    if [ "$1" -eq 0 ]; then
+        echo "Updated Steerholm to ${LATEST:-the new version}."
+    fi
+    # Its temporary directory, which it would have removed; it holds this script.
+    case "$(dirname "$0")" in
+        */steerholm-update-*) rm -rf "$(dirname "$0")" ;;
+    esac
+    # SIGTERM while frozen, then continue: the signal is delivered before it runs
+    # anything, and 0.1.0 / 0.1.1 install no handler for it. A process ended by
+    # a signal cannot report success, so the shell shows "Terminated" (exit 143)
+    # — making it exit 0 would need ptrace, which Ubuntu and macOS forbid
+    # against a parent.
+    kill -TERM "$OLD_UPDATER" 2>/dev/null || true
+    kill -CONT "$OLD_UPDATER" 2>/dev/null || true
+}
 
 # The daemon is deliberately down from here until step 5 starts it again. Any
 # abort in between — disk full, read-only HOME, Ctrl-C — would otherwise leave
@@ -195,6 +234,9 @@ cleanup() {
     if [ "$rc" -ne 0 ] && [ "$DAEMON_STOPPED" = 1 ] && [ "$INSTALL_DONE" = 0 ]; then
         warn "Install did not complete; restarting the daemon it stopped."
         start_daemon
+    fi
+    if [ -n "$OLD_UPDATER" ] && [ "$BINARY_SWAPPED" = 1 ]; then
+        end_old_updater "$rc"
     fi
 }
 trap cleanup EXIT
@@ -209,10 +251,13 @@ mkdir -p "$INSTALL_DIR"
 # target. An in-place `cp` fails with "text file busy" on Linux (and can crash
 # the running process on macOS) when the binary is already executing — which it
 # is during `holm update`, where both the daemon and the updater run this file.
-# A rename swaps the directory entry; running processes keep the old inode.
+# A rename swaps the directory entry; running processes keep the old inode for
+# their code — but not for the Python modules a frozen build reopens BY PATH,
+# which is what end_old_updater is for.
 cp "${TMP_DIR}/holm" "${INSTALL_DIR}/holm.new"
 chmod +x "${INSTALL_DIR}/holm.new"
 mv -f "${INSTALL_DIR}/holm.new" "${INSTALL_DIR}/holm"
+BINARY_SWAPPED=1
 
 # Check PATH
 if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
