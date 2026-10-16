@@ -1,0 +1,1 @@
+{"id":"1ae06d3c65a398371f3c78d9e20b3dd1.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands.TestInstallerEndsAnOldUpdater#test_ends_the_old_updater_once_the_new_binary_is_in_place","name":"test_ends_the_old_updater_once_the_new_binary_is_in_place","status":"passed","testResultsByEnv":{"default":"ba227d7c087b83e9324fc7c2dc608d0c"}}

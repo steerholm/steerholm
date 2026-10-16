@@ -1,0 +1,1 @@
+{"id":"281622dc08a2cd87832f23bff5c6b8b1.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_migrations#test_a_swap_that_rolls_back_cleanly_leaves_no_scratch_behind","name":"test_a_swap_that_rolls_back_cleanly_leaves_no_scratch_behind","status":"passed","testResultsByEnv":{"default":"4c905c64964b47af120dd7ebc591667c"}}

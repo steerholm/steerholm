@@ -1,0 +1,1 @@
+{"id":"5fe79299a25a084f1bc20ff3be11780e.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands.TestAnUnloadableConfigAtTheCli#test_a_writing_command_refuses_and_names_the_key","name":"test_a_writing_command_refuses_and_names_the_key","status":"passed","testResultsByEnv":{"default":"75f46a716cb68553844cbd4e923a2b1a"}}
