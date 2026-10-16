@@ -1,0 +1,1 @@
+{"id":"b93f6f58cbedd9720da5ecf0ba957dec.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.integration.test_gateway_coverage#test_control_requests_are_refused_when_the_token_is_missing","name":"test_control_requests_are_refused_when_the_token_is_missing","status":"passed","testResultsByEnv":{"default":"160f0eb4ca436aa794b7db23dd3812c0"}}

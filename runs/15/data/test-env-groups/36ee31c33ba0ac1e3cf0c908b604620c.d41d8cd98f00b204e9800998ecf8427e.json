@@ -1,0 +1,1 @@
+{"id":"36ee31c33ba0ac1e3cf0c908b604620c.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_config.TestAConfigThatWillNotLoad#test_reading_the_config_raises_rather_than_standing_in_an_empty_one","name":"test_reading_the_config_raises_rather_than_standing_in_an_empty_one","status":"passed","testResultsByEnv":{"default":"d5259bb2503c149efa1cca0201e52da8"}}

@@ -1,0 +1,1 @@
+{"id":"f4cf411e105b79e74e5216a0aeb63878.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands#test_read_event_history_offset_excludes_a_partial_line","name":"test_read_event_history_offset_excludes_a_partial_line","status":"passed","testResultsByEnv":{"default":"0bb6c5b85afd6444b555d9086708c8f2"}}

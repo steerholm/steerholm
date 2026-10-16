@@ -1,0 +1,3 @@
+WARNING  steerholm.migrations:m0002_key_hash_in_config.py:78 No key hash for 'bob', 'amy'. If the keyring is locked, unlock it and run `holm migrate` again; otherwise reissue with `holm rotate agent <name>` — until then those agents cannot authenticate.
+WARNING  steerholm.migrations:m0002_key_hash_in_config.py:60 Could not read the keyring entry for 'amy': org.freedesktop.Secret.Error.IsLocked
+WARNING  steerholm.migrations:m0002_key_hash_in_config.py:78 No key hash for 'amy'. If the keyring is locked, unlock it and run `holm migrate` again; otherwise reissue with `holm rotate agent <name>` — until then those agents cannot authenticate.
