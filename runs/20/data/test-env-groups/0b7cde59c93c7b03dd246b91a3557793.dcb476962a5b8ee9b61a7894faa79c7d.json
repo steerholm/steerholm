@@ -1,0 +1,1 @@
+{"id":"0b7cde59c93c7b03dd246b91a3557793.dcb476962a5b8ee9b61a7894faa79c7d","fullName":"tests.unit.test_updater#test_update_says_plainly_when_the_release_server_fails","name":"test_update_says_plainly_when_the_release_server_fails[error0-The release server answered 403 rate limit exceeded]","status":"passed","testResultsByEnv":{"default":"88a4824864b50a055e1aea9ed859b33b"}}

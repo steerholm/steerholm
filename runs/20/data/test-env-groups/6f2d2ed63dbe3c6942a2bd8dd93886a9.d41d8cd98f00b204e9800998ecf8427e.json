@@ -1,0 +1,1 @@
+{"id":"6f2d2ed63dbe3c6942a2bd8dd93886a9.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands.TestInstallerEndsAnOldUpdater#test_leaves_alone_an_installer_not_run_by_an_old_updater","name":"test_leaves_alone_an_installer_not_run_by_an_old_updater","status":"passed","testResultsByEnv":{"default":"159541867fa9082047ff1aa5d5c925f9"}}

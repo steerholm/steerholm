@@ -1,0 +1,1 @@
+{"id":"cf0908dd50cc6c4f8c5c393f33abe59a.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_events.TestRotationEdges#test_prune_keeps_a_segment_it_cannot_read","name":"test_prune_keeps_a_segment_it_cannot_read","status":"passed","testResultsByEnv":{"default":"8e55786c444fed5501e8585d1b7ac4a9"}}

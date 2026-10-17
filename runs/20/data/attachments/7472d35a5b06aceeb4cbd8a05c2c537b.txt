@@ -1,0 +1,2 @@
+WARNING  steerholm.migrations:__init__.py:168 Clearing a lock left by a process that is gone: /private/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/pytest-of-runner/pytest-0/test_a_lock_left_by_a_dead_pro0/state/.migrating.lock
+WARNING  steerholm.migrations:m0002_key_hash_in_config.py:78 No key hash for 'bob'. If the keyring is locked, unlock it and run `holm migrate` again; otherwise reissue with `holm rotate agent <name>` — until then those agents cannot authenticate.

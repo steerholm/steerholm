@@ -1,0 +1,2 @@
+WARNING  steerholm.migrations:m0001_id_keyed_grants.py:121 Setting ghost.json aside (no agent of that name in the config); it is now at /private/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T/pytest-of-runner/pytest-0/test_the_unmigrated_directory_0/s/.migrating-v1/policies/unmigrated/ghost.json.
+WARNING  steerholm.migrations:m0002_key_hash_in_config.py:78 No key hash for 'bob'. If the keyring is locked, unlock it and run `holm migrate` again; otherwise reissue with `holm rotate agent <name>` — until then those agents cannot authenticate.

@@ -1,0 +1,1 @@
+{"id":"9f5d6920d4857a4aa43830752dc71beb.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands.TestInstallerEndsAnOldUpdater#test_ends_it_too_when_the_install_fails_after_the_swap","name":"test_ends_it_too_when_the_install_fails_after_the_swap","status":"passed","testResultsByEnv":{"default":"f8709105384fc3c0c7048887f642dfb1"}}

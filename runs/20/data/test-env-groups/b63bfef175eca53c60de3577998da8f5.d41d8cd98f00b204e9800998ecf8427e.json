@@ -1,0 +1,1 @@
+{"id":"b63bfef175eca53c60de3577998da8f5.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_migrations#test_a_swap_that_fails_during_a_resume_does_not_cost_the_originals","name":"test_a_swap_that_fails_during_a_resume_does_not_cost_the_originals","status":"passed","testResultsByEnv":{"default":"5a0c87e18617b594be7ab61161d1c50c"}}

@@ -1,0 +1,1 @@
+{"id":"2bc651def6a340780623f404a892debb.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_events.TestRotationEdges#test_prune_ignores_an_undeletable_segment","name":"test_prune_ignores_an_undeletable_segment","status":"passed","testResultsByEnv":{"default":"aa51bfdcb01725815f0b40781b694c05"}}
