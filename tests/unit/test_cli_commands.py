@@ -2239,6 +2239,43 @@ def test_the_installer_refuses_a_download_it_cannot_verify(tmp_path):
     assert not list(tmp.iterdir())     # nor the downloaded archive left behind
 
 
+class TestWindowsInstallerFailures:
+    """install.ps1 is run two ways: as a file by `holm update`, whose exit code
+    the updater reads, and as `irm ... | iex` inside the user's own session,
+    where `exit` closed their window — and the error with it."""
+
+    def _pwsh(self, tmp_path, command):
+        import os
+        import shutil
+        import subprocess
+        pwsh = shutil.which("pwsh")
+        if pwsh is None:
+            pytest.skip("needs PowerShell (pwsh)")
+        env = {k: v for k, v in os.environ.items() if not k.startswith("_PYI_")}
+        # Fails at the first check, before any daemon or install is touched.
+        env.update(LOCALAPPDATA=str(tmp_path / "local"), APPDATA=str(tmp_path / "roaming"),
+                   STEERHOLM_LOCAL_ARCHIVE=str(tmp_path / "missing.zip"))
+        return subprocess.run([pwsh, "-NoProfile", "-NonInteractive", "-Command", command],
+                              env=env, capture_output=True, text=True, timeout=120)
+
+    def _script(self):
+        from pathlib import Path
+        return Path(__file__).resolve().parents[2] / "scripts" / "install.ps1"
+
+    def test_run_as_a_file_it_exits_with_the_failure(self, tmp_path):
+        result = self._pwsh(tmp_path, f"& '{self._script()}'; exit $LASTEXITCODE")
+        assert result.returncode == 1
+        assert "Local archive not found" in result.stdout
+
+    def test_run_through_iex_it_leaves_the_session_open(self, tmp_path):
+        result = self._pwsh(
+            tmp_path,
+            f"Get-Content -Raw '{self._script()}' | Invoke-Expression; "
+            "'session still open, exit code ' + $LASTEXITCODE")
+        assert "Local archive not found" in result.stdout
+        assert "session still open, exit code 1" in result.stdout
+
+
 def test_reconcile_says_so_when_the_control_token_is_missing(monkeypatch, capsys):
     # The daemon answers but its token is gone. Minting one would present a
     # value the daemon rejects, surfacing as a bare 401 with no explanation.
