@@ -8,6 +8,86 @@ The release workflow publishes the section for the tagged version as its GitHub
 release notes, so update the entry for the version you're about to tag **before**
 tagging it. At tag time, rename `[Unreleased]` to the version and date.
 
+## [0.1.2-rc.2] - 2026-10-17
+
+Pre-release. Changes since 0.1.2-rc.1.
+
+### Fixed
+
+- Windows: installing or updating no longer stops at the migration step with
+  "something is listening on 127.0.0.1:4767" when nothing is.
+- Linux: `holm status`, `stop`, `start` and `update` work on systems whose
+  OpenSSL is newer than the one bundled with Steerholm (Ubuntu 26.04), and MCP
+  servers no longer load Steerholm's bundled libraries.
+- `holm update` no longer ends with a `zlib.error` traceback and exit code 1
+  after a successful update. An update started from 0.1.0, 0.1.1 or 0.1.2-rc.1
+  still runs that version's updater, so the installer ends it once the new
+  version is in place: on Linux and macOS the shell reports "Terminated" (exit
+  143) for that one update, after "Updated Steerholm to …".
+- Windows: the installer registers the logon task over SSH, where it failed with
+  "No mapping between account names and security IDs". The daemon still starts
+  only in a signed-in desktop session (console, Remote Desktop or VNC).
+- Windows: refusing stored data from another version now names the PowerShell
+  installer instead of the bash one.
+- Windows: a failed install run with `irm … | iex` no longer closes the
+  PowerShell window, taking the error with it.
+- `holm update` and the installers say what the release server answered when
+  it refuses (for example a rate limit) or cannot be reached, instead of a
+  traceback or a bare `curl` error.
+
+### Security
+
+- If `checksums.txt` cannot be downloaded, `holm update` and the installers stop
+  instead of installing without verifying the download.
+
+## [0.1.2-rc.1] - 2026-09-30
+
+Pre-release. Release candidates may still change how stored data is migrated;
+if you test one, you may have to start fresh.
+
+### Added
+
+- An audit log of every tool call an agent makes through Steerholm: which agent,
+  server and tool, and whether policy allowed it, denied it, or the server
+  failed. `holm log` reads it, with or without the daemon running (filter with
+  `--agent`, `--server` and `--status`; `-n` for how many), and `holm log
+  --follow` watches calls as they happen. History is rotated and retained: see
+  the limits with `holm log config`, change them with `holm log set
+  --max-files N --max-age-days N`.
+- `holm modify server` changes a server in place (`--command`, `--url`, `--env`,
+  `--unset`) and keeps its id and every agent's grants.
+- Agents and servers have permanent ids, shown by `holm show`, kept across key
+  rotation. `holm log --agent` accepts an id.
+- The installer migrates stored data to the new layout, keeping a copy of the
+  previous layout in `.pre-migration` for inspection.
+- Pre-releases: `holm update` does not install them; `holm update --tag <tag>`
+  does.
+
+### Changed
+
+- Agent key hashes are stored in `config.json` instead of the OS keyring, and the
+  daemon's control token is a file in the config directory.
+- Unknown keys in `config.json` are rejected instead of ignored.
+- The documentation for the newest version is served at `/latest`.
+
+### Fixed
+
+- A `config.json` that cannot be loaded (a mistyped key, a truncated file) is
+  refused with a message naming the problem. It used to be treated as empty, and
+  the next change overwrote every server and agent in it.
+- Stored data written by a different version is refused with a message, instead
+  of being misread.
+- `holm add agent` works where no OS keyring is available, such as headless
+  Linux, where it failed with "No recommended backend was available".
+- The installer keeps the daemon stopped for the whole install, so it cannot
+  restart on the new binary before the stored data is ready.
+
+### Security
+
+- Grants are tied to permanent ids instead of names. A server or agent removed and
+  added again under the same name starts with no grants; removing a server used
+  to leave its grants in place for whatever took the name next.
+
 ## [0.1.1] - 2026-08-29
 
 ### Added
