@@ -1,0 +1,1 @@
+{"id":"e1a84df154f949f80e446c1cff8a416e.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.integration.test_handshake.TestSessionCleanup#test_delete_session_does_not_stop_shared_processes","name":"test_delete_session_does_not_stop_shared_processes","status":"passed","testResultsByEnv":{"default":"3c2bc02f565b70e242a28ef12d0b1c9f"}}

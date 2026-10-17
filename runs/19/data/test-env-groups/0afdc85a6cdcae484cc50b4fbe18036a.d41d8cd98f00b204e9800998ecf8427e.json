@@ -1,0 +1,1 @@
+{"id":"0afdc85a6cdcae484cc50b4fbe18036a.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands#test_tail_retries_when_the_newest_segment_cannot_be_opened","name":"test_tail_retries_when_the_newest_segment_cannot_be_opened","status":"passed","testResultsByEnv":{"default":"322c93bac4400c59e01832fa3d840647"}}

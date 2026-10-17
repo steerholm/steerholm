@@ -1,0 +1,1 @@
+{"id":"5a0a0088f367f1798567f40adecc9b90.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_config.TestConfigManagerServers#test_add_server_rejects_env_with_url","name":"test_add_server_rejects_env_with_url","status":"passed","testResultsByEnv":{"default":"bba5e795e074aa3046265b4ed358ce47"}}

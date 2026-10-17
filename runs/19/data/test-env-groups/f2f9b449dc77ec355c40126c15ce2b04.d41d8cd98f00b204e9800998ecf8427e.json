@@ -1,0 +1,1 @@
+{"id":"f2f9b449dc77ec355c40126c15ce2b04.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_migrations#test_a_swap_that_fails_at_the_last_name_still_rolls_back","name":"test_a_swap_that_fails_at_the_last_name_still_rolls_back","status":"passed","testResultsByEnv":{"default":"b6cf9c354505f72d653707efc27480a6"}}

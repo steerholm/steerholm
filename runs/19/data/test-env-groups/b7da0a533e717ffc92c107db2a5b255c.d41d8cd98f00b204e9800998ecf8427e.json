@@ -1,0 +1,1 @@
+{"id":"b7da0a533e717ffc92c107db2a5b255c.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands.TestWindowsInstallerFailures#test_run_through_iex_it_leaves_the_session_open","name":"test_run_through_iex_it_leaves_the_session_open","status":"passed","testResultsByEnv":{"default":"83880a1cd12fe2c05e9ce8070047679b"}}

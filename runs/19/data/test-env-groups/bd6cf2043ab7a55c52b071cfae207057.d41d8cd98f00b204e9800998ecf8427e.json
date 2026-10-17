@@ -1,0 +1,1 @@
+{"id":"bd6cf2043ab7a55c52b071cfae207057.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands.TestServiceUnitMatchesTheCode#test_the_unit_does_not_restart_on_the_code_the_daemon_exits","name":"test_the_unit_does_not_restart_on_the_code_the_daemon_exits","status":"passed","testResultsByEnv":{"default":"0519370c76f0df86dfe847717cf1ada1"}}
