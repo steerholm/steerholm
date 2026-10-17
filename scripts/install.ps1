@@ -306,12 +306,27 @@ try {
     Write-Host ""
     Info "Installation complete."
 } catch {
-    $signalled = $_.Exception.Data["SteerholmExit"]
+    $failure = $_
+    $signalled = $failure.Exception.Data["SteerholmExit"]
     if ($null -ne $signalled) {
         $exitCode = $signalled
     } else {
-        Write-Host "[x] $($_.Exception.Message) (install.ps1 line $($_.InvocationInfo.ScriptLineNumber))" -ForegroundColor Red
         $exitCode = 1
+        $status = $null
+        try { $status = [int]$failure.Exception.Response.StatusCode } catch {}
+        if ($status) {
+            # A server that refused: its own explanation is in the body
+            # (ErrorDetails), not in the exception's "(403) Forbidden".
+            # Only a JSON `message`: a proxy's HTML error page is not a reason.
+            $reason = $null
+            if ($failure.ErrorDetails -and $failure.ErrorDetails.Message) {
+                try { $reason = ($failure.ErrorDetails.Message | ConvertFrom-Json).message } catch {}
+            }
+            if ($reason) { $reason = ($reason -split ' \(', 2)[0].TrimEnd('.') }   # up to any parenthetical aside
+            Write-Host "[x] The release server answered $status$(if ($reason) { ": $reason" }). Try again later." -ForegroundColor Red
+        } else {
+            Write-Host "[x] $($failure.Exception.Message) (install.ps1 line $($failure.InvocationInfo.ScriptLineNumber))" -ForegroundColor Red
+        }
     }
 }
 

@@ -2276,6 +2276,92 @@ class TestWindowsInstallerFailures:
         assert "session still open, exit code 1" in result.stdout
 
 
+_REFUSAL_BODY = ('{"message":"API rate limit exceeded for 1.2.3.4. (But here\'s the good news: '
+                 'Authenticated requests get a higher rate limit.)","documentation_url":"https://x"}')
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="install.sh is the Unix installer")
+class TestUnixInstallerReportsTheReleaseServer:
+    """Finding the latest release was `curl -f`, which discards the reason a
+    server refused — the user saw only "curl: (22) ... error: 403"."""
+
+    def _run(self, tmp_path, curl_script):
+        import os
+        import subprocess
+        from pathlib import Path
+        stubs = tmp_path / "stubs"
+        stubs.mkdir()
+        (stubs / "curl").write_text("#!/bin/sh\n" + curl_script)
+        (stubs / "curl").chmod(0o755)
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith("_PYI_") and k != "STEERHOLM_VERSION"}
+        env.update(HOME=str(tmp_path / "home"), PATH=f"{stubs}:{env['PATH']}")
+        script = Path(__file__).resolve().parents[2] / "scripts" / "install.sh"
+        result = subprocess.run(["bash", str(script)], env=env,
+                                capture_output=True, text=True, timeout=60)
+        return result.returncode, result.stdout + result.stderr
+
+    def test_a_refusal_says_what_the_server_answered(self, tmp_path):
+        body = tmp_path / "body.json"
+        body.write_text(_REFUSAL_BODY)
+        rc, out = self._run(tmp_path, (
+            'while [ "$#" -gt 0 ]; do [ "$1" = "-o" ] && cp "' + str(body) + '" "$2"; shift; done\n'
+            'printf 403\n'))
+        assert rc != 0
+        assert ("The release server answered 403: API rate limit exceeded for 1.2.3.4. "
+                "Try again later.") in out
+
+    def test_an_unreachable_server_says_so(self, tmp_path):
+        rc, out = self._run(tmp_path, 'echo "curl: (6) Could not resolve host" >&2\nexit 6\n')
+        assert rc != 0
+        assert "Could not reach the release server" in out
+
+
+def test_windows_installer_reports_what_the_release_server_answered(tmp_path):
+    # Its single catch printed only "(403) Forbidden"; the server's explanation
+    # is in the error's details.
+    import http.server
+    import os
+    import shutil
+    import subprocess
+    import threading
+    from pathlib import Path
+
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("needs PowerShell (pwsh)")
+
+    class Refuse(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(403, "rate limit exceeded")
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(_REFUSAL_BODY.encode())
+
+        def log_message(self, *a):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Refuse)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{server.server_address[1]}/"
+        script = Path(__file__).resolve().parents[2] / "scripts" / "install.ps1"
+        env = {k: v for k, v in os.environ.items()
+               if not k.startswith("_PYI_") and k not in ("STEERHOLM_VERSION", "STEERHOLM_LOCAL_ARCHIVE")}
+        env.update(LOCALAPPDATA=str(tmp_path / "local"), APPDATA=str(tmp_path / "roaming"))
+        # The real cmdlet, pointed at the local server.
+        command = ("function Invoke-RestMethod { param($Uri) "
+                   f"Microsoft.PowerShell.Utility\\Invoke-RestMethod -Uri '{url}' }}; "
+                   f"& '{script}'; exit $LASTEXITCODE")
+        result = subprocess.run([pwsh, "-NoProfile", "-NonInteractive", "-Command", command],
+                                env=env, capture_output=True, text=True, timeout=120)
+    finally:
+        server.shutdown()
+    assert result.returncode == 1
+    assert ("The release server answered 403: API rate limit exceeded for 1.2.3.4. "
+            "Try again later.") in result.stdout
+
+
 def test_reconcile_says_so_when_the_control_token_is_missing(monkeypatch, capsys):
     # The daemon answers but its token is gone. Minting one would present a
     # value the daemon rejects, surfacing as a bare 401 with no explanation.

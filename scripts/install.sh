@@ -74,7 +74,19 @@ else
     if [ -n "${STEERHOLM_VERSION:-}" ]; then
         LATEST="${STEERHOLM_VERSION}"
     else
-        LATEST=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+        # Not `curl -f`: on a refusal the reason is in the body, which -f
+        # discards — the user saw only "curl: (22) ... error: 403".
+        API_STATUS=$(curl -sSL -o "${TMP_DIR}/release.json" -w '%{http_code}' \
+            "https://api.github.com/repos/${REPO}/releases/latest") \
+            || error "Could not reach the release server to find the latest release. Check your connection and try again."
+        if [ "$API_STATUS" != "200" ]; then
+            # The server's own explanation, up to any parenthetical aside.
+            REASON=$(sed -n 's/.*"message"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${TMP_DIR}/release.json" | head -n 1)
+            REASON="${REASON%% (*}"
+            REASON="${REASON%.}"
+            error "The release server answered ${API_STATUS}${REASON:+: ${REASON}}. Try again later."
+        fi
+        LATEST=$(grep '"tag_name"' "${TMP_DIR}/release.json" | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
     fi
     if [ -z "$LATEST" ]; then
         error "Could not determine latest release."
