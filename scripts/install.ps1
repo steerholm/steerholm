@@ -130,24 +130,24 @@ if ($SteerholmBinaryPath) {
 
     # ── Verify checksum ────────────────────────────────────────────
     $checksumUrl = "https://github.com/$Repo/releases/download/$tag/checksums.txt"
-    $checksums = $null
+    # Every release publishes checksums.txt, so a missing one means its download
+    # failed or was blocked — exactly when nothing should be installed unverified.
+    # Nothing has been stopped or replaced yet.
     try {
         # For an octet-stream response, .Content is a byte[]; decode to text so the
         # per-asset lines parse (otherwise every lookup reports "no entry").
         $raw = (Invoke-WebRequest -Uri $checksumUrl -UseBasicParsing).Content
         $checksums = if ($raw -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($raw) } else { $raw }
     } catch {
-        Warn "checksums.txt not available for $tag; skipping verification"
+        Fail "Could not download checksums.txt for $tag, so the download cannot be verified. Nothing was installed; try again."
     }
-    if ($checksums) {
-        $assetName = "steerholm-$Platform.zip"
-        $line = $checksums -split "`n" | Where-Object { $_ -match [regex]::Escape($assetName) } | Select-Object -First 1
-        if (-not $line) { Fail "checksums.txt has no entry for $assetName" }
-        $expected = (($line -split '\s+') | Where-Object { $_ })[0].ToLower()
-        $actual = (Get-FileHash -Algorithm SHA256 "$tmpDir\release.zip").Hash.ToLower()
-        if ($expected -ne $actual) { Fail "Checksum verification failed for $assetName" }
-        Info "Checksum verified"
-    }
+    $assetName = "steerholm-$Platform.zip"
+    $line = $checksums -split "`n" | Where-Object { $_ -match [regex]::Escape($assetName) } | Select-Object -First 1
+    if (-not $line) { Fail "checksums.txt has no entry for $assetName" }
+    $expected = (($line -split '\s+') | Where-Object { $_ })[0].ToLower()
+    $actual = (Get-FileHash -Algorithm SHA256 "$tmpDir\release.zip").Hash.ToLower()
+    if ($expected -ne $actual) { Fail "Checksum verification failed for $assetName" }
+    Info "Checksum verified"
 
     Expand-Archive -Path "$tmpDir\release.zip" -DestinationPath $tmpDir -Force
 

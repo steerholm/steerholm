@@ -190,9 +190,6 @@ def update(
     yes: bool = typer.Option(False, "--yes", "-y", help="Install without confirmation"),
 ):
     """Update Steerholm from a GitHub release (latest by default)."""
-    import logging
-    # Surface updater warnings (e.g. skipped checksum verification) on stderr.
-    logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
     try:
         info = update_binary(tag=tag, check_only=True, force=force)
     except UpdateError as e:

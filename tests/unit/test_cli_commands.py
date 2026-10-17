@@ -2197,6 +2197,48 @@ class TestInstallerEndsAnOldUpdater:
         assert "UPDATER-CARRIED-ON" in parent.stdout
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="install.sh is the Unix installer")
+def test_the_installer_refuses_a_download_it_cannot_verify(tmp_path):
+    # Every release publishes checksums.txt; failing to get it means the
+    # download cannot be checked, and nothing may be stopped or installed.
+    import os
+    import subprocess
+    from pathlib import Path
+
+    home = tmp_path / "home"
+    bindir = home / ".local" / "bin"
+    bindir.mkdir(parents=True)
+    (bindir / "holm").write_text("the installed binary")
+    calls = tmp_path / "service-calls"
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    # curl serves the archive and fails the checksums, as a blocked or failed
+    # request would.
+    (stubs / "curl").write_text(
+        '#!/bin/sh\n'
+        'case "$*" in *checksums.txt*) exit 22 ;; esac\n'
+        'while [ "$#" -gt 1 ]; do [ "$1" = "-o" ] && echo archive > "$2"; shift; done\n')
+    for name in ("systemctl", "launchctl"):
+        (stubs / name).write_text(f'#!/bin/sh\necho "$@" >> "{calls}"\n')
+    for f in stubs.iterdir():
+        f.chmod(0o755)
+
+    env = {k: v for k, v in os.environ.items() if not k.startswith("_PYI_")}
+    tmp = tmp_path / "tmp"
+    tmp.mkdir()
+    env.update(HOME=str(home), PATH=f"{stubs}:{env['PATH']}", STEERHOLM_VERSION="v9.9.9",
+               TMPDIR=str(tmp))
+    script = Path(__file__).resolve().parents[2] / "scripts" / "install.sh"
+    result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True, timeout=60)
+
+    out = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "cannot be verified. Nothing was installed" in out
+    assert (bindir / "holm").read_text() == "the installed binary"
+    assert not calls.exists()          # the daemon was never stopped
+    assert not list(tmp.iterdir())     # nor the downloaded archive left behind
+
+
 def test_reconcile_says_so_when_the_control_token_is_missing(monkeypatch, capsys):
     # The daemon answers but its token is gone. Minting one would present a
     # value the daemon rejects, surfacing as a bare 401 with no explanation.

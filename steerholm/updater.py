@@ -1,7 +1,6 @@
 import hashlib
 import http.client
 import json
-import logging
 import platform
 import re
 import shutil
@@ -16,7 +15,6 @@ from typing import Optional
 from . import __version__
 from .childenv import child_env
 
-logger = logging.getLogger("steerholm.updater")
 
 REPO = "steerholm/steerholm"
 GITHUB_API = f"https://api.github.com/repos/{REPO}"
@@ -241,17 +239,16 @@ def download_installer(
     installer_path = destination / asset.name
     _download(asset.download_url, installer_path)
 
+    # Every release publishes checksums.txt, so a missing one means its download
+    # failed or was blocked — exactly when the installer must not run unverified.
     try:
         checksums = download_text(checksum_asset_url(tag))
-    except UpdateError:
-        checksums = None
-    if checksums:
-        verify_checksum(installer_path, checksums)
-    else:
-        logger.warning(
-            "checksums.txt not available for %s; skipping installer integrity verification.",
-            tag,
-        )
+    except UpdateError as e:
+        raise UpdateError(
+            f"Could not download checksums.txt for {tag}, so the installer cannot be "
+            f"verified. Nothing was installed; try again. ({e})"
+        ) from e
+    verify_checksum(installer_path, checksums)
 
     return installer_path
 

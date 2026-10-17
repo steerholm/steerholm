@@ -332,13 +332,15 @@ def test_verify_checksum_missing_entry(tmp_path):
         _u.verify_checksum(f, "deadbeef  other-file.zip")
 
 
-def test_download_installer_skips_when_no_checksums(tmp_path, monkeypatch):
+def test_download_installer_refuses_without_checksums(tmp_path, monkeypatch):
+    # Every release publishes checksums.txt; missing means its download failed or
+    # was blocked, which is exactly when the installer must not run unverified.
     monkeypatch.setattr(_u, "fetch_installer_asset",
                         lambda tag, system=None, release=None: _u.ReleaseAsset("install.sh", "http://x"))
     monkeypatch.setattr(_u, "_download", lambda url, dest: dest.write_text("#!/bin/sh"))
     monkeypatch.setattr(_u, "download_text", _MM(side_effect=_u.UpdateError("404")))
-    p = _u.download_installer("v0.1.3", tmp_path, system="Linux")
-    assert p.exists()  # verification skipped, no raise
+    with _pytest.raises(_u.UpdateError, match="cannot be verified. Nothing was installed"):
+        _u.download_installer("v0.1.3", tmp_path, system="Linux")
 
 
 # ─── an unreachable or refusing release server ──────────────────────
@@ -391,13 +393,27 @@ def test_a_local_write_failure_is_not_blamed_on_the_server(tmp_path, monkeypatch
     assert not isinstance(raised.value, _u.UpdateError)
 
 
-def test_missing_checksums_are_still_skipped_when_the_server_refuses(tmp_path, monkeypatch):
+def test_update_refuses_when_checksums_cannot_be_downloaded(monkeypatch):
+    # End to end through the command: nothing is run, and it says why.
+    from typer.testing import CliRunner
+    from steerholm.main import app
+    info = _u.ReleaseInfo(tag="v0.1.3", asset=_u.ReleaseAsset("a", "b"), update_available=True)
+    monkeypatch.setattr("steerholm.main.update_binary", lambda **k: info)
     monkeypatch.setattr(_u, "fetch_installer_asset",
                         lambda tag, system=None, release=None: _u.ReleaseAsset("install.sh", "http://x"))
     monkeypatch.setattr(_u, "_download", lambda url, dest: dest.write_text("#!/bin/sh"))
     monkeypatch.setattr("urllib.request.urlopen",
-                        _refuse(_urlerr.HTTPError("u", 404, "Not Found", {}, None)))
-    assert _u.download_installer("v0.1.3", tmp_path, system="Linux").exists()
+                        _refuse(_urlerr.HTTPError("u", 403, "rate limit exceeded", {}, None)))
+    ran = _MM()
+    monkeypatch.setattr(_u.subprocess, "run", ran)
+
+    def exit_(code):
+        raise SystemExit(code)
+    monkeypatch.setattr("os._exit", exit_)
+    result = CliRunner().invoke(app, ["update", "--yes"])
+    assert result.exit_code == 1
+    assert "cannot be verified. Nothing was installed" in " ".join(result.output.split())
+    ran.assert_not_called()
 
 
 def test_run_installer_windows_command(tmp_path, monkeypatch):

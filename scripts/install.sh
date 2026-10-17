@@ -59,8 +59,10 @@ info "Detected platform: ${PLATFORM}"
 
 ASSET="steerholm-${PLATFORM}.tar.gz"
 TMP_DIR=$(mktemp -d)
-# Cleanup (including this temp dir) is installed in step 3, once there is
-# also daemon state to restore on failure.
+# Removed on any exit until step 3 installs the full cleanup, which also has
+# daemon state to restore — a failed download or checksum would otherwise leave
+# the archive behind.
+trap 'rm -rf "${TMP_DIR}"' EXIT
 
 if [ -n "${STEERHOLM_LOCAL_ARCHIVE:-}" ]; then
     # Local-file mode (used for testing): install from a provided archive,
@@ -86,21 +88,22 @@ else
     curl -fsSL "$DOWNLOAD_URL" -o "${TMP_DIR}/release.tar.gz" || error "Download failed. Check https://github.com/${REPO}/releases"
 
     # ── 2b. Verify checksum ────────────────────────────────────────
-    if curl -fsSL "$CHECKSUM_URL" -o "${TMP_DIR}/checksums.txt"; then
-        EXPECTED=$(grep -F "$ASSET" "${TMP_DIR}/checksums.txt" | awk '{print $1}')
-        [ -n "$EXPECTED" ] || error "checksums.txt has no entry for ${ASSET}"
+    # Every release publishes checksums.txt, so a missing one means its download
+    # failed or was blocked — exactly when nothing should be installed unverified.
+    # Nothing has been stopped or replaced yet.
+    curl -fsSL "$CHECKSUM_URL" -o "${TMP_DIR}/checksums.txt" \
+        || error "Could not download checksums.txt for ${LATEST}, so the download cannot be verified. Nothing was installed; try again."
+    EXPECTED=$(grep -F "$ASSET" "${TMP_DIR}/checksums.txt" | awk '{print $1}')
+    [ -n "$EXPECTED" ] || error "checksums.txt has no entry for ${ASSET}"
 
-        if command -v sha256sum >/dev/null 2>&1; then
-            ACTUAL=$(sha256sum "${TMP_DIR}/release.tar.gz" | awk '{print $1}')
-        else
-            ACTUAL=$(shasum -a 256 "${TMP_DIR}/release.tar.gz" | awk '{print $1}')
-        fi
-
-        [ "$EXPECTED" = "$ACTUAL" ] || error "Checksum verification failed for ${ASSET}"
-        info "Checksum verified"
+    if command -v sha256sum >/dev/null 2>&1; then
+        ACTUAL=$(sha256sum "${TMP_DIR}/release.tar.gz" | awk '{print $1}')
     else
-        warn "checksums.txt not available for ${LATEST}; skipping verification"
+        ACTUAL=$(shasum -a 256 "${TMP_DIR}/release.tar.gz" | awk '{print $1}')
     fi
+
+    [ "$EXPECTED" = "$ACTUAL" ] || error "Checksum verification failed for ${ASSET}"
+    info "Checksum verified"
 fi
 
 tar -xzf "${TMP_DIR}/release.tar.gz" -C "$TMP_DIR"
