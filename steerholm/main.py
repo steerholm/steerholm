@@ -391,15 +391,15 @@ def _notify_daemon_reconcile() -> None:
         console.print(f"[yellow]Could not reach the daemon to apply the change: {escape(str(e))}[/yellow]")
         return
 
-    failed = result.get("failed") or []
-    started = result.get("started") or []
-    stopped = result.get("stopped") or []
-    if failed:
-        console.print(f"[bold red]Daemon could not start:[/bold red] {', '.join(escape(s) for s in failed)} (check the daemon log)")
-    if started:
-        console.print(f"[green]Daemon started:[/green] {', '.join(escape(s) for s in started)}")
-    if stopped:
-        console.print(f"[green]Daemon stopped:[/green] {', '.join(escape(s) for s in stopped)}")
+    # The daemon applies the change in the background — starting a server can
+    # take a while — so this reports what it is doing, not how it ended.
+    stopping = result.get("stopping") or []
+    starting = result.get("starting") or []
+    if stopping:
+        console.print(f"[green]Daemon is stopping:[/green] {', '.join(escape(s) for s in stopping)}")
+    if starting:
+        console.print(f"[green]Daemon is starting:[/green] {', '.join(escape(s) for s in starting)}")
+        console.print(f"See when it is up with [bold]holm show server {escape(starting[0])}[/bold].")
 
 
 def _daemon_server_status() -> Optional[dict]:

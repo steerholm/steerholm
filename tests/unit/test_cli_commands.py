@@ -99,14 +99,16 @@ def test_notify_reconcile_noop_when_down(monkeypatch, capsys):
     assert "not running" in capsys.readouterr().out
 
 
-def test_notify_reconcile_reports_started_stopped(monkeypatch, capsys):
+def test_notify_reconcile_reports_what_the_daemon_is_doing(monkeypatch, capsys):
     monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
     monkeypatch.setattr("steerholm.config.read_control_token", lambda: "tok")
-    payload = {"started": ["a"], "stopped": ["b"], "failed": ["c"]}
+    payload = {"starting": ["alpha"], "stopping": ["beta"]}
     with patch("urllib.request.urlopen", return_value=_fake_urlopen(payload)):
         m._notify_daemon_reconcile()
-    out = capsys.readouterr().out
-    assert "a" in out and "b" in out and "c" in out
+    out = " ".join(capsys.readouterr().out.split())
+    assert "Daemon is starting: alpha" in out
+    assert "Daemon is stopping: beta" in out
+    assert "holm show server alpha" in out
 
 
 def test_notify_reconcile_reports_unreachable(monkeypatch, capsys):

@@ -93,7 +93,37 @@ class TestControlPlane:
             )
         assert resp.status_code == 200
         body = resp.json()
-        assert set(body) >= {"started", "stopped", "failed", "running"}
+        assert set(body) >= {"starting", "stopping"}
+
+    @pytest.mark.asyncio
+    async def test_reconcile_answers_before_a_slow_server_has_started(self, config_manager, monkeypatch):
+        # It started the server inside the request: a first `npx` run outlasted
+        # the CLI's 30s wait, and `holm add server` said it could not reach the
+        # daemon although the change was made.
+        import asyncio
+        from steerholm import process_manager as pm
+        from steerholm.config import get_or_create_control_token
+
+        release = asyncio.Event()
+
+        async def slow_start(self):
+            await release.wait()
+
+        monkeypatch.setattr(pm.ServerProcess, "start", slow_start)
+        token = get_or_create_control_token()
+        config_manager.add_server("slow", command="never-mind")
+        gateway = make_gateway(config_manager)
+        app = gateway.create_asgi_app("127.0.0.1", 4767)
+        async with _asgi_client(app) as client:
+            resp = await asyncio.wait_for(client.post(
+                "/control/reconcile", headers={"Authorization": f"Bearer {token}"}), 5)
+        assert resp.status_code == 200
+        assert resp.json() == {"starting": ["slow"], "stopping": []}
+        assert gateway.daemon.get_server_health("slow").state == "starting"
+
+        release.set()
+        await asyncio.gather(*gateway._background)
+        assert gateway.daemon.get_server_health("slow").state == "healthy"
 
     @pytest.mark.asyncio
     async def test_agent_token_cannot_drive_control_plane(self, config_manager):

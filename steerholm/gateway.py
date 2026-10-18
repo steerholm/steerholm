@@ -125,6 +125,9 @@ class SteerholmGateway:
         self._warned_no_hash = set()
         # Serializes lifecycle reconciliation (startup, control plane, supervisor).
         self._reconcile_lock = asyncio.Lock()
+        # Reconciles running behind the open port; kept so they are not garbage
+        # collected mid-run, and so shutdown can cancel them.
+        self._background: set = set()
         self._register_handlers()
 
     def _register_handlers(self) -> None:
@@ -369,6 +372,7 @@ class SteerholmGateway:
             # changed audit retention here too — no restart needed after `set config`.
             self.event_log.configure(**self.config_manager.audit_kwargs())
             desired = {s.name: s for s in self.config_manager.list_servers()}
+            plan = self._reconcile_plan()
             started, stopped, failed = [], [], []
 
             async def _stop(name: str) -> bool:
@@ -379,18 +383,15 @@ class SteerholmGateway:
                     logger.error(f"Failed to stop server '{name}': {e}")
                     return False
 
-            for name in list(self.daemon.shared_processes.keys()):
-                if name not in desired:
-                    if await _stop(name):
-                        stopped.append(name)
-                    else:
-                        failed.append(name)
+            for name in plan["stopping"]:
+                if await _stop(name):
+                    stopped.append(name)
+                else:
+                    failed.append(name)
 
-            for name, server in desired.items():
-                proc = self.daemon.get_shared_process(name)
-                if proc is not None and proc.session is not None and proc.server_config == server:
-                    continue  # already running with the current spec
-                if proc is not None:
+            for name in plan["starting"]:
+                server = desired[name]
+                if self.daemon.get_shared_process(name) is not None:
                     await _stop(name)  # changed or dead -> restart
                 try:
                     await self.daemon.start_shared_server(server)
@@ -405,6 +406,39 @@ class SteerholmGateway:
                 "failed": failed,
                 "running": sorted(self.daemon.shared_processes.keys()),
             }
+
+    def _reconcile_plan(self) -> dict:
+        """What a reconcile would do now — the one place that decides it.
+
+        `stopping`: running servers no longer in the config. `starting`: servers
+        in the config not running with their current spec (new, changed, or
+        whose session died), which a reconcile starts or restarts.
+        """
+        desired = {s.name: s for s in self.config_manager.list_servers()}
+
+        def current(name, server):
+            proc = self.daemon.get_shared_process(name)
+            return proc is not None and proc.session is not None and proc.server_config == server
+
+        return {
+            "starting": [n for n, s in desired.items() if not current(n, s)],
+            "stopping": [n for n in self.daemon.shared_processes if n not in desired],
+        }
+
+    def _reconcile_in_background(self) -> None:
+        task = asyncio.create_task(self._reconcile_logged())
+        self._background.add(task)
+        task.add_done_callback(self._background.discard)
+
+    async def _reconcile_logged(self):
+        """A reconcile nobody waits for: failures are logged, not raised."""
+        try:
+            await self.reconcile_servers()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            # The periodic reconcile tries again.
+            logger.error(f"Applying the server configuration failed: {e}")
 
     async def start_shared_processes(self):
         # Backward-compatible name for the reconcile primitive.
@@ -550,7 +584,13 @@ class SteerholmGateway:
             if denied is not None:
                 return denied
             self.config_manager.reload()
-            return JSONResponse(await self.reconcile_servers())
+            # Answer with what will happen, then do it in the background. A server
+            # can take longer to start than the CLI waits — a first `npx` run
+            # downloads its package — and the CLI reported a change it had
+            # successfully made as "Could not reach the daemon".
+            plan = self._reconcile_plan()
+            self._reconcile_in_background()
+            return JSONResponse(plan)
 
         async def control_servers(request):
             # Control plane: live per-server status (state, uptime, tools) for the CLI.
@@ -623,23 +663,13 @@ class SteerholmGateway:
         # Started first, the port stayed closed for as long as the slowest server
         # took (an `npx` download on a cold machine) and the installer reported a
         # daemon that was simply busy as not answering.
-        startup = asyncio.create_task(self._start_servers())
+        self._reconcile_in_background()
         try:
             await server.serve()
         finally:
-            for task in (startup, supervisor):
+            for task in [supervisor, *self._background]:
                 task.cancel()
                 try:
                     await task
                 except asyncio.CancelledError:
                     pass
-
-    async def _start_servers(self):
-        """The first reconcile, in the background of a listening daemon."""
-        try:
-            await self.reconcile_servers()
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            # Logged, not raised: the periodic reconcile tries again.
-            logger.error(f"Starting servers failed: {e}")
