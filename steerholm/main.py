@@ -445,6 +445,7 @@ def _status_markup(state: str) -> str:
     # (Windows cp1252), so avoid glyphs that don't round-trip through every locale.
     return {
         "running": "[green]running[/green]",
+        "starting": "[cyan]starting[/cyan]",
         "failed": "[red]failed[/red]",
         "stopped": "[yellow]stopped[/yellow]",
     }.get(state, "[dim]unknown[/dim]")
@@ -768,11 +769,21 @@ def stop():
         subprocess.run(["launchctl", "unload", plist], check=True, env=child_env())
     elif sys.platform == "win32":
         import time
+        import getpass
         from .config import DEFAULT_HOST, DEFAULT_PORT
         # /End fails harmlessly when nothing is running; the port is the source of
         # truth, so an already-stopped daemon is reported as stopped (exit 0).
         subprocess.run(
             ["schtasks", "/End", "/TN", WIN_TASK_NAME],
+            capture_output=True, text=True, env=child_env(),
+        )
+        # holmd.exe is a single-file build: a launcher, and the process it starts
+        # that actually serves the port. /End ends the launcher alone and left
+        # the daemon running. This user's holmd.exe processes, with everything
+        # they started (/T — the MCP servers), are the daemon.
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/FI", f"USERNAME eq {getpass.getuser()}",
+             "/IM", "holmd.exe"],
             capture_output=True, text=True, env=child_env(),
         )
         for _ in range(10):

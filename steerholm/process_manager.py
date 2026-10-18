@@ -55,6 +55,13 @@ class ServerProcess:
         self._task = asyncio.create_task(self._run())
         try:
             await asyncio.wait_for(self._ready.wait(), timeout=CONNECT_TIMEOUT)
+        except asyncio.CancelledError:
+            # Cancelled mid-start — the daemon shutting down while servers are
+            # still coming up. Not registered anywhere yet, so nothing else would
+            # ever stop it: unwind it on its own task, where its contexts live.
+            self._stop.set()
+            self._task.cancel()
+            raise
         except asyncio.TimeoutError:
             logger.error(
                 f"Server {self.server_config.name} did not connect within "
@@ -149,8 +156,14 @@ class SteerholmDaemon:
 
     async def start_shared_server(self, server: Server):
         proc = ServerProcess(server)
+        # Reported while it comes up: the daemon answers before its servers have
+        # started, and "stopped" would say the opposite of what is happening.
+        self.server_health[server.name] = ServerHealth(state="starting")
         try:
             await proc.start()
+        except asyncio.CancelledError:
+            self.server_health.pop(server.name, None)
+            raise
         except Exception as exc:
             self.shared_processes.pop(server.name, None)
             self.server_health[server.name] = ServerHealth(

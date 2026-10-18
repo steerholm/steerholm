@@ -47,7 +47,9 @@ if ($oldUpdaterArchive -and
 $binarySwapped = $false
 function Stop-OldUpdater([int]$code) {
     if (-not $oldUpdater -or -not $binarySwapped) { return }
-    # Once, whatever happens below.
+    $target = [int]$oldUpdater
+    # Once, whatever happens below. Read above first: cleared, the target was 0,
+    # and the updater ran on into its zlib.error.
     $script:oldUpdater = $null
     if ($code -eq 0) { Write-Host "Updated Steerholm to $(if ($tag) { $tag } else { 'the new version' })." }
     # Its temporary directory, which it would have removed; it holds this script.
@@ -55,7 +57,6 @@ function Stop-OldUpdater([int]$code) {
     if ((Split-Path -Leaf $own) -like 'steerholm-update-*') {
         Remove-Item $own -Recurse -Force -ErrorAction SilentlyContinue
     }
-    $target = [int]$oldUpdater
     try {
         # TerminateProcess takes the exit code, so a successful update still
         # reports 0. Add-Type compiles C#, which some locked-down machines refuse.

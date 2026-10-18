@@ -595,6 +595,20 @@ def test_stop_win32_goes_down(monkeypatch):
     assert "stopped" in runner.invoke(app, ["stop"]).output.lower()
 
 
+def test_stop_win32_ends_the_daemon_process_not_just_the_task(monkeypatch):
+    # holmd.exe is a launcher plus the process that serves the port; ending the
+    # task ended the launcher and left the daemon answering.
+    monkeypatch.setattr("sys.platform", "win32")
+    run = MagicMock()
+    monkeypatch.setattr("subprocess.run", run)
+    monkeypatch.setattr("time.sleep", lambda *_: None)
+    monkeypatch.setattr("getpass.getuser", lambda: "alice")
+    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: False)
+    assert runner.invoke(app, ["stop"]).exit_code == 0
+    kills = [c.args[0] for c in run.call_args_list if c.args[0][0] == "taskkill"]
+    assert kills == [["taskkill", "/F", "/T", "/FI", "USERNAME eq alice", "/IM", "holmd.exe"]]
+
+
 def test_stop_win32_still_listening(monkeypatch):
     monkeypatch.setattr("sys.platform", "win32")
     monkeypatch.setattr("subprocess.run", MagicMock())
@@ -2360,6 +2374,48 @@ def test_windows_installer_reports_what_the_release_server_answered(tmp_path):
     assert result.returncode == 1
     assert ("The release server answered 403: API rate limit exceeded for 1.2.3.4. "
             "Try again later.") in result.stdout
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="drives install.ps1 under a POSIX parent")
+def test_windows_installer_ends_an_old_updater(tmp_path):
+    # rc.2 cleared the updater's PID before reading it, so it ended PID 0 and
+    # the updater ran on into its zlib.error. Run on Linux/macOS: the kernel32
+    # call cannot load there, so this covers the fallback that ends it anyway.
+    import os
+    import shutil
+    import subprocess
+    import zipfile
+    from pathlib import Path
+
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("needs PowerShell (pwsh)")
+    local = tmp_path / "local"
+    installed = local / "steerholm" / "bin" / "holm.exe"   # Join-Path makes "\\" a "/" here
+    archive = tmp_path / "new.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("holm.exe", "the new binary")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("_PYI_")}
+    env.update(LOCALAPPDATA=str(local), APPDATA=str(tmp_path / "roaming"),
+               STEERHOLM_LOCAL_ARCHIVE=str(archive), STEERHOLM_NO_SERVICE="1",
+               TEMP=str(tmp_path), _PYI_ARCHIVE_FILE=str(installed))
+    script = Path(__file__).resolve().parents[2] / "scripts" / "install.ps1"
+    # Windows-only lookups, answered as Windows would for this process tree.
+    command = ("function Get-CimInstance { [pscustomobject]@{ ParentProcessId = (Get-Process -Id $PID).Parent.Id } }; "
+               "function Get-ScheduledTask { $null }; "
+               f"& '{script}'")
+    # Stands in for the old updater: waits for the installer, then carries on.
+    # The installer runs in a group of its own, as nothing else in the test may be
+    # in reach of the rc.2 bug: it ended "PID 0", which outside Windows means
+    # every process in the caller's process group.
+    updater = ("import subprocess, sys; "
+               "subprocess.run(sys.argv[1:], start_new_session=True); "
+               "print('UPDATER-CARRIED-ON', flush=True)")
+    parent = subprocess.run([sys.executable, "-c", updater,
+                             pwsh, "-NoProfile", "-NonInteractive", "-Command", command],
+                            env=env, capture_output=True, text=True, timeout=120)
+    assert "UPDATER-CARRIED-ON" not in parent.stdout, parent.stdout + parent.stderr
+    assert parent.returncode != 0
 
 
 def test_reconcile_says_so_when_the_control_token_is_missing(monkeypatch, capsys):

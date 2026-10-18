@@ -500,3 +500,52 @@ def test_a_hashless_agent_is_reported_once_not_per_attempt(config_manager, caplo
             gateway._resolve_agent_from_token("steer_sk_" + "z" * 32)
 
     assert caplog.text.count("has no stored key hash") == 1
+
+
+@pytest.mark.asyncio
+async def test_the_daemon_answers_while_its_servers_are_still_starting(config_manager, monkeypatch):
+    # Started before the port opened, a slow server (an `npx` download on a cold
+    # machine) kept the daemon silent, and the installer reported it as down.
+    import contextlib
+    import socket
+
+    import httpx
+
+    from steerholm import process_manager as pm
+
+    config_manager.add_server("slow", command="never-connects")
+    gateway = make_gateway(config_manager)
+    monkeypatch.setattr("steerholm.gateway.get_or_create_control_token", lambda: "t")
+    started, cancelled = asyncio.Event(), []
+
+    async def never_connects(self):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.append(self.server_config.name)
+            raise
+
+    monkeypatch.setattr(pm.ServerProcess, "start", never_connects)
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+
+    serving = asyncio.create_task(gateway.serve("127.0.0.1", port))
+    try:
+        await asyncio.wait_for(started.wait(), 10)
+        answer = None
+        async with httpx.AsyncClient() as client:
+            for _ in range(200):
+                try:
+                    answer = await client.get(f"http://127.0.0.1:{port}/healthz")
+                    break
+                except httpx.ConnectError:
+                    await asyncio.sleep(0.05)
+        assert answer is not None and answer.json()["service"] == "steerholm"
+        assert gateway.server_status()["slow"]["state"] == "starting"
+    finally:
+        serving.cancel()
+        with contextlib.suppress(asyncio.CancelledError, SystemExit):
+            await serving
+    assert cancelled == ["slow"]      # shutting down mid-start does not leave it behind

@@ -407,6 +407,13 @@ class SteerholmGateway:
                         {"name": t.name, "description": t.description} for t in proc.tools
                     ],
                 }
+            elif health is not None and health.state == "starting":
+                result[server.name] = {
+                    "state": "starting",
+                    "uptime_seconds": None,
+                    "error": None,
+                    "tools": [],
+                }
             elif health is not None and health.state == "failed":
                 result[server.name] = {
                     "state": "failed",
@@ -557,7 +564,6 @@ class SteerholmGateway:
         self.config_manager.verify_schema()
         self.config_manager.reload()
         self.config_manager.verify_loaded()
-        await self.reconcile_servers()
         # Create the control token now so it exists before the CLI's first call
         # (avoids a first-use race where each side would mint a different token).
         try:
@@ -591,11 +597,29 @@ class SteerholmGateway:
         config = uvicorn.Config(app, host=host, port=port, log_level="info")
         server = uvicorn.Server(config)
         supervisor = asyncio.create_task(self._reconcile_loop())
+        # The servers start behind the open port, not before it. Managing them is
+        # one of the daemon's jobs, so it answers — health, status, control — from
+        # the moment it listens, reporting each server as starting until it is up.
+        # Started first, the port stayed closed for as long as the slowest server
+        # took (an `npx` download on a cold machine) and the installer reported a
+        # daemon that was simply busy as not answering.
+        startup = asyncio.create_task(self._start_servers())
         try:
             await server.serve()
         finally:
-            supervisor.cancel()
-            try:
-                await supervisor
-            except asyncio.CancelledError:
-                pass
+            for task in (startup, supervisor):
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+    async def _start_servers(self):
+        """The first reconcile, in the background of a listening daemon."""
+        try:
+            await self.reconcile_servers()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            # Logged, not raised: the periodic reconcile tries again.
+            logger.error(f"Starting servers failed: {e}")

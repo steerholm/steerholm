@@ -152,6 +152,34 @@ async def test_a_stdio_server_gets_the_users_environment_plus_its_own(monkeypatc
 
 
 @_pytest.mark.asyncio
+async def test_a_start_cancelled_midway_leaves_no_server_running(monkeypatch):
+    # The daemon now starts servers behind an open port, so it can shut down
+    # while one is still connecting. That server is registered nowhere yet;
+    # cancelling its start must unwind the task that owns its process.
+    import asyncio
+    owner = {}
+
+    async def run(self):
+        owner["task"] = asyncio.current_task()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(_pm.ServerProcess, "_run", run)
+    daemon = _pm.SteerholmDaemon()
+    server = _Server(name="x", command="echo hi", server_type=_ST.stdio)
+    starting = asyncio.create_task(daemon.start_shared_server(server))
+    await asyncio.sleep(0.01)
+    assert daemon.get_server_health("x").state == "starting"
+
+    starting.cancel()
+    with _pytest.raises(asyncio.CancelledError):
+        await starting
+    await asyncio.sleep(0)
+    assert owner["task"].cancelled()
+    assert daemon.get_server_health("x") is None
+    assert "x" not in daemon.shared_processes
+
+
+@_pytest.mark.asyncio
 async def test_serverprocess_start_http_success(monkeypatch):
     monkeypatch.setattr(_pm, "streamable_http_client", lambda url: _AsyncCM(("r", "w", None)))
     session = _session_mock()

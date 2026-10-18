@@ -48,7 +48,9 @@ holm list servers
 holm show server git
 ```
 
-A healthy stdio server shows `running` with a tool count. If it never comes up, see
+A healthy stdio server shows `running` with a tool count. Right after the daemon
+starts, a server can show `starting` for a few seconds — longer the first time an
+`npx` or `uvx` server downloads its package. If it never comes up, see
 [Troubleshooting](/guides/troubleshooting).
 
 ## Add more than one
