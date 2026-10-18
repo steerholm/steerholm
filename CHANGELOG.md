@@ -8,6 +8,45 @@ The release workflow publishes the section for the tagged version as its GitHub
 release notes, so update the entry for the version you're about to tag **before**
 tagging it. At tag time, rename `[Unreleased]` to the version and date.
 
+## [0.1.2-rc.4] - 2026-10-19
+
+Pre-release. Changes since 0.1.2-rc.3.
+
+### Changed
+
+- `holm add server`, `modify server`, `remove server` and `log set` return as
+  soon as the daemon has the change, and the daemon applies it in the
+  background. They print which servers are starting or stopping; `holm show
+  server` shows when one is up, or why it failed. They waited while a new
+  server started, and a first `npx` run could outlast that wait and report
+  "Could not reach the daemon to apply the change: timed out" for a change that
+  had been made.
+- A tool call to a tool that no answering server provides, while a server the
+  agent may use is down or failed, is reported as `SERVER_UNAVAILABLE` naming
+  that server and logged as `error` — that server may be the one with the tool.
+  It was reported as "not found on any docked server" and logged as a denial.
+
+### Fixed
+
+- Documentation: a refused or failed tool call comes back as a tool result with
+  `isError: true` and the reason as its text, as it has since 0.1.0 — not as a
+  JSON-RPC error with code `-31001`/`-31002`, which applies only to other
+  requests. `holm grant` takes several argument policies by repeating `--args`,
+  not by listing them after one. A crashed daemon is restarted on Linux and
+  macOS; on Windows it stays down until the next sign-in or `holm start`.
+
+### Security
+
+- Glob argument policies now match as documented: `*` and `?` stay within one
+  path level and `**` crosses levels. `*` used to cross levels, so `/srv/*`
+  allowed `/srv/a/b`. **A grant that relied on that needs `**`** — this applies
+  to URLs and free text too: `url=https://example.com/*` no longer matches
+  deeper paths, and `message=*` no longer matches a value containing `/`.
+- A value with a `..` path segment no longer matches a glob policy unless the
+  pattern contains `..` itself. `/srv/../etc/passwd` used to satisfy both
+  `/srv/*` and `/srv/**`.
+- A negated character class (`[!a]`) no longer matches a path separator.
+
 ## [0.1.2-rc.3] - 2026-10-18
 
 Pre-release. Changes since 0.1.2-rc.2.
