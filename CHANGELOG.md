@@ -8,6 +8,31 @@ The release workflow publishes the section for the tagged version as its GitHub
 release notes, so update the entry for the version you're about to tag **before**
 tagging it. At tag time, rename `[Unreleased]` to the version and date.
 
+## [0.1.2-rc.3] - 2026-10-18
+
+Pre-release. Changes since 0.1.2-rc.2.
+
+### Changed
+
+- The daemon answers as soon as it starts and brings its MCP servers up in the
+  background, instead of starting every server before it opens its port. While a
+  server comes up, `holm list servers` and `holm show server` show it as
+  `starting`. An agent that connects right after the daemon starts may see a
+  server's tools appear a moment later.
+
+### Fixed
+
+- The installer no longer reports "Daemon did not answer on 127.0.0.1:4767
+  within 10s" when the daemon was only waiting for a slow server to start (an
+  `npx` server downloading its package on a fresh machine).
+- Windows: updating from 0.1.0, 0.1.1, 0.1.2-rc.1 or 0.1.2-rc.2 no longer ends
+  with a `zlib.error` traceback and exit code 1; the installer now ends the
+  previous version's updater as intended, with exit code 0.
+- Windows: `holm stop` stops the daemon and the MCP servers it started. It
+  reported "Daemon is still listening on 127.0.0.1:4767" and left them running.
+- Stopping the daemon while servers are still starting no longer leaves those
+  server processes running.
+
 ## [0.1.2-rc.2] - 2026-10-17
 
 Pre-release. Changes since 0.1.2-rc.1.
