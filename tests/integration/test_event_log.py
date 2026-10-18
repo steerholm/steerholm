@@ -137,7 +137,7 @@ async def test_server_unavailable_records_error_not_denied(config_manager, monke
     gateway = make_gateway(config_manager)
     # Resolve succeeds but the process is gone -> server_unavailable BEFORE the
     # permission verdict; that must not be logged as a policy "denied".
-    monkeypatch.setattr(gateway, "_resolve_tool_server", AsyncMock(return_value="srv"))
+    monkeypatch.setattr(gateway, "_resolve_tool_server", AsyncMock(return_value=("srv", [])))
 
     with pytest.raises(McpError):
         await gateway._call_tool_for_agent("agent", "t", {})

@@ -251,19 +251,33 @@ class SteerholmGateway:
 
         return all_tools
 
-    async def _resolve_tool_server(self, agent_name: str, tool_name: str) -> Optional[str]:
-        policy = self._load_agent_policy(agent_name)
+    async def _resolve_tool_server(self, agent_name: str, tool_name: str):
+        """(the granted server that has `tool_name`, granted servers that did not answer).
 
-        for _server_id, server_name, process in self._iter_accessible_processes(policy):
+        The second matters when the first is None: a server that is down — its
+        process gone, or not running at all — may be the one with the tool, so
+        "not found" would report an outage as a policy denial.
+        """
+        policy = self._load_agent_policy(agent_name)
+        names = {s.id: s.name for s in self.config_manager.list_servers() if s.id}
+        unreachable = []
+        for server_id in policy.permissions:
+            server_name = names.get(server_id)
+            if server_name is None:
+                continue  # the granted server no longer exists
+            process = self.daemon.get_shared_process(server_name)
+            if not (process and process.session):
+                unreachable.append(server_name)
+                continue
             try:
                 server_tools = await process.list_tools()
-                for tool in server_tools.tools:
-                    if tool.name == tool_name:
-                        return server_name
             except Exception as e:
                 logger.error(f"Error listing tools from {server_name}: {e}")
-
-        return None
+                unreachable.append(server_name)
+                continue
+            if any(tool.name == tool_name for tool in server_tools.tools):
+                return server_name, unreachable
+        return None, unreachable
 
     async def _call_tool_for_agent(
         self, agent_name: str, name: str, arguments: dict
@@ -277,8 +291,14 @@ class SteerholmGateway:
         try:
             policy = self._load_agent_policy(agent_name)
             engine = PermissionEngine(policy)
-            server_name = await self._resolve_tool_server(agent_name, name)
+            server_name, unreachable = await self._resolve_tool_server(agent_name, name)
 
+            if not server_name and unreachable:
+                # Logged as an error against that server, not as a denial.
+                server_name = ", ".join(unreachable)
+                reason = (f"Tool '{name}' was not found on the servers that answered; "
+                          f"{server_name} did not answer.")
+                raise server_unavailable(server_name)
             if not server_name:
                 reason = f"Tool '{name}' not found on any docked server."
                 raise authorization_denied(reason)

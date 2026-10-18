@@ -121,7 +121,7 @@ A grant records the server's immutable id, so the server has to be added before
 it can be granted. Usually this is a typo or a missing `holm add server` — check
 `holm list servers`, then grant.
 
-## A tool call returns AUTHORIZATION_DENIED (-31001)
+## A tool call is denied (AUTHORIZATION_DENIED)
 
 The policy refused the call. The [audit log](/reference/audit-log) records why:
 
@@ -138,9 +138,10 @@ tool so it re-lists.
 holm log --follow --status denied    # watch refusals as they happen
 ```
 
-## A tool call returns SERVER_UNAVAILABLE (-31002)
+## A tool call says a server is not reachable (SERVER_UNAVAILABLE)
 
-The downstream MCP server crashed or is unreachable. Check
+The downstream MCP server crashed or is unreachable — including a tool that was
+not found on the servers that answered while one the agent may use did not. Check
 `holm show server <name>` for a **failed** state and its error, then fix the
 command and re-add it. The daemon also retries failed servers periodically, so a
 transient failure may clear on its own. These show up in the audit log as

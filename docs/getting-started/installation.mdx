@@ -35,7 +35,8 @@ This installs the `holm` control-plane CLI and starts the daemon's HTTP MCP endp
    - **Windows**: a logon Scheduled Task
 4. Starts the daemon on `http://127.0.0.1:4767/mcp`
 
-The daemon starts at login and restarts on crash.
+The daemon starts at login. On Linux and macOS it also restarts if it crashes; on
+Windows, a crashed daemon stays down until your next sign-in or `holm start`.
 
 You can also download binaries manually from the [GitHub Releases](https://github.com/steerholm/steerholm/releases) page.
 

@@ -327,3 +327,64 @@ class TestDenialMessagesUseNames:
         with pytest.raises(McpError) as exc:
             self._engine().check_permission("srv_9999999999999999", "read_file")
         assert "srv_9999999999999999" in str(exc.value)
+
+
+class TestGlobArgumentPolicies:
+    """`*` within one level and `**` across levels, as policy-format.mdx says.
+
+    fnmatch was used, whose `*` crosses `/`: `/srv/*` allowed `/srv/a/b`, and
+    `/srv/../etc/passwd` matched `/srv/*` and `/srv/**` both."""
+
+    @staticmethod
+    def _engine(pattern):
+        from steerholm.models import AgentPolicy, ArgumentPolicy, ToolPermission
+        return PermissionEngine(AgentPolicy(agent_id="agt_0000000000000000", permissions={
+            "srv_0000000000000000": [ToolPermission(name="read", policies=[
+                ArgumentPolicy(arg_name="path", match_type="glob", pattern=pattern)])]}))
+
+    def _allows(self, pattern, value):
+        try:
+            self._engine(pattern).check_permission("srv_0000000000000000", "read", {"path": value})
+            return True
+        except McpError:
+            return False
+
+    @pytest.mark.parametrize("pattern, value, allowed", [
+        ("/srv/*", "/srv/a", True),
+        ("/srv/*", "/srv/a/b", False),          # one level only
+        ("/srv/**", "/srv/a/b", True),
+        ("/srv/*", "/srv/../etc/passwd", False),
+        ("/srv/**", "/srv/a/../../etc/passwd", False),
+        ("/srv/**", "/srv/a..b/c", True),       # `..` as a segment only
+        ("file?.txt", "file1.txt", True),
+        ("file?.txt", "file/.txt", False),
+        ("[ab]*", "apple", True),
+        ("[!ab]*", "apple", False),
+        ("production", "production", True),
+        ("production", "production2", False),
+        ("a.b", "axb", False),                  # `.` is literal
+        # Character classes read as fnmatch reads them:
+        ("[!]a]", "b", True),                   # `]` first in a class is a member
+        ("[!]a]", "]", False),
+        ("[^a]x", "bx", False),                 # `^` is a member, not negation
+        ("[^a]x", "^x", True),
+        ("[a&&b]", "&", True),                  # not a set operation
+        ("[!a]", "/", False),                   # a negated class stays within a level
+        ("/srv/[!x]*", "/srv/a/b", False),
+        ("[", "[", True),                       # unclosed: a literal `[`
+    ])
+    def test_matches_as_documented(self, pattern, value, allowed):
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")      # no pattern may lean on a regex quirk
+            assert self._allows(pattern, value) is allowed
+
+    @pytest.mark.parametrize("pattern, value, allowed", [
+        ("C:\\srv\\*", "c:/srv/a", True),       # either separator, any case — as fnmatch was there
+        ("C:\\srv\\*", "C:\\srv\\a\\b", False),
+        ("C:\\srv\\**", "C:\\srv\\a\\b", True),
+        ("C:\\srv\\*", "C:\\srv\\..\\Windows", False),
+    ])
+    def test_on_windows(self, monkeypatch, pattern, value, allowed):
+        monkeypatch.setattr("sys.platform", "win32")
+        assert self._allows(pattern, value) is allowed

@@ -101,8 +101,8 @@ If the agent tries something unauthorized:
 ```
 Agent sends: call_tool("git_commit", {"repo_path": "/home/user/projects/app", "message": "..."})
   → policy check fails: git_commit is not granted
-  → returns AUTHORIZATION_DENIED (-31001)
-  → agent receives error, does not retry
+  → returns AUTHORIZATION_DENIED: an error result saying the tool is not allowed
+  → agent receives it, does not retry
 ```
 
 Both outcomes are recorded. `holm log --status denied` shows the refusal above,

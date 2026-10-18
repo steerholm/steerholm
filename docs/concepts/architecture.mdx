@@ -114,7 +114,7 @@ sequenceDiagram
         Server-->>Daemon: Response
         Daemon-->>Agent: MCP response
     else ❌ Denied
-        Daemon-->>Agent: AUTHORIZATION_DENIED (-31001)
+        Daemon-->>Agent: Error result (AUTHORIZATION_DENIED)
     end
 ```
 
@@ -169,4 +169,4 @@ Servers are shared by all agents — the daemon runs one set of server processes
 | Authentication | Bearer access key → agent lookup (the key determines the agent) |
 | Authorization | Per-agent policy files, checked on every `call_tool` |
 | Default deny | No policy = no access |
-| Errors | `AUTHORIZATION_DENIED` (`-31001`), `SERVER_UNAVAILABLE` (`-31002`) |
+| Errors | `AUTHORIZATION_DENIED`, `SERVER_UNAVAILABLE` — see [Error codes](/concepts/error-codes) |

@@ -50,4 +50,4 @@ This keeps the admin CLI separate from agent access. Agents connect only to the 
 | `401` | Missing, malformed, or invalid Bearer token |
 | `404` | Unknown MCP session id |
 
-Authenticated policy denials are returned as MCP errors, not HTTP auth failures. Unauthorized tool calls return `AUTHORIZATION_DENIED` (`-31001`). Downstream server failures return `SERVER_UNAVAILABLE` (`-31002`).
+Authenticated policy denials are returned through MCP, not as HTTP auth failures. A refused tool call comes back as a tool result with `isError: true` and the reason as its text — a policy denial (`AUTHORIZATION_DENIED`) or a server that is down (`SERVER_UNAVAILABLE`). See [Error codes](/concepts/error-codes) for both forms.

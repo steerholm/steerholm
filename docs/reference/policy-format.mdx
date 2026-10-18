@@ -66,7 +66,7 @@ prints a server's id.
 
 <CardGroup cols={2}>
   <Card title="Glob" icon="asterisk" color="#10b981">
-    Shell-style wildcards. `*` matches within one level, `**` matches across levels. A pattern without wildcards is an exact match.
+    Shell-style wildcards. `*` and `?` match within one level, `**` matches across levels. A pattern without wildcards is an exact match. A value containing a `..` segment never matches, so a path pattern cannot be walked out of.
   </Card>
   <Card title="Regex" icon="code" color="#10b981">
     Full regular expression, matched from the start of the value. Use `re:` prefix in CLI.

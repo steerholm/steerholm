@@ -931,7 +931,7 @@ def grant(
     server: str,
     tool: str = typer.Option("*", help="Tool name or glob pattern (default: *)"),
     args: Optional[List[str]] = typer.Option(
-        None, help="Argument policies: 'arg=pattern' (glob) or 'arg=re:pattern' (regex)"
+        None, help="Argument policy: 'arg=pattern' (glob) or 'arg=re:pattern' (regex); repeat for more"
     ),
 ):
     """
@@ -940,7 +940,7 @@ def grant(
     Examples:
       holm grant my-agent filesystem
       holm grant my-agent filesystem --tool "read_*" --args "path=/home/user/**"
-      holm grant my-agent db --tool "query" --args "sql=re:^SELECT.*" "db=production"
+      holm grant my-agent db --tool "query" --args "sql=re:^SELECT.*" --args "db=production"
     """
     if agent not in config_manager.config.agents:
         console.print(f"[bold red]Error:[/bold red] Agent '{escape(agent)}' not found.")

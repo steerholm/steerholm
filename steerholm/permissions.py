@@ -1,5 +1,7 @@
 import re
+import sys
 from fnmatch import fnmatch
+from functools import lru_cache
 from typing import Dict, Any, Optional, List
 from .models import AgentPolicy, ToolPermission, ArgumentPolicy
 from .errors import authorization_denied
@@ -62,4 +64,79 @@ class PermissionEngine:
     def _match_policy(self, policy: ArgumentPolicy, value: str) -> bool:
         if policy.match_type == "regex":
             return bool(re.match(policy.pattern, value))
-        return fnmatch(value, policy.pattern)
+        return glob_matches(policy.pattern, value)
+
+
+_SEGMENT_SEPARATORS = re.compile(r"[/\\]")
+
+
+@lru_cache(maxsize=512)
+def _glob_regex(pattern: str, windows: bool) -> "re.Pattern[str]":
+    """`*` and `?` within one level, `**` across levels, `[...]` a class.
+
+    fnmatch was used here, and its `*` crosses `/`: `/srv/*` allowed
+    `/srv/a/b`, where the policy format promises one level.
+    """
+    sep = r"[/\\]" if windows else "/"
+    not_sep = r"[^/\\]" if windows else "[^/]"
+    out, i = [], 0
+    while i < len(pattern):
+        if pattern.startswith("**", i):
+            out.append(".*")
+            i += 2
+        elif pattern[i] == "*":
+            out.append(not_sep + "*")
+            i += 1
+        elif pattern[i] == "?":
+            out.append(not_sep)
+            i += 1
+        elif pattern[i] == "[" and _class_end(pattern, i) is not None:
+            end = _class_end(pattern, i)
+            body = pattern[i + 1:end]
+            negate = body.startswith("!")
+            if negate:
+                body = body[1:]
+            # Everything literal but range dashes — as fnmatch has it, `^` is not
+            # negation (`!` is) and `&&`/`~~`/`||` are not set operations.
+            chars = "".join(c if c == "-" else re.escape(c) for c in body)
+            # A negated class never matches a separator, or `[!a]` could step
+            # across a level the way `*` used to.
+            out.append(f"[^{chars}/\\\\]" if negate and windows
+                       else f"[^{chars}/]" if negate else f"[{chars}]")
+            i = end + 1
+        elif windows and pattern[i] in "/\\":
+            out.append(sep)
+            i += 1
+        else:
+            out.append(re.escape(pattern[i]))
+            i += 1
+    return re.compile("".join(out) + r"\Z", re.DOTALL | (re.IGNORECASE if windows else 0))
+
+
+def _class_end(pattern: str, start: int):
+    """Index of the `]` closing the class opened at `start`, or None.
+
+    As fnmatch reads it: a `]` right after `[` or `[!` is part of the class.
+    Unclosed, the `[` is a literal character.
+    """
+    j = start + 1
+    if j < len(pattern) and pattern[j] == "!":
+        j += 1
+    if j < len(pattern) and pattern[j] == "]":
+        j += 1
+    end = pattern.find("]", j)
+    return end if end != -1 else None
+
+
+def glob_matches(pattern: str, value: str) -> bool:
+    """Whether `value` satisfies a glob argument policy.
+
+    A value with a `..` segment never does, unless the pattern has one itself:
+    `/srv/../etc/passwd` matched `/srv/*` and `/srv/**` both, so a path policy
+    could be walked out of. On Windows, as fnmatch did there, `/` and `\\` are
+    the same separator and case is ignored.
+    """
+    windows = sys.platform == "win32"
+    if ".." in _SEGMENT_SEPARATORS.split(value) and ".." not in _SEGMENT_SEPARATORS.split(pattern):
+        return False
+    return bool(_glob_regex(pattern, windows).match(value))

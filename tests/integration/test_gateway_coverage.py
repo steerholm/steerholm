@@ -274,7 +274,8 @@ async def test_resolve_tool_server_logs_and_returns_none_on_error(config_manager
     proc.session = MagicMock()
     proc.list_tools = AsyncMock(side_effect=RuntimeError("boom"))
     gateway.daemon.shared_processes["srv"] = proc
-    assert await gateway._resolve_tool_server("agent", "t") is None
+    # Not found among the servers that answered — and the one that failed is named.
+    assert await gateway._resolve_tool_server("agent", "t") == (None, ["srv"])
 
 
 @pytest.mark.asyncio
@@ -284,7 +285,7 @@ async def test_call_tool_server_unavailable_when_no_process(config_manager, monk
     config_manager.add_agent("agent")
     config_manager.grant_permission("agent", "srv", tool="*")
     gateway = make_gateway(config_manager)
-    monkeypatch.setattr(gateway, "_resolve_tool_server", AsyncMock(return_value="srv"))
+    monkeypatch.setattr(gateway, "_resolve_tool_server", AsyncMock(return_value=("srv", [])))
     with pytest.raises(McpError):
         await gateway._call_tool_for_agent("agent", "t", {})
 
@@ -549,3 +550,45 @@ async def test_the_daemon_answers_while_its_servers_are_still_starting(config_ma
         with contextlib.suppress(asyncio.CancelledError, SystemExit):
             await serving
     assert cancelled == ["slow"]      # shutting down mid-start does not leave it behind
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("down", ["process died", "not running"])
+async def test_a_tool_on_a_server_that_is_down_is_unavailable_not_denied(config_manager, down):
+    # A call to a crashed server's tool reported "not found on any docked server"
+    # and was logged as a policy denial.
+    from mcp.shared.exceptions import McpError
+    from steerholm.errors import SERVER_UNAVAILABLE_CODE
+    config_manager.add_server("srv", command="echo")
+    config_manager.add_agent("agent")
+    config_manager.grant_permission("agent", "srv", tool="*")
+    gateway = make_gateway(config_manager)
+    if down == "process died":
+        proc = make_mock_process("srv", ["echo"])
+        proc.session = MagicMock()
+        proc.list_tools = AsyncMock(side_effect=BrokenPipeError("gone"))
+        gateway.daemon.shared_processes["srv"] = proc
+
+    with pytest.raises(McpError) as raised:
+        await gateway._call_tool_for_agent("agent", "echo", {})
+    assert raised.value.error.code == SERVER_UNAVAILABLE_CODE
+    event = gateway.event_log.recent()[-1]
+    assert (event.decision, event.server) == ("error", "srv")
+
+
+@pytest.mark.asyncio
+async def test_a_tool_no_answering_server_has_is_still_denied(config_manager):
+    from mcp.shared.exceptions import McpError
+    from steerholm.errors import AUTHORIZATION_DENIED_CODE
+    config_manager.add_server("srv", command="echo")
+    config_manager.add_agent("agent")
+    config_manager.grant_permission("agent", "srv", tool="*")
+    gateway = make_gateway(config_manager)
+    proc = make_mock_process("srv", ["echo"])
+    proc.session = MagicMock()
+    gateway.daemon.shared_processes["srv"] = proc
+
+    with pytest.raises(McpError) as raised:
+        await gateway._call_tool_for_agent("agent", "no-such-tool", {})
+    assert raised.value.error.code == AUTHORIZATION_DENIED_CODE
+    assert gateway.event_log.recent()[-1].decision == "denied"

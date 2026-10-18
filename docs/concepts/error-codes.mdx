@@ -1,20 +1,40 @@
 ---
 title: Error Codes
-description: Structured error codes returned by Steerholm.
+description: How Steerholm reports a refused or failed request to an agent.
 ---
 
-Steerholm returns structured JSON-RPC errors with codes outside the reserved JSON-RPC range.
-
-## Error codes
+Steerholm refuses or fails a request for one of two reasons:
 
 | Code | Name | Meaning |
 |------|------|---------|
-| `-31001` | `AUTHORIZATION_DENIED` | The operation violates the user's security policy |
-| `-31002` | `SERVER_UNAVAILABLE` | The target MCP server is not reachable |
+| `-31001` | `AUTHORIZATION_DENIED` | The request violates the agent's policy |
+| `-31002` | `SERVER_UNAVAILABLE` | The MCP server that would answer it is down or not reachable |
 
-## Response format
+## Tool calls
 
-Errors include an `error_type` field in the `data` payload:
+A refused or failed **tool call** comes back as a normal MCP tool result marked
+`isError: true`, with the reason as its text — the form MCP uses for errors the
+model should see. The code itself is not part of the result; the message says
+which case it is:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [
+      { "type": "text", "text": "Tool 'git_commit' on server 'git' is not allowed." }
+    ],
+    "isError": true
+  }
+}
+```
+
+## Other requests
+
+Any other request Steerholm refuses — for example listing tools for an agent
+that has no usable identity — returns a JSON-RPC error with the code, and the
+name in `data.error_type`:
 
 ```json
 {
@@ -22,10 +42,8 @@ Errors include an `error_type` field in the `data` payload:
   "id": 1,
   "error": {
     "code": -31001,
-    "message": "Tool 'git_commit' on server 'git' is not allowed.",
-    "data": {
-      "error_type": "AUTHORIZATION_DENIED"
-    }
+    "message": "Agent 'ci' has no usable identity; it cannot be granted access. Re-add the agent.",
+    "data": { "error_type": "AUTHORIZATION_DENIED" }
   }
 }
 ```
@@ -37,12 +55,17 @@ Errors include an `error_type` field in the `data` payload:
 Returned when:
 - The agent calls a tool not in its policy
 - The agent calls a tool with arguments that violate an argument policy
-- The agent calls a tool that doesn't exist on any server it has access to
+- The agent calls a tool that no server it has access to provides
 
 The agent **must not retry** the same operation — the denial is authoritative.
+Every denial is in the [audit log](/reference/audit-log) as `denied`, with the
+reason.
 
 ### SERVER_UNAVAILABLE
 
-Returned when the target MCP server process is not running or not reachable.
+Returned when the MCP server process is not running, has stopped answering, or
+cannot be reached — including when the tool is not found on the servers that did
+answer but a server the agent may use did not.
 
-The agent **may retry** — the server might become available later.
+The agent **may retry** — the daemon restarts failed servers, so the server may
+be back shortly. These are in the audit log as `error`, not `denied`.

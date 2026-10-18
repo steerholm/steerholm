@@ -201,7 +201,7 @@ additive — each `grant` adds a rule.
 Grant an agent access to a server's tools.
 
 ```bash
-holm grant <agent> <server> [--tool PATTERN] [--args POLICIES...]
+holm grant <agent> <server> [--tool PATTERN] [--args POLICY]...
 ```
 
 **Allow all tools on a server:**
@@ -228,16 +228,16 @@ holm grant my-agent git --tool "git_log" --args "repo_path=/home/user/projects/*
 holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*"
 ```
 
-**Multiple argument restrictions on one tool:**
+**Multiple argument restrictions on one tool** — repeat `--args`:
 
 ```bash
-holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*" "db=production"
+holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*" --args "db=production"
 ```
 
 | Option | Default | Description |
 |---|---|---|
 | `--tool` | `*` | Tool name or glob pattern |
-| `--args` | — | Argument policies: `arg=pattern` (glob) or `arg=re:pattern` (regex) |
+| `--args` | — | Argument policy: `arg=pattern` (glob) or `arg=re:pattern` (regex). Repeat for more than one. |
 
 A glob pattern without wildcards is an exact match. An argument policy applies
 only when the tool call actually provides that argument.

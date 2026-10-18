@@ -13,7 +13,7 @@ When an agent calls a tool, Steerholm checks three things in order:
 
 <Steps>
   <Step title="Tool lookup">
-    Steerholm resolves which server owns the requested tool. If the tool doesn't exist on any server the agent has access to → `AUTHORIZATION_DENIED`.
+    Steerholm resolves which server owns the requested tool. If the tool doesn't exist on any server the agent has access to → `AUTHORIZATION_DENIED`. If it isn't found but one of those servers didn't answer, that server may be the one with the tool → `SERVER_UNAVAILABLE`.
   </Step>
   <Step title="Tool check">
     Does any tool permission in the policy match the requested tool name? If not → `AUTHORIZATION_DENIED`.
@@ -56,7 +56,7 @@ holm grant my-agent git --tool "git_log" --args "repo_path=/home/user/projects/*
 holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*"
 
 # Multiple argument policies on one tool
-holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*" "db=production"
+holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*" --args "db=production"
 ```
 
 ## Grants and lifetime
