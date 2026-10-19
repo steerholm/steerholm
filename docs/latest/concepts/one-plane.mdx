@@ -1,0 +1,50 @@
+---
+title: One plane
+description: Where your agents act on your resources, and where you control what they do.
+---
+
+Your agents work on **one plane**: Steerholm. Your resources — files,
+repositories, databases, services — are connected to it. Your agents act on the
+plane; you control their actions on it, through policies. That is what *an action plane for your agents, a control
+plane for you* means — not two systems, but two faces of the same one.
+
+## Everything on one plane
+
+- **Resources** are connected to the plane by their MCP servers — small connector
+  programs that give agents tools for them. The plane runs those connections: it
+  starts the ones it launches and connects to remote ones, keeps them up, and
+  restarts one when you change it.
+- **Agents** join the plane: each is registered with an access key and the rules
+  you grant it. Whatever an agent does with your resources, it does on the plane,
+  and only as far as you granted.
+
+## The action face
+
+To an agent, the plane is where it acts. It joins with its access key at
+`http://127.0.0.1:4767/mcp`, sees the actions it is allowed — the tools of the
+resources it has been granted, and nothing else — and uses them.
+
+## The control face
+
+To you, the plane is where you control those actions. With `holm` you add agents
+and connect resources to it, and you grant each agent its rules: which actions, with which
+arguments (see [Permissions](/concepts/permissions)).
+
+Your rules apply on the same plane, to the same actions, at the moment they happen:
+
+- Every action is checked against the agent's rules before it reaches the
+  resource. Anything not granted is refused, with the reason.
+- A change to a rule applies to the agent's next action — there is nothing to
+  restart. (The list of tools an agent sees refreshes when it reconnects.)
+- Every action, allowed or refused, is recorded. Read it with `holm log` — see
+  the [audit log](/reference/audit-log).
+
+## Why one plane
+
+Control isn't a separate system watching from the side — it is part of the plane
+where the action happens. A grant is a governed connection between an agent and a
+resource on the plane: the agent's way to that resource and your rules for it are
+one and the same, so nothing reaches a resource around them.
+
+For how the plane carries a call from an agent to a resource's MCP server, see
+[Architecture](/concepts/architecture).

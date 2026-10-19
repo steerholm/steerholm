@@ -1,23 +1,30 @@
 ---
 title: holm CLI
-description: Control-plane commands for managing servers, agents, and access.
+description: Commands for controlling what your agents can reach and do.
 ---
 
-The `holm` CLI is your **[control plane](/concepts/control-plane)** — where you add
-agents and servers and govern what each agent can reach. Agents don't run it; they
-act on the action plane over the daemon's [MCP endpoint](/reference/mcp-endpoint).
+The `holm` CLI is how you control [the plane](/concepts/one-plane) — where you add
+agents and servers and set the rules for what each agent can reach. Agents don't
+run it; they act on the plane over the daemon's [MCP endpoint](/reference/mcp-endpoint).
 
 Commands read verb-first — `holm <verb> <resource> [name]`.
 
-The verbs are `add`, `remove`, `list`, `show`, `grant`, `revoke`, and `rotate`;
-the resources are `server` and `agent`. Daemon lifecycle (`start`, `stop`,
-`status`, `serve`) and `version` / `update` round out the surface.
+The verbs are `add`, `modify`, `remove`, `list`, `show`, `grant`, `revoke`, and
+`rotate`;
+the resources are `server` and `agent`. Alongside them: [`log`](#audit-log) reads
+what your agents did, daemon lifecycle is `start` / `stop` / `status` / `serve`,
+and `version` / `update` round out the surface.
 
 ## Servers
 
 Servers are the MCP servers you want agents to reach through Steerholm. Adding a
 server registers it with the daemon, which handles starting and stopping the
 server processes.
+
+`add`, `modify` and `remove server` return as soon as the daemon has the change
+and print what it is doing — `Daemon is starting: git` — while the daemon applies
+it in the background. `holm show server` shows when a server is up, or why it
+failed.
 
 ### holm add server
 
@@ -52,13 +59,64 @@ holm add server remote-api --url "http://localhost:8000/mcp"
   name is an error. Values may contain anything, including `=`.
 </Note>
 
+### holm modify server
+
+Change a server without removing it. Only what you name changes: `--env` merges
+into the existing variables and `--unset` removes them.
+
+```bash
+# Point it at a different command
+holm modify server git --command "uvx mcp-server-git --repository /srv/app"
+
+# Add one variable, drop another
+holm modify server db --env "DATABASE_URI=postgresql://..." --unset OLD_VAR
+
+# Switch it to a remote server
+holm modify server api --url "http://localhost:9000/mcp"
+```
+
+| Option | Description |
+|---|---|
+| `--command` | New launch command (stdio) |
+| `--url` | New server URL (streamable HTTP) |
+| `--env` | Set `KEY=VALUE` (repeatable; merges with what is there) |
+| `--unset` | Remove an environment variable by name (repeatable) |
+
+The server keeps its **id** and every agent's **grants** — that is what makes this
+different from removing and re-adding it, which would create a different server
+with no grants. The daemon restarts the server process with the new spec, so
+in-flight calls to it fail; agent sessions to Steerholm itself are unaffected.
+
+<Warning>
+  Because grants survive, repointing a server at a different command hands every
+  agent that was granted access to the old one the same access to the new one.
+  `holm modify server` names those agents so the transfer is never silent.
+</Warning>
+
+<Note>
+  Switching transport clears the state belonging to the old one: moving to
+  `--url` drops the launch command and its environment variables, and moving to
+  `--command` drops the URL. The command warns before it does so.
+</Note>
+
 ### holm remove server
 
-Remove a server from Steerholm.
+Remove a server from Steerholm, along with every agent's grants on it.
 
 ```bash
 holm remove server git
 ```
+
+Grants go with the server, the same way removing an agent takes its policy. A
+name can be reused, so a grant that outlived its server would silently apply to
+whatever is added under that name next. The command reports which agents lost
+grants.
+
+<Note>
+  To change a server's command, URL, or environment **without** losing its
+  grants, use [`holm modify server`](#holm-modify-server) instead of removing and
+  re-adding it.
+</Note>
 
 ### holm list servers
 
@@ -71,8 +129,9 @@ holm list servers
 
 ### holm show server
 
-Show a server's configuration, its live status, the tools it provides, and which
-agents have been granted access to it.
+Show a server's id and configuration, its live status, the tools it provides, and
+which agents have been granted access to it. The id is what `holm log --server`
+takes to isolate one server's history from a reused name.
 
 ```bash
 holm show server git
@@ -93,6 +152,13 @@ retrieved later — store it when it's printed.
 holm add agent my-agent
 ```
 
+<Note>
+  **Names** must be letters, digits, `_`, `-`, or `.`, and must start with a
+  letter or `_`. `agt_` and `srv_` are reserved prefixes — ids use them, and the
+  CLI accepts either a name or an id in places like `holm log --agent`, so a
+  name must never be confusable with one.
+</Note>
+
 ### holm list agents
 
 Show all agents and their access-key prefixes.
@@ -103,8 +169,9 @@ holm list agents
 
 ### holm show agent
 
-Show an agent: its access-key prefix, everything it can reach (server → tools →
-argument constraints), and how to connect it with its key.
+Show an agent: its id and access-key prefix, everything it can reach (server →
+tools → argument constraints), and how to connect it with its key. The id is what
+`holm log --agent` takes to isolate one agent's history from a reused name.
 
 ```bash
 holm show agent my-agent
@@ -122,7 +189,8 @@ holm rotate agent my-agent
 
 ### holm remove agent
 
-Remove an agent, its access key, and its policy. The key is revoked immediately.
+Remove an agent, its access key, and its policy — which takes every grant it
+held. The key is revoked immediately.
 
 ```bash
 holm remove agent my-agent
@@ -138,7 +206,7 @@ additive — each `grant` adds a rule.
 Grant an agent access to a server's tools.
 
 ```bash
-holm grant <agent> <server> [--tool PATTERN] [--args POLICIES...]
+holm grant <agent> <server> [--tool PATTERN] [--args POLICY]...
 ```
 
 **Allow all tools on a server:**
@@ -165,19 +233,26 @@ holm grant my-agent git --tool "git_log" --args "repo_path=/home/user/projects/*
 holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*"
 ```
 
-**Multiple argument restrictions on one tool:**
+**Multiple argument restrictions on one tool** — repeat `--args`:
 
 ```bash
-holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*" "db=production"
+holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*" --args "db=production"
 ```
 
 | Option | Default | Description |
 |---|---|---|
 | `--tool` | `*` | Tool name or glob pattern |
-| `--args` | — | Argument policies: `arg=pattern` (glob) or `arg=re:pattern` (regex) |
+| `--args` | — | Argument policy: `arg=pattern` (glob) or `arg=re:pattern` (regex). Repeat for more than one. |
 
-A glob pattern without wildcards is an exact match. An argument policy applies
-only when the tool call actually provides that argument.
+In a glob, `*` and `?` match within one path level and `**` across levels, and a
+value with a `..` segment never matches unless the pattern contains `..`; a
+pattern without wildcards is an exact match. An argument policy applies only when the tool call actually provides that
+argument. See [Policy format](/reference/policy-format#match-types).
+
+The server must already be added — a grant records the agent's and server's
+**ids**, not their names, so there is nothing to point at otherwise. That is also
+why a grant survives `holm rotate` and `holm modify server` but not
+`holm remove`.
 
 ### holm revoke
 
@@ -198,6 +273,81 @@ holm revoke my-agent git
 |---|---|---|
 | `--tool` | — | Revoke only this tool grant; omit to revoke all access to the server |
 
+## Audit log
+
+Steerholm records every tool call an agent makes through it — which agent, which
+server, which tool, and whether policy allowed it, denied it, or the server
+failed. See [Audit log](/reference/audit-log) for the record format and where it
+is stored.
+
+### holm log
+
+Show recorded decisions. Reads the files directly, so it works with the daemon
+stopped.
+
+```bash
+holm log                                    # the 50 most recent calls
+holm log --status denied                    # only what was refused
+holm log --server git --agent coding-agent  # one agent, on one server
+holm log --follow                           # watch calls as they happen
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--number`, `-n` | `50` | Show the most recent N entries (`0` for all) |
+| `--agent` | — | Only this agent, by name **or** id |
+| `--server` | — | Only this server, by name **or** id |
+| `--status` | — | Only this outcome: `allowed`, `denied`, or `error` |
+| `--follow`, `-f` | — | Keep printing entries as they are recorded (Ctrl-C to stop) |
+
+Filters combine, so `--server git --status denied` shows what was refused on one
+server. With `--follow`, recent history prints first and then new decisions
+appear as they happen.
+
+<Note>
+  Names are reusable: removing and re-adding an agent or a server gives a
+  different one the same name, so a name filter can span both. `--agent` and
+  `--server` also accept the immutable id that `holm show agent` / `holm show
+  server` print, which isolates one of them — and `holm log` says so when a name
+  covers more than one.
+</Note>
+
+### holm log config
+
+Show how much history the log keeps, and where it lives. Read-only.
+
+```bash
+holm log config
+```
+
+```
+Audit log
+  Files:         ~/.steerholm/events-*.jsonl
+  Max files:     5
+  Max age:       unlimited
+  Disk ceiling:  50 MB (10 MB per file)
+```
+
+### holm log set
+
+Change how much history the log keeps. Both limits apply — a log file is removed
+once it is past the file count **or** older than the age limit.
+
+```bash
+holm log set --max-age-days 30    # keep a month of history
+holm log set --max-files 20       # allow more history on disk
+holm log set --max-age-days 0     # no age limit (the file count still applies)
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--max-files` | `5` | How many log files to keep (`0` = no limit) |
+| `--max-age-days` | `0` | Delete log files older than this (`0` = no limit) |
+
+Changes take effect on a running daemon without a restart. Segment size is fixed
+at 10 MB and is not configurable — changing it would leave existing files at the
+old size.
+
 ## Daemon
 
 The daemon is the long-running process that exposes the Streamable HTTP MCP
@@ -216,7 +366,8 @@ holm start
 
 ### holm stop
 
-Stop the daemon. All active agent sessions are disconnected.
+Stop the daemon and the MCP servers it started. All active agent sessions are
+disconnected.
 
 ```bash
 holm stop
@@ -265,8 +416,10 @@ holm version
 ### holm update
 
 Update Steerholm in place from a GitHub release (the latest by default). It
-downloads the release for your platform, verifies it against the published
-checksums, and runs the official install script.
+downloads the release's install script, verifies it against the published
+checksums, and runs it — which installs the new binary, brings your stored data up
+to the new version's format, and restarts the daemon. Pre-releases are never
+installed unless you name one with `--tag`.
 
 ```bash
 holm update               # install the latest release

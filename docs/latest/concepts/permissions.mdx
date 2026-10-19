@@ -13,7 +13,7 @@ When an agent calls a tool, Steerholm checks three things in order:
 
 <Steps>
   <Step title="Tool lookup">
-    Steerholm resolves which server owns the requested tool. If the tool doesn't exist on any server the agent has access to → `AUTHORIZATION_DENIED`.
+    Steerholm resolves which server owns the requested tool. If the tool doesn't exist on any server the agent has access to → `AUTHORIZATION_DENIED`. If it isn't found but one of those servers didn't answer, that server may be the one with the tool → `SERVER_UNAVAILABLE`.
   </Step>
   <Step title="Tool check">
     Does any tool permission in the policy match the requested tool name? If not → `AUTHORIZATION_DENIED`.
@@ -24,6 +24,9 @@ When an agent calls a tool, Steerholm checks three things in order:
 </Steps>
 
 If all checks pass, the request is forwarded to the MCP server.
+
+Every one of these decisions is recorded — allowed and denied alike — in the
+[audit log](/reference/audit-log), readable with `holm log`.
 
 ## Tool filtering
 
@@ -38,9 +41,12 @@ Argument policies restrict the values of specific tool arguments. Two match type
 | **Glob** (default) | `arg=pattern` | `repo_path=/home/user/**` |
 | **Regex** | `arg=re:pattern` | `sql=re:^SELECT\s.*` |
 
-A glob pattern without wildcards is an exact match — `mode=readonly` matches only `"readonly"`.
+In a glob, `*` and `?` match within one path level and `**` matches across levels: `/home/user/*` allows `/home/user/a` but not `/home/user/a/b`. A value with a `..` segment never matches a glob unless the pattern contains `..` itself, so a path pattern cannot be walked out of. A glob pattern without wildcards is an exact match — `mode=readonly` matches only `"readonly"`.
 
 ### CLI examples
+
+Each example assumes the server is already added — a grant records the server's
+id, so `holm add server` has to come first.
 
 ```bash
 # Glob: allow git_log only for repos under /home/user/projects
@@ -50,16 +56,27 @@ holm grant my-agent git --tool "git_log" --args "repo_path=/home/user/projects/*
 holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*"
 
 # Multiple argument policies on one tool
-holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*" "db=production"
+holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*" --args "db=production"
 ```
+
+## Grants and lifetime
+
+A grant ties one agent to one server, and it lives only as long as both sides do.
+Removing an agent deletes its policy; removing a server revokes every grant on
+it. Names are reusable, so a grant that outlived either side would silently
+attach to whatever took the name next.
+
+To change a server without losing its grants, modify it in place
+(`holm modify server`) rather than removing and re-adding it.
 
 ## Agents
 
 Agents are created with `holm add agent <name>`. Each gets:
 
-- A **name** (stored in `config.json`)
+- A **name** (stored in `config.json`) — reusable once an agent is removed
+- An immutable **id**, minted at creation and kept across key rotation
 - A **key prefix** for display (stored in `config.json`)
-- A **bcrypt-hashed access key** (stored in system keyring — never in config files)
+- A **bcrypt-hashed access key** (stored in `config.json`) — the raw key is shown once at creation and never stored
 
 The agent authenticates by sending the access key as `Authorization: Bearer <key>` to the daemon's Streamable HTTP MCP endpoint. The daemon resolves the agent by checking the access key against all stored hashes.
 

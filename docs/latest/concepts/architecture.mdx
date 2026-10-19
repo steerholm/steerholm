@@ -1,13 +1,13 @@
 ---
 title: Architecture
-description: How Steerholm sits between agents and servers and enforces policy.
+description: How the plane carries an agent's action to a resource, and enforces your policy on it.
 ---
 
 ## Overview
 
-Steerholm is two planes over one boundary: agents act on the action plane, you govern from the control plane. Every action an agent takes flows through the daemon, which authenticates the agent and checks it against your policy before it reaches a server — so an agent can only ever do what you granted.
+Steerholm is one plane: your agents work on it, your resources are connected to it, and you control the agents' actions on it through policies. Every action an agent takes flows through the daemon, which authenticates the agent and checks it against your policy before it reaches a server — so an agent can only ever do what you granted.
 
-This page is the technical view of [the control plane](/concepts/control-plane): how a grant becomes a governed connection, and how the boundary is enforced on every request.
+This page is the technical view of [that plane](/concepts/one-plane): how a grant becomes a governed connection, and how the boundary is enforced on every request.
 
 ## System diagram
 
@@ -26,7 +26,7 @@ This page is the technical view of [the control plane](/concepts/control-plane):
     <span style={{ color: 'var(--arch-indigo-label, #818cf8)', fontSize: '12px', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Agents</span>
   </div>
   <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginBottom: '14px' }}>
-    {['VS Code', 'Claude Code', 'Cursor', 'OpenCode'].map((name) => (
+    {['coding-agent', 'review-agent', 'ci-agent', 'ops-agent'].map((name) => (
       <div key={name} style={{ background: 'var(--arch-node-bg, #1a1a2e)', border: '1px solid var(--arch-node-border, #4a4dae)', borderRadius: '8px', padding: '8px 16px', textAlign: 'center' }}>
         <span style={{ fontWeight: 600, color: 'var(--arch-node-ink, #c7d2fe)', fontSize: '14px' }}>{name}</span>
       </div>
@@ -114,18 +114,18 @@ sequenceDiagram
         Server-->>Daemon: Response
         Daemon-->>Agent: MCP response
     else ❌ Denied
-        Daemon-->>Agent: AUTHORIZATION_DENIED (-31001)
+        Daemon-->>Agent: Error result (AUTHORIZATION_DENIED)
     end
 ```
 
 ## Entry points
 
 <CardGroup cols={2}>
-  <Card title="holm — control plane" icon="terminal" color="#10b981">
-    Your governance surface. Manage servers, agents, policies, and the daemon — this is where you control what every agent can do.
+  <Card title="/mcp — where agents act" icon="globe" color="#10b981">
+    The plane's action face: agents connect here over Streamable HTTP with a Bearer token to act. Requires authentication and has no admin commands.
   </Card>
-  <Card title="/mcp — action plane" icon="globe" color="#10b981">
-    The agents' surface: they connect here over Streamable HTTP with a Bearer token to act. Requires authentication and has no admin commands.
+  <Card title="holm — how you control it" icon="terminal" color="#10b981">
+    The plane's control face: add servers and agents, set their policies, and run the daemon — this is where you control what every agent can do.
   </Card>
 </CardGroup>
 
@@ -154,7 +154,7 @@ Servers are shared by all agents — the daemon runs one set of server processes
     The agent sends `Authorization: Bearer steer_sk_...`. The daemon resolves the agent by checking the access key against stored hashes. The access key determines the agent — it cannot be self-declared.
   </Step>
   <Step title="Request authorized">
-    The shared MCP server resolves the agent's policy and filters or routes tools through daemon-managed servers.
+    The daemon resolves the agent's policy, shows the agent only the tools it was granted, and routes each call to the MCP server that provides it.
   </Step>
   <Step title="MCP traffic flows">
     Standard MCP traffic flows through Steerholm. Every `call_tool` is checked against the policy before forwarding.
@@ -169,4 +169,4 @@ Servers are shared by all agents — the daemon runs one set of server processes
 | Authentication | Bearer access key → agent lookup (the key determines the agent) |
 | Authorization | Per-agent policy files, checked on every `call_tool` |
 | Default deny | No policy = no access |
-| Errors | `AUTHORIZATION_DENIED` (`-31001`), `SERVER_UNAVAILABLE` (`-31002`) |
+| Errors | `AUTHORIZATION_DENIED`, `SERVER_UNAVAILABLE` — see [Error codes](/concepts/error-codes) |

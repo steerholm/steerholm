@@ -60,3 +60,14 @@ alongside the server's live status and tools:
 ```bash
 holm show server git
 ```
+
+## See what an agent did
+
+Every call an agent makes is recorded, with whether it was allowed and why:
+
+```bash
+holm log --agent my-agent                  # its recent calls
+holm log --agent my-agent --status denied  # only what was refused
+```
+
+See the [audit log](/reference/audit-log) for the record format.

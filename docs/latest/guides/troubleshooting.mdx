@@ -10,6 +10,7 @@ tell you the most:
 holm status                 # is the daemon running?
 holm show server <name>     # is the server running, and what tools does it expose?
 holm show agent <name>      # what is this agent actually allowed to do?
+holm log --status denied    # what did an agent try that was refused, and why?
 ```
 
 ## My tool connects but shows no tools
@@ -23,15 +24,19 @@ This is the most common first-run issue. Work through it in order:
     with `holm grant <agent> <server>`.
   </Step>
   <Step title="Check the server is running">
-    Run `holm show server <name>`. If the status is **stopped** or the daemon
-    is down, start it with `holm start` (or `holm status` to check). Adding
-    a server tells a running daemon to start it automatically, so if it isn't
-    running, the daemon is probably down.
+    Run `holm show server <name>`. **starting** means it is still coming up —
+    give it a moment, longer the first time an `npx` or `uvx` server downloads
+    its package. If the status is **stopped** or the daemon is down, start it
+    with `holm start` (or `holm status` to check). Adding a server tells a
+    running daemon to start it automatically, so if it isn't running, the
+    daemon is probably down.
   </Step>
   <Step title="Check the server didn't fail to start">
     If `holm show server <name>` reports **failed**, it prints the error —
-    usually a bad `--command` (wrong path, missing `npx`, etc.). Fix the command:
-    `holm remove server <name>` then `holm add server <name> --command "..."`.
+    usually a bad `--command` (wrong path, missing `npx`, etc.). Fix it in
+    place, which keeps the server's grants:
+    `holm modify server <name> --command "..."`. Removing and re-adding it
+    would create a new server with no grants.
   </Step>
   <Step title="Reconnect the tool">
     Some tools only fetch the tool list when they first connect. If you granted access
@@ -51,6 +56,53 @@ The Bearer token is missing, malformed, or not a valid access key.
   tool with the new key.
 - If you **removed and re-created** the agent, its old key is dead even if the
   name is the same.
+- If you upgraded from a version that kept key hashes in the OS keyring and the
+  keyring could not be read at the time, the agent has no hash to check against
+  and the daemon log says so (`journalctl --user -u steerholm` on Linux,
+  `daemon.log` in the config directory on macOS and Windows). Issue a fresh key
+  with `holm rotate agent <name>` and update the tool with it — the upgrade has already run, so it will not
+  look in the keyring again.
+
+## Steerholm refuses to run: "is schema vN; this build of Steerholm expects vM"
+
+The stored data was written by a different version than the one installed.
+Reinstalling runs the upgrade for you:
+
+<CodeGroup>
+
+```bash Linux / macOS
+curl -fsSL https://steerholm.ai/install.sh | bash
+```
+
+```powershell Windows
+irm https://steerholm.ai/install.ps1 | iex
+```
+
+</CodeGroup>
+
+Steerholm refuses rather than guessing, because reading an older layout with a
+newer build would look like every agent having no grants at all. Your data is
+untouched; nothing is migrated until it can be done completely.
+
+## "config.json cannot be loaded"
+
+The file exists but Steerholm cannot read it. The message says why:
+
+- **`<key>: Extra inputs are not permitted`** — a key Steerholm does not
+  recognise, usually a typo from editing the file by hand.
+- **A JSON error** such as *Unterminated string* — the file was cut off, most
+  often by a full disk while it was being written.
+
+Steerholm refuses to carry on rather than start from an empty configuration in
+its place. Nothing is written to the file while it is in this state, so fixing
+it restores everything as it was. `holm version`, `holm status`, `holm stop`,
+`holm update` and `holm migrate` still run; commands that read or change the
+configuration do not.
+A running daemon denies every request and leaves its servers running until the
+file loads again.
+
+Fix the file, or move it aside to start fresh. Prefer the CLI over editing it
+directly.
 
 ## The daemon isn't running
 
@@ -59,10 +111,17 @@ holm status
 holm start
 ```
 
-The daemon runs as a per-user service that starts at login. On a **headless or
-SSH-only** box where you never log in graphically, it may not start on its own —
-run `holm start`, or run it in the foreground for debugging with
-`holm serve` (logs go to stderr).
+The daemon runs as a per-user service that starts at login. To debug it, run it
+in the foreground with `holm serve` (logs go to stderr).
+
+On a machine you only reach **over SSH**:
+
+- **Linux**: it runs while you are logged in and stops when your last session
+  ends. To keep it running — and start it at boot — enable lingering once:
+  `loginctl enable-linger $USER`.
+- **Windows**: it runs only in a signed-in desktop session (the console, Remote
+  Desktop or VNC), not from an SSH session — sign in once, then disconnect
+  rather than sign out.
 
 ## Port already in use
 
@@ -70,16 +129,37 @@ If `holm serve` reports the port is taken, another Steerholm instance (or some
 other process) is on `127.0.0.1:4767`. Stop the other one, or bind a different
 port with `holm serve --port <port>` (and point the agent at the new port).
 
-## "Server 'X' is not currently added" when granting
+## "Server 'X' not found" when granting
 
-`holm grant` warns when the server name isn't registered yet. Grants are
-allowed to reference a not-yet-added server, but usually this means a typo or a
-missing `holm add server`. Check `holm list servers`.
+A grant records the server's immutable id, so the server has to be added before
+it can be granted. Usually this is a typo or a missing `holm add server` — check
+`holm list servers`, then grant.
 
-## A tool call returns SERVER_UNAVAILABLE (-31002)
+## A tool call is denied (AUTHORIZATION_DENIED)
 
-The downstream MCP server crashed or is unreachable. Check
-`holm show server <name>` for a **failed** state and its error, then fix the
-command and re-add it. The daemon also retries failed servers periodically, so a
-transient failure may clear on its own. See [Error codes](/concepts/error-codes)
-for the full list.
+The policy refused the call. The [audit log](/reference/audit-log) records why:
+
+```bash
+holm log --status denied --agent <name>
+```
+
+The **Reason** column names the failing check — the tool isn't granted, the
+server isn't granted, or an argument didn't satisfy its policy (it prints the
+argument and the value). Fix it with a matching `holm grant`, then reconnect the
+tool so it re-lists.
+
+```bash
+holm log --follow --status denied    # watch refusals as they happen
+```
+
+## A tool call says a server is not reachable (SERVER_UNAVAILABLE)
+
+The downstream MCP server crashed or is unreachable — including a tool that was
+not found on the servers that answered while one the agent may use did not. Check
+`holm show server <name>` for a **failed** state and its error, then fix it with
+`holm modify server <name>` (removing and re-adding it would drop its grants).
+The daemon also retries failed servers periodically, so a
+transient failure may clear on its own. These show up in the audit log as
+`error` rather than `denied` (`holm log --status error`), which is how you tell
+"the server broke" from "policy refused it". See
+[Error codes](/concepts/error-codes) for the full list.

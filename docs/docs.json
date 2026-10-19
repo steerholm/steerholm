@@ -64,7 +64,7 @@
           {
             "group": "Concepts",
             "pages": [
-              "latest/concepts/control-plane",
+              "latest/concepts/one-plane",
               "latest/concepts/architecture",
               "latest/concepts/permissions",
               "latest/concepts/error-codes"
@@ -75,6 +75,7 @@
             "pages": [
               "latest/reference/cli",
               "latest/reference/mcp-endpoint",
+              "latest/reference/audit-log",
               "latest/reference/configuration",
               "latest/reference/policy-format"
             ]

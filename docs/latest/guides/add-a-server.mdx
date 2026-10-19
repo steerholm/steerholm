@@ -3,10 +3,11 @@ title: Add a server
 description: Register an MCP server with Steerholm and confirm it's running.
 ---
 
-A server is any MCP server you want your agents to reach — a git server, a
-filesystem server, a database, an internal HTTP service. You register it with
-Steerholm once; from then on it lives on the plane, and you decide which agents may
-reach it by [granting access](/guides/managing-access).
+An MCP server is how a resource is connected to the plane: the git MCP server for
+your repositories, the filesystem MCP server for a folder, a database MCP server
+for a database, or an internal service's own MCP endpoint. You add it to Steerholm
+once; from then on you decide which agents may reach that resource, and on what
+rules, by [granting access](/guides/managing-access).
 
 <Note>
   Registering a server exposes nothing on its own. No agent can reach it until you
@@ -20,7 +21,7 @@ command, and **remote** servers it connects to over HTTP. Give `--command` for o
 or `--url` for the other — the type is inferred.
 
 ```bash
-# Stdio — Steerholm launches and supervises the process
+# Stdio — Steerholm launches the process
 holm add server git --command "uvx mcp-server-git"
 
 # Remote — Steerholm connects to an already-running HTTP server
@@ -48,27 +49,42 @@ holm list servers
 holm show server git
 ```
 
-A healthy stdio server shows `running` with a tool count. If it never comes up, see
+A healthy stdio server shows `running` with a tool count. Right after you add or
+change it, or after the daemon starts, it shows `starting` for a few seconds —
+longer the first time an `npx` or `uvx` server downloads its package. If it
+never comes up, see
 [Troubleshooting](/guides/troubleshooting).
 
 ## Add more than one
 
-Every server you add lives on the same plane — add as many as you need:
+Connect as many resources as you need:
 
 ```bash
 holm add server filesystem --command "npx -y @modelcontextprotocol/server-filesystem ~/docs"
 holm add server internal-api --url "http://localhost:9000/mcp"
 ```
 
-An agent connects to Steerholm in one place and sees only the tools its policy
-allows, across every server it's been granted. Wiring those grants is covered in
-[Managing access](/guides/managing-access).
+An agent sees only the tools its grants allow, on each server it has been granted.
+Setting those rules is covered in [Managing access](/guides/managing-access).
+
+## Change a server
+
+Change a server's command, URL, or environment in place. It keeps its id and every
+agent's grants, and the daemon restarts it with the new settings:
+
+```bash
+holm modify server git --command "uvx mcp-server-git --repository /srv/app"
+holm modify server db --env "DATABASE_URI=postgresql://..." --unset OLD_VAR
+```
 
 ## Remove a server
 
-Removes the server from Steerholm and stops its process (for stdio servers). Agents
-can no longer reach it:
+Removes the server from Steerholm, stops its process (for stdio servers), and
+revokes every agent's grants on it — the command names the agents affected:
 
 ```bash
 holm remove server git
 ```
+
+Adding a server again under the same name creates a new server with no grants. To
+change a server without losing them, use `holm modify server` instead.

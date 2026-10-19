@@ -3,15 +3,22 @@ title: Policy Format
 description: JSON schema for per-agent security policies.
 ---
 
-Policy files live at `policies/<agent_name>.json` inside the config directory.
+Policy files live at `policies/<agent_id>.json` inside the config directory.
+
+Both the filename and the keys inside are **ids**, not names. A name can be
+reused — remove an agent or a server, add another with the same name, and it is
+a different principal. Keying on the immutable id means a grant cannot survive
+the thing it was written for and reattach to whatever takes the name next. Read
+grants back in name form with `holm show agent <name>`; `holm show server <name>`
+prints a server's id.
 
 ## Example
 
 ```json
 {
-  "agent_name": "coding-agent",
+  "agent_id": "agt_4f2a9c1b7d3e5a80",
   "permissions": {
-    "git": [
+    "srv_9b1c4e77a205f3d6": [
       {
         "name": "git_log",
         "policies": [
@@ -26,18 +33,6 @@ Policy files live at `policies/<agent_name>.json` inside the config directory.
         "name": "git_diff",
         "policies": []
       }
-    ],
-    "database": [
-      {
-        "name": "query",
-        "policies": [
-          {
-            "arg_name": "sql",
-            "match_type": "regex",
-            "pattern": "^SELECT\\s.*"
-          }
-        ]
-      }
     ]
   }
 }
@@ -49,8 +44,8 @@ Policy files live at `policies/<agent_name>.json` inside the config directory.
 
 | Field | Type | Description |
 |---|---|---|
-| `agent_name` | `string` | Must match the agent name |
-| `permissions` | `object` | Map of server name → list of tool permissions |
+| `agent_id` | `string` | The agent's immutable id (`agt_…`) |
+| `permissions` | `object` | Map of server id (`srv_…`) → list of tool permissions |
 
 ### ToolPermission
 
@@ -71,9 +66,70 @@ Policy files live at `policies/<agent_name>.json` inside the config directory.
 
 <CardGroup cols={2}>
   <Card title="Glob" icon="asterisk" color="#10b981">
-    Shell-style wildcards. `*` matches within one level, `**` matches across levels. A pattern without wildcards is an exact match.
+    Shell-style wildcards. `*` and `?` match within one level, `**` matches across levels. A pattern without wildcards is an exact match. A value containing a `..` segment never matches unless the pattern contains `..` itself, so a path pattern cannot be walked out of.
   </Card>
   <Card title="Regex" icon="code" color="#10b981">
     Full regular expression, matched from the start of the value. Use `re:` prefix in CLI.
   </Card>
 </CardGroup>
+
+## Lifecycle
+
+A grant links two ids, so it lives and dies with both ends:
+
+- Removing an agent deletes its policy file.
+- Removing a server revokes every grant on it; `holm remove server` names the
+  agents it affected.
+- `holm modify server` changes a server in place and keeps its id, so grants
+  survive the edit.
+- `holm rotate` issues a new access key but keeps the agent's id, so grants
+  survive rotation.
+
+Granting on a server that has not been added is an error — there is no id to
+point at. Add the server first.
+
+## Upgrading from an older Steerholm
+
+Policies written before this format were keyed by name — `policies/<agent
+name>.json`, with server names as the permission keys. The installer migrates
+them: it stops the daemon, replaces the binary, brings the state up to the
+current schema, and starts the daemon again.
+
+The state directory records the schema it is in, at `migrations/version`.
+Steerholm refuses to run against a schema it does not understand rather than
+risk misreading it — an unmigrated policy would read as the agent having no
+grants at all.
+
+The state as it was before the migration is kept inside the config directory as
+`.pre-migration`. It holds a copy of `config.json`, including any `--env`
+values, which is why it lives there rather than beside the config directory: it
+inherits the same owner-only permissions and moves with your state. There is
+only ever one, and you do not have to clean it up — the next migration replaces
+it rather than adding to it.
+
+The migration also tidies what can no longer apply. A policy file for an agent
+that is not in `config.json` any more — or whose file and contents name different
+agents — is moved to `policies/unmigrated/` rather than guessed at, and grants on
+servers that no longer exist are dropped; both are logged.
+
+It is there so you can **see** what a migration did. If grants look wrong
+afterwards, comparing `.pre-migration/policies/` against `policies/` shows
+exactly what changed, and that comparison is the most useful thing to attach to
+a bug report.
+
+<Warning>
+  It is not a way to go back. There are no reverse migrations, and copying the
+  directory back over your config does not produce a working state: the schema
+  marker would still read the new version over old data, every agent would
+  resolve to no grants, and `holm migrate` would report the state as already
+  current.
+
+  Nor would a complete revert be coherent. The audit log is not part of the
+  snapshot and cannot be — it is append-only history. Its entries identify
+  agents and servers by the immutable ids that the migration introduced, so a
+  reverted config would no longer be able to resolve anything the log recorded
+  after the migration.
+
+  If a migration gets something wrong, report it with the comparison above. It
+  will be fixed forward, in a new migration.
+</Warning>

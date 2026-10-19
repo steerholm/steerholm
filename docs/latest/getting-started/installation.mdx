@@ -3,8 +3,8 @@ title: Installation
 description: Install Steerholm and start the daemon.
 ---
 
-Steerholm is one CLI and one daemon: the `holm` CLI is your control plane, and the
-daemon is the local endpoint your agents connect to. Installing sets up both and
+Steerholm is one daemon and one CLI: the daemon is the plane your agents connect to
+and act on, and the `holm` CLI is how you control it. Installing sets up both and
 starts the daemon running as you.
 
 ## One-line install
@@ -23,7 +23,7 @@ irm https://steerholm.ai/install.ps1 | iex
 
 </CodeGroup>
 
-This installs the `holm` control-plane CLI and starts the daemon's HTTP MCP endpoint at `http://127.0.0.1:4767/mcp`.
+This installs the `holm` CLI and starts the daemon's HTTP MCP endpoint at `http://127.0.0.1:4767/mcp`.
 
 ## What the install script does
 
@@ -35,7 +35,8 @@ This installs the `holm` control-plane CLI and starts the daemon's HTTP MCP endp
    - **Windows**: a logon Scheduled Task
 4. Starts the daemon on `http://127.0.0.1:4767/mcp`
 
-The daemon starts at login and restarts on crash.
+The daemon starts at login. On Linux and macOS it also restarts if it crashes; on
+Windows, a crashed daemon stays down until your next sign-in or `holm start`.
 
 You can also download binaries manually from the [GitHub Releases](https://github.com/steerholm/steerholm/releases) page.
 
@@ -45,7 +46,7 @@ You can also download binaries manually from the [GitHub Releases](https://githu
 holm status
 ```
 
-You should see the daemon `running` on `http://127.0.0.1:4767/mcp`.
+You should see `Daemon is running.` Its endpoint is `http://127.0.0.1:4767/mcp`.
 
 ## Upgrade
 
@@ -55,7 +56,19 @@ Update to the latest release in place:
 holm update
 ```
 
+It downloads the new release's installer, verifies it, and runs it: the daemon is
+stopped, the binary replaced, your stored data brought up to the new version's
+format, and the daemon started again. Servers, agents, keys and grants carry over.
+
 Use `holm update --check` to see whether a newer version is available without installing, and `holm version` to print the installed version. See the [CLI reference](/reference/cli) for all options.
+
+<Note>
+  Updating **from 0.1.0 or 0.1.1** on Linux or macOS ends with `Terminated`
+  (exit code 143) right after `Updated Steerholm to …`. That is the installer
+  ending the previous version's updater once the new version is in place, so
+  that none of the old program runs on; the update has succeeded. `holm version`
+  shows the new version.
+</Note>
 
 ## Uninstall
 
@@ -84,6 +97,19 @@ uv pip install -e ".[dev]"
 ```
 
 This installs in editable mode — changes to the source take effect immediately.
+
+<Note>
+  A source install never runs the installer, so it never runs the schema
+  migration the installer performs. If Steerholm refuses to start because the
+  state on disk is an older schema, bring it up to date with:
+
+  ```bash
+  holm migrate
+  ```
+
+  It is hidden from `holm --help` deliberately — for a normal install the
+  installer runs it, and nobody should have to think about it.
+</Note>
 
 ```bash
 # Run tests
