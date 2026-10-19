@@ -365,7 +365,7 @@ class ConfigManager:
     # --- Server Management ---
     def add_server(self, name: str, command: str = None, url: str = None,
                    env: dict = None) -> Server:
-        """Dock a server. Provide command (stdio) or url (http), not both."""
+        """Add a server. Provide command (stdio) or url (http), not both."""
         validate_entity_name("Server", name)
         if name in self.config.servers:
             raise ValueError(f"Server '{name}' already exists.")

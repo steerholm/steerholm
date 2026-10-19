@@ -12,7 +12,7 @@ from .models import ServerType
 from .updater import UpdateError, run_update_installer, update_binary
 
 app = typer.Typer(
-    help="Steerholm — the control plane for your MCP servers and agents.",
+    help="Steerholm — an action plane for your agents, a control plane for you.",
     no_args_is_help=True,
 )
 console = Console()
@@ -261,7 +261,7 @@ def add_server(
     ),
 ):
     """
-    Add an MCP server behind Steerholm.
+    Connect a resource to Steerholm through its MCP server.
 
     Provide --command for stdio servers or --url for HTTP servers (not both).
     Pass config/secrets to a stdio server with --env (repeatable).

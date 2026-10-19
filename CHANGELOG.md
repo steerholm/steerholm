@@ -13,6 +13,7 @@ tagging it. At tag time, rename `[Unreleased]` to the version and date.
 ### Changed
 
 - Documentation updates and alignment.
+- Old notation cleanup.
 
 ## [0.1.2-rc.4] - 2026-10-19
 

@@ -155,7 +155,7 @@ class TestControlPlane:
                 "/control/servers", headers={"Authorization": f"Bearer {token}"}
             )
         assert resp.status_code == 200
-        # Docked but not started in this gateway → reported as stopped.
+        # Added but not started in this gateway → reported as stopped.
         assert resp.json()["srv"]["state"] == "stopped"
 
     def test_control_token_isolated_from_agent_keyring(self, config_manager):

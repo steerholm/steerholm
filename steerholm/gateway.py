@@ -303,7 +303,7 @@ class SteerholmGateway:
                           f"{server_name} did not answer.")
                 raise server_unavailable(server_name)
             if not server_name:
-                reason = f"Tool '{name}' not found on any docked server."
+                reason = f"Tool '{name}' not found on any added server."
                 raise authorization_denied(reason)
 
             process = self.daemon.get_shared_process(server_name)
@@ -363,7 +363,7 @@ class SteerholmGateway:
 
     async def reconcile_servers(self) -> dict:
         """The daemon's single lifecycle primitive: make the running shared servers
-        match the docked config — start newly docked servers, stop undocked ones,
+        match the config — start newly added servers, stop removed ones,
         and restart servers whose spec changed or whose session died. Idempotent;
         driven at startup, by the control plane on config changes, and periodically.
         """
@@ -397,7 +397,7 @@ class SteerholmGateway:
                     await self.daemon.start_shared_server(server)
                     started.append(name)
                 except Exception as e:
-                    logger.error(f"Failed to start docked server '{name}': {e}")
+                    logger.error(f"Failed to start server '{name}': {e}")
                     failed.append(name)
 
             return {

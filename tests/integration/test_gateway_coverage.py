@@ -555,7 +555,7 @@ async def test_the_daemon_answers_while_its_servers_are_still_starting(config_ma
 @pytest.mark.asyncio
 @pytest.mark.parametrize("down", ["process died", "not running"])
 async def test_a_tool_on_a_server_that_is_down_is_unavailable_not_denied(config_manager, down):
-    # A call to a crashed server's tool reported "not found on any docked server"
+    # A call to a crashed server's tool reported the tool as not found
     # and was logged as a policy denial.
     from mcp.shared.exceptions import McpError
     from steerholm.errors import SERVER_UNAVAILABLE_CODE

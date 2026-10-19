@@ -3,7 +3,7 @@
 A frozen (PyInstaller) build prepends its bundled libraries to LD_LIBRARY_PATH
 before any of our code runs, and keeps the original in LD_LIBRARY_PATH_ORIG —
 or leaves that unset when there was none. Every child inherits the altered
-value, so `systemctl`, `curl` and docked MCP servers load OUR copy of OpenSSL
+value, so `systemctl`, `curl` and the MCP servers it runs load OUR copy of OpenSSL
 instead of the system's. Where the system's is newer they fail to load at all:
 `version 'OPENSSL_3.4.0' not found` on Ubuntu 26.04.
 

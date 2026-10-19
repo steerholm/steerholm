@@ -86,8 +86,8 @@ class TestSharedProcesses:
         ], any_order=False)
 
     @pytest.mark.asyncio
-    async def test_reconcile_applies_dock_and_undock_live(self, config_manager):
-        # A server docked or undocked while the daemon runs must take effect on the
+    async def test_reconcile_applies_add_and_remove_live(self, config_manager):
+        # A server added or removed while the daemon runs must take effect on the
         # next reconcile — without a restart, and without churning already-running,
         # unchanged servers.
         config_manager.add_server("A", command="echo")
@@ -108,7 +108,7 @@ class TestSharedProcesses:
         assert set(gateway.daemon.shared_processes) == {"A"}
         assert gateway.daemon.start_shared_server.await_count == 1
 
-        # Dock B while running -> B starts, A is left running (not restarted).
+        # Add B while running -> B starts, A is left running (not restarted).
         config_manager.add_server("B", command="echo")
         result = await gateway.reconcile_servers()
         assert set(gateway.daemon.shared_processes) == {"A", "B"}
