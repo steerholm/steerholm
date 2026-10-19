@@ -1,6 +1,6 @@
 """Grants key on immutable ids rather than reusable names.
 
-Schema 0 -> 1. First shipped in: (unreleased)
+Schema 0 -> 1. First shipped in: 0.1.2
 
 Names are reusable: remove an agent or a server and add another under the same
 name, and it is a different principal. A grant stored under a name could

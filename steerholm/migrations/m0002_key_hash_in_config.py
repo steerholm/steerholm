@@ -1,6 +1,6 @@
 """Agent key hashes move from the OS keyring into `config.json`.
 
-Schema 1 -> 2. First shipped in: (unreleased)
+Schema 1 -> 2. First shipped in: 0.1.2
 
 The keyring could not be relied on. It has no backend on a headless box, so
 `holm add agent` failed outright with a message from the keyring library telling
