@@ -1,0 +1,1 @@
+{"id":"104883c714b4d23a3fb6dd4320a70e1e.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands#test_migrate_refuses_while_the_daemon_is_running","name":"test_migrate_refuses_while_the_daemon_is_running","status":"passed","testResultsByEnv":{"default":"b5850bb034cc41c79d80652602446d61"}}

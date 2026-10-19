@@ -1,0 +1,1 @@
+{"id":"d9830324924c4efb0a9424b3c4f5014e.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands.TestInstallerUndoesAnOldBinarysLibraryPath#test_drops_it_when_the_user_had_none","name":"test_drops_it_when_the_user_had_none","status":"passed","testResultsByEnv":{"default":"26c686916610300a57803b72d70fb2cd"}}

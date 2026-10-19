@@ -1,0 +1,1 @@
+{"id":"3bd7e00e0cf6235f9375922729cda53d.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands.TestUnixInstallerReportsTheReleaseServer#test_an_unreachable_server_says_so","name":"test_an_unreachable_server_says_so","status":"passed","testResultsByEnv":{"default":"e2f375781020126feba745935f957dfa"}}

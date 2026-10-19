@@ -1,0 +1,1 @@
+ERROR    steerholm.config:config.py:707 Could not load the policy for 'bob': Expecting property name enclosed in double quotes: line 1 column 3 (char 2)

@@ -1,0 +1,9 @@
+ERROR    uvicorn.error:on.py:134 Traceback (most recent call last):
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages\starlette\routing.py", line 663, in lifespan
+    await receive()
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages\uvicorn\lifespan\on.py", line 137, in receive
+    return await self.receive_queue.get()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\asyncio\queues.py", line 158, in get
+    await getter
+asyncio.exceptions.CancelledError

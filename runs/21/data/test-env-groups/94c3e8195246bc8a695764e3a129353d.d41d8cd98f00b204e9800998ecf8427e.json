@@ -1,0 +1,1 @@
+{"id":"94c3e8195246bc8a695764e3a129353d.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands.TestPortInUse#test_a_closed_port_is_free_at_once","name":"test_a_closed_port_is_free_at_once","status":"passed","testResultsByEnv":{"default":"b00dcea81969df68932b1bb3a7dcd0d8"}}

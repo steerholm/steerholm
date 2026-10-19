@@ -1,0 +1,1 @@
+{"id":"c69caa519db8f83e78ab425fc026d7fb.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands#test_tail_reopens_after_truncation","name":"test_tail_reopens_after_truncation","status":"passed","testResultsByEnv":{"default":"e2e32dc2642a67f973ab4109dd2ec19a"}}

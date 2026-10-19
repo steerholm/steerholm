@@ -1,0 +1,1 @@
+{"id":"9723db1aa7a58bfbd639ed8d259fd8c4.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_migrations#test_a_rollback_that_cannot_restore_says_which_pieces_are_stranded","name":"test_a_rollback_that_cannot_restore_says_which_pieces_are_stranded","status":"passed","testResultsByEnv":{"default":"5594518ad5f1fc722041e6ebd2fea297"}}

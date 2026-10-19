@@ -1,0 +1,1 @@
+{"id":"61277ac5a9d923fda128c7505beb1ba3.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands#test_history_reports_no_resume_point_when_the_newest_file_is_unreadable","name":"test_history_reports_no_resume_point_when_the_newest_file_is_unreadable","status":"passed","testResultsByEnv":{"default":"b26c8b09653fa24b4ed0d32834b90786"}}

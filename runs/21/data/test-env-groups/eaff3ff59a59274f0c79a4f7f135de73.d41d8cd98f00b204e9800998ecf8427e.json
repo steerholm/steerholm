@@ -1,0 +1,1 @@
+{"id":"eaff3ff59a59274f0c79a4f7f135de73.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands#test_stop_win32_ends_the_daemon_process_not_just_the_task","name":"test_stop_win32_ends_the_daemon_process_not_just_the_task","status":"passed","testResultsByEnv":{"default":"ae7e1803c37fffcee19c63d64c650104"}}

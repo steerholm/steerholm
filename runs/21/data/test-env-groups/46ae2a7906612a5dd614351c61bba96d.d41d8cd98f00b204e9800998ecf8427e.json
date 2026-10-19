@@ -1,0 +1,1 @@
+{"id":"46ae2a7906612a5dd614351c61bba96d.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands.TestSchemaGateExitCodes#test_serve_exits_with_the_code_the_unit_will_not_restart_on","name":"test_serve_exits_with_the_code_the_unit_will_not_restart_on","status":"passed","testResultsByEnv":{"default":"b6e1aee6c192d290bb621c621e25e064"}}

@@ -1,0 +1,1 @@
+{"id":"b7c59050dce7480c794b220f93f1d011.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands.TestInstallerEndsAnOldUpdater#test_leaves_alone_a_parent_reading_some_other_file","name":"test_leaves_alone_a_parent_reading_some_other_file","status":"passed","testResultsByEnv":{"default":"50775e49fe5e8b844b4728d8402ed740"}}
