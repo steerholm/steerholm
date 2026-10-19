@@ -66,7 +66,7 @@ prints a server's id.
 
 <CardGroup cols={2}>
   <Card title="Glob" icon="asterisk" color="#10b981">
-    Shell-style wildcards. `*` and `?` match within one level, `**` matches across levels. A pattern without wildcards is an exact match. A value containing a `..` segment never matches, so a path pattern cannot be walked out of.
+    Shell-style wildcards. `*` and `?` match within one level, `**` matches across levels. A pattern without wildcards is an exact match. A value containing a `..` segment never matches unless the pattern contains `..` itself, so a path pattern cannot be walked out of.
   </Card>
   <Card title="Regex" icon="code" color="#10b981">
     Full regular expression, matched from the start of the value. Use `re:` prefix in CLI.
@@ -106,6 +106,11 @@ values, which is why it lives there rather than beside the config directory: it
 inherits the same owner-only permissions and moves with your state. There is
 only ever one, and you do not have to clean it up — the next migration replaces
 it rather than adding to it.
+
+The migration also tidies what can no longer apply. A policy file for an agent
+that is not in `config.json` any more — or whose file and contents name different
+agents — is moved to `policies/unmigrated/` rather than guessed at, and grants on
+servers that no longer exist are dropped; both are logged.
 
 It is there so you can **see** what a migration did. If grants look wrong
 afterwards, comparing `.pre-migration/policies/` against `policies/` shows

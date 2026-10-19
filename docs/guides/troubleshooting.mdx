@@ -24,15 +24,19 @@ This is the most common first-run issue. Work through it in order:
     with `holm grant <agent> <server>`.
   </Step>
   <Step title="Check the server is running">
-    Run `holm show server <name>`. If the status is **stopped** or the daemon
-    is down, start it with `holm start` (or `holm status` to check). Adding
-    a server tells a running daemon to start it automatically, so if it isn't
-    running, the daemon is probably down.
+    Run `holm show server <name>`. **starting** means it is still coming up —
+    give it a moment, longer the first time an `npx` or `uvx` server downloads
+    its package. If the status is **stopped** or the daemon is down, start it
+    with `holm start` (or `holm status` to check). Adding a server tells a
+    running daemon to start it automatically, so if it isn't running, the
+    daemon is probably down.
   </Step>
   <Step title="Check the server didn't fail to start">
     If `holm show server <name>` reports **failed**, it prints the error —
-    usually a bad `--command` (wrong path, missing `npx`, etc.). Fix the command:
-    `holm remove server <name>` then `holm add server <name> --command "..."`.
+    usually a bad `--command` (wrong path, missing `npx`, etc.). Fix it in
+    place, which keeps the server's grants:
+    `holm modify server <name> --command "..."`. Removing and re-adding it
+    would create a new server with no grants.
   </Step>
   <Step title="Reconnect the tool">
     Some tools only fetch the tool list when they first connect. If you granted access
@@ -54,8 +58,10 @@ The Bearer token is missing, malformed, or not a valid access key.
   name is the same.
 - If you upgraded from a version that kept key hashes in the OS keyring and the
   keyring could not be read at the time, the agent has no hash to check against
-  and the daemon log says so. Re-run `holm migrate` with the keyring unlocked,
-  or issue a fresh key with `holm rotate agent <name>`.
+  and the daemon log says so (`journalctl --user -u steerholm` on Linux,
+  `daemon.log` in the config directory on macOS and Windows). Issue a fresh key
+  with `holm rotate agent <name>` and update the tool with it — the upgrade has already run, so it will not
+  look in the keyring again.
 
 ## Steerholm refuses to run: "is schema vN; this build of Steerholm expects vM"
 
@@ -89,8 +95,9 @@ The file exists but Steerholm cannot read it. The message says why:
 
 Steerholm refuses to carry on rather than start from an empty configuration in
 its place. Nothing is written to the file while it is in this state, so fixing
-it restores everything as it was. `holm version`, `holm status` and
-`holm migrate` still run; commands that read or change the configuration do not.
+it restores everything as it was. `holm version`, `holm status`, `holm stop`,
+`holm update` and `holm migrate` still run; commands that read or change the
+configuration do not.
 A running daemon denies every request and leaves its servers running until the
 file loads again.
 
@@ -104,10 +111,17 @@ holm status
 holm start
 ```
 
-The daemon runs as a per-user service that starts at login. On a **headless or
-SSH-only** box where you never log in graphically, it may not start on its own —
-run `holm start`, or run it in the foreground for debugging with
-`holm serve` (logs go to stderr).
+The daemon runs as a per-user service that starts at login. To debug it, run it
+in the foreground with `holm serve` (logs go to stderr).
+
+On a machine you only reach **over SSH**:
+
+- **Linux**: it runs while you are logged in and stops when your last session
+  ends. To keep it running — and start it at boot — enable lingering once:
+  `loginctl enable-linger $USER`.
+- **Windows**: it runs only in a signed-in desktop session (the console, Remote
+  Desktop or VNC), not from an SSH session — sign in once, then disconnect
+  rather than sign out.
 
 ## Port already in use
 
@@ -142,8 +156,9 @@ holm log --follow --status denied    # watch refusals as they happen
 
 The downstream MCP server crashed or is unreachable — including a tool that was
 not found on the servers that answered while one the agent may use did not. Check
-`holm show server <name>` for a **failed** state and its error, then fix the
-command and re-add it. The daemon also retries failed servers periodically, so a
+`holm show server <name>` for a **failed** state and its error, then fix it with
+`holm modify server <name>` (removing and re-adding it would drop its grants).
+The daemon also retries failed servers periodically, so a
 transient failure may clear on its own. These show up in the audit log as
 `error` rather than `denied` (`holm log --status error`), which is how you tell
 "the server broke" from "policy refused it". See

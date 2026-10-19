@@ -41,11 +41,11 @@ Argument policies restrict the values of specific tool arguments. Two match type
 | **Glob** (default) | `arg=pattern` | `repo_path=/home/user/**` |
 | **Regex** | `arg=re:pattern` | `sql=re:^SELECT\s.*` |
 
-A glob pattern without wildcards is an exact match — `mode=readonly` matches only `"readonly"`.
+In a glob, `*` and `?` match within one path level and `**` matches across levels: `/home/user/*` allows `/home/user/a` but not `/home/user/a/b`. A value with a `..` segment never matches a glob unless the pattern contains `..` itself, so a path pattern cannot be walked out of. A glob pattern without wildcards is an exact match — `mode=readonly` matches only `"readonly"`.
 
 ### CLI examples
 
-Each example assumes the server is already docked — a grant records the server's
+Each example assumes the server is already added — a grant records the server's
 id, so `holm add server` has to come first.
 
 ```bash

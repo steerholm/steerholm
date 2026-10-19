@@ -56,7 +56,7 @@
       {
         "group": "Concepts",
         "pages": [
-          "concepts/control-plane",
+          "concepts/one-plane",
           "concepts/architecture",
           "concepts/permissions",
           "concepts/error-codes"
@@ -74,12 +74,6 @@
       }
     ]
   },
-  "redirects": [
-    {
-      "source": "/reference/bridge",
-      "destination": "/reference/mcp-endpoint"
-    }
-  ],
   "footer": {
     "socials": {
       "github": "https://github.com/steerholm/steerholm"

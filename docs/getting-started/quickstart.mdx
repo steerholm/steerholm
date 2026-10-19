@@ -4,16 +4,17 @@ description: Get from zero to a policy-controlled agent in 2 minutes.
 ---
 
 These five steps take you from a fresh install to an agent that can only reach what
-you allow — a server to expose, an agent to authorize, and a scoped grant between
+you allow — a resource to reach, an agent to authorize, and your rules between
 them. [Install Steerholm](/getting-started/installation) first if you haven't.
 
-## 1. Add an MCP server
+## 1. Connect a resource
 
 ```bash
 holm add server git --command "uvx mcp-server-git"
 ```
 
-This registers the [git MCP server](https://github.com/modelcontextprotocol/servers/tree/main/src/git) —
+This connects your git repositories to the plane through the
+[git MCP server](https://github.com/modelcontextprotocol/servers/tree/main/src/git) —
 structured git tools (history, diffs, commits) your agent can't get from a plain
 shell. It runs via `uvx`, which ships with [uv](https://docs.astral.sh/uv/). For
 remote servers and more, see [Add a server](/guides/add-a-server).
@@ -62,11 +63,6 @@ Each client stores this differently — see [Add an agent](/guides/add-an-agent)
 VS Code, Cursor, and OpenCode. The agent sees only the servers and tools its policy
 allows.
 
-<Note>
-  Configuring the agent with the key is the current manual step of adding an
-  agent — Steerholm will set this connection up for you in a future release.
-</Note>
-
 ## 5. Verify it works
 
 Confirm the server is running and see the tools it exposes:
@@ -74,6 +70,9 @@ Confirm the server is running and see the tools it exposes:
 ```bash
 holm show server git
 ```
+
+It shows `starting` until it is up — the first time, `uvx` downloads the server
+first, which can take a little while.
 
 Your agent should now list the tools its policy allows. If none appear,
 see [Troubleshooting](/guides/troubleshooting).

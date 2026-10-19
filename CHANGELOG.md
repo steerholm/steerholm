@@ -8,6 +8,12 @@ The release workflow publishes the section for the tagged version as its GitHub
 release notes, so update the entry for the version you're about to tag **before**
 tagging it. At tag time, rename `[Unreleased]` to the version and date.
 
+## [Unreleased]
+
+### Changed
+
+- Documentation updates and alignment.
+
 ## [0.1.2-rc.4] - 2026-10-19
 
 Pre-release. Changes since 0.1.2-rc.3.

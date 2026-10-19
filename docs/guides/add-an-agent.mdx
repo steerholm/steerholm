@@ -6,7 +6,7 @@ description: Register an agent, point it at Steerholm, and verify it's connected
 Adding an MCP-capable agent (Claude Code, VS Code, Cursor, OpenCode, etc.) to
 Steerholm is two steps: **register it** to get its access key, then **point it at
 Steerholm**. From then on it acts on the action plane as that agent, and every
-request is checked against its policy before anything reaches a server.
+request is checked against its policy before anything reaches a resource.
 
 <Note>
   An agent sees no tools until you also **grant** it access — that's a separate
@@ -145,12 +145,6 @@ The rest is just *where* each agent keeps its config and *what* it names the ent
 <Note>
   Steerholm binds to loopback over plain HTTP. Use the host and port from
   `holm serve` if you changed the defaults.
-</Note>
-
-<Note>
-  Copying the key into the agent is the current **manual** step. A future release
-  will set this connection up for you (and launch agent sessions directly) — the
-  model stays the same, the copy-paste goes away.
 </Note>
 
 ## 3. Verify

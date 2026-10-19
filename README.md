@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  An action plane for your agents, a control plane for you — every action an agent takes is checked against your policy before it reaches a server.<br/>
+  An action plane for your agents, a control plane for you — your agents act on your resources from one plane, under your control and on your rules.<br/>
 </p>
 
 <p align="center">
@@ -35,7 +35,7 @@ Or download binaries directly from [GitHub Releases](https://github.com/steerhol
 ## Quick Start
 
 ```bash
-# 1. Add an MCP server
+# 1. Connect a resource (its MCP server)
 holm add server git --command "uvx mcp-server-git"
 
 # 2. Add an agent (prints its access key once)
@@ -65,17 +65,14 @@ agent's access key as the Bearer token:
 ## How It Works
 
 ```
-Agent → HTTP /mcp → Steerholm daemon → MCP Servers
-              │                       │
-          Bearer auth          agent verification
-                               policy enforcement
-                               AUTHORIZATION_DENIED / SERVER_UNAVAILABLE
+                ┌─────────────── Steerholm ───────────────┐
+Agents ──/mcp──▶│ key → agent → policy check → audit log  │──▶ MCP servers ──▶ Resources
+                └──────── holm: you set the rules ────────┘
 ```
 
 - **Default deny** — no grant means no access
 - **Agent from token** — agents cannot self-assert who they are; the access key determines the agent
-- **Per-agent policies** — allowlist of servers, tools, and argument constraints
-- **Isolation by policy** — one shared daemon; each agent is confined by its policy, not by separate server processes
+- **Per-agent policies** — allowlist of resources, actions, and argument constraints
 - **Clear refusals** — a denied or failed tool call says why: a policy denial (`AUTHORIZATION_DENIED`) or a server that is down (`SERVER_UNAVAILABLE`)
 - **Everything is recorded** — every call, allowed or denied, with the reason: `holm log` (and `holm log --follow` to watch live)
 

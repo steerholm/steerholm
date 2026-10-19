@@ -1,11 +1,11 @@
 ---
 title: holm CLI
-description: Control-plane commands for managing servers, agents, and access.
+description: Commands for controlling what your agents can reach and do.
 ---
 
-The `holm` CLI is your **[control plane](/concepts/control-plane)** — where you add
-agents and servers and govern what each agent can reach. Agents don't run it; they
-act on the action plane over the daemon's [MCP endpoint](/reference/mcp-endpoint).
+The `holm` CLI is how you control [the plane](/concepts/one-plane) — where you add
+agents and servers and set the rules for what each agent can reach. Agents don't
+run it; they act on the plane over the daemon's [MCP endpoint](/reference/mcp-endpoint).
 
 Commands read verb-first — `holm <verb> <resource> [name]`.
 
@@ -20,6 +20,11 @@ and `version` / `update` round out the surface.
 Servers are the MCP servers you want agents to reach through Steerholm. Adding a
 server registers it with the daemon, which handles starting and stopping the
 server processes.
+
+`add`, `modify` and `remove server` return as soon as the daemon has the change
+and print what it is doing — `Daemon is starting: git` — while the daemon applies
+it in the background. `holm show server` shows when a server is up, or why it
+failed.
 
 ### holm add server
 
@@ -239,8 +244,10 @@ holm grant my-agent database --tool "query" --args "sql=re:^SELECT\s.*" --args "
 | `--tool` | `*` | Tool name or glob pattern |
 | `--args` | — | Argument policy: `arg=pattern` (glob) or `arg=re:pattern` (regex). Repeat for more than one. |
 
-A glob pattern without wildcards is an exact match. An argument policy applies
-only when the tool call actually provides that argument.
+In a glob, `*` and `?` match within one path level and `**` across levels, and a
+value with a `..` segment never matches unless the pattern contains `..`; a
+pattern without wildcards is an exact match. An argument policy applies only when the tool call actually provides that
+argument. See [Policy format](/reference/policy-format#match-types).
 
 The server must already be added — a grant records the agent's and server's
 **ids**, not their names, so there is nothing to point at otherwise. That is also
@@ -359,7 +366,8 @@ holm start
 
 ### holm stop
 
-Stop the daemon. All active agent sessions are disconnected.
+Stop the daemon and the MCP servers it started. All active agent sessions are
+disconnected.
 
 ```bash
 holm stop
@@ -408,8 +416,10 @@ holm version
 ### holm update
 
 Update Steerholm in place from a GitHub release (the latest by default). It
-downloads the release for your platform, verifies it against the published
-checksums, and runs the official install script.
+downloads the release's install script, verifies it against the published
+checksums, and runs it — which installs the new binary, brings your stored data up
+to the new version's format, and restarts the daemon. Pre-releases are never
+installed unless you name one with `--tag`.
 
 ```bash
 holm update               # install the latest release

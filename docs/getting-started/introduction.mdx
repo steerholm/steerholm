@@ -3,14 +3,21 @@ title: Introduction
 description: An action plane for your agents. A control plane for you.
 ---
 
-Steerholm is one surface with two faces. To your AI agents it's an **action
-plane** — the single place they connect to and act. To you it's a **control
-plane** — where you decide what every agent can reach and do, down to the
-individual action and its arguments. Nothing runs that you didn't allow.
+Steerholm is the plane your AI agents work on. Your resources — files,
+repositories, databases, internal services — are connected to it, and your agents
+act on them only from the plane, under your control and on your rules.
+
+It is one plane with two faces:
+
+- **An action plane for your agents** — where they act on your resources.
+- **A control plane for you** — where you decide which agent can reach which
+  resource and what it may do there, down to each action and its arguments.
+
+Nothing reaches a resource that you didn't allow.
 
 New here? [Install Steerholm](/getting-started/installation), then the
 [quickstart](/getting-started/quickstart) gets you to a scoped agent in minutes.
-For the full mental model, see [the control plane](/concepts/control-plane).
+For the full mental model, see [One plane](/concepts/one-plane).
 
 <div style={{ maxWidth: '720px', margin: '28px auto 10px', borderRadius: '18px', overflow: 'hidden', boxShadow: '0 0 0 1px rgba(120,124,220,0.25), 0 20px 44px -24px rgba(0,0,0,0.6)', background: 'linear-gradient(180deg,#0d0d22,#141433)' }} role="img" aria-label="Agents and their MCP servers on the Steerholm plane, joined by governed connections; one connection's scoped policy is shown below.">
   <div style={{ position: 'relative', aspectRatio: '960 / 468' }}>
@@ -78,16 +85,16 @@ For the full mental model, see [the control plane](/concepts/control-plane).
       </g>
     </svg>
 
-    <div style={{ position: 'absolute', left: '2.6%', top: '1%', display: 'flex', alignItems: 'center', gap: '10px', fontFamily: 'ui-monospace, monospace', fontSize: '11px' }}>
+    <div style={{ position: 'absolute', left: '2.6%', top: '5%', display: 'flex', alignItems: 'center', gap: '10px', fontFamily: 'ui-monospace, monospace', fontSize: '11px' }}>
       <img src="/logo/dark.svg" alt="Steerholm" width="75" height="20" style={{ display: 'block' }} /><span style={{ color: '#7f82c4', letterSpacing: '1.3px' }}>// ACTION PLANE</span>
     </div>
 
     {/* agents */}
 
-    <div style={{ position: 'absolute', left: '15.6%', top: '22.6%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: '8px', width: '132px', padding: '8px 10px', borderRadius: '10px', background: '#191937', border: '1px solid #6f74e6', fontFamily: 'ui-monospace, monospace', fontSize: '12px', fontWeight: 600, color: '#e9eafc' }}><span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#8f93f0', flex: 'none' }} />Claude Code</div>
-    <div style={{ position: 'absolute', left: '12.5%', top: '49.6%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: '8px', width: '132px', padding: '8px 10px', borderRadius: '10px', background: '#191937', border: '1px solid #6f74e6', fontFamily: 'ui-monospace, monospace', fontSize: '12px', fontWeight: 600, color: '#e9eafc' }}><span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#8f93f0', flex: 'none' }} />Cursor</div>
-    <div style={{ position: 'absolute', left: '16.5%', top: '73.5%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: '8px', width: '132px', padding: '8px 10px', borderRadius: '10px', background: '#191937', border: '1px solid #6f74e6', fontFamily: 'ui-monospace, monospace', fontSize: '12px', fontWeight: 600, color: '#e9eafc' }}><span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#8f93f0', flex: 'none' }} />Zed</div>
-    <div style={{ position: 'absolute', left: '26.9%', top: '89.7%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: '8px', width: '132px', padding: '8px 10px', borderRadius: '10px', background: '#191937', border: '1px solid #6f74e6', fontFamily: 'ui-monospace, monospace', fontSize: '12px', fontWeight: 600, color: '#e9eafc' }}><span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#8f93f0', flex: 'none' }} />VS Code</div>
+    <div style={{ position: 'absolute', left: '15.6%', top: '22.6%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: '8px', width: '132px', padding: '8px 10px', borderRadius: '10px', background: '#191937', border: '1px solid #6f74e6', fontFamily: 'ui-monospace, monospace', fontSize: '12px', fontWeight: 600, color: '#e9eafc' }}><span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#8f93f0', flex: 'none' }} />coding-agent</div>
+    <div style={{ position: 'absolute', left: '12.5%', top: '49.6%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: '8px', width: '132px', padding: '8px 10px', borderRadius: '10px', background: '#191937', border: '1px solid #6f74e6', fontFamily: 'ui-monospace, monospace', fontSize: '12px', fontWeight: 600, color: '#e9eafc' }}><span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#8f93f0', flex: 'none' }} />review-agent</div>
+    <div style={{ position: 'absolute', left: '16.5%', top: '73.5%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: '8px', width: '132px', padding: '8px 10px', borderRadius: '10px', background: '#191937', border: '1px solid #6f74e6', fontFamily: 'ui-monospace, monospace', fontSize: '12px', fontWeight: 600, color: '#e9eafc' }}><span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#8f93f0', flex: 'none' }} />ci-agent</div>
+    <div style={{ position: 'absolute', left: '26.9%', top: '89.7%', transform: 'translate(-50%,-50%)', display: 'flex', alignItems: 'center', gap: '8px', width: '132px', padding: '8px 10px', borderRadius: '10px', background: '#191937', border: '1px solid #6f74e6', fontFamily: 'ui-monospace, monospace', fontSize: '12px', fontWeight: 600, color: '#e9eafc' }}><span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#8f93f0', flex: 'none' }} />ops-agent</div>
 
     {/* tools */}
 
@@ -101,7 +108,7 @@ For the full mental model, see [the control plane](/concepts/control-plane).
 
   <div style={{ borderTop: '1px solid rgba(255,255,255,0.09)', padding: '13px 16px 16px', fontFamily: 'ui-monospace, monospace' }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-      <span style={{ color: '#34d399' }}>▸</span><span style={{ color: '#e9eafc', fontWeight: 700, fontSize: '13px' }}>Claude Code</span><span style={{ color: '#6f72b0' }}>→</span><span style={{ color: '#8fe6c8', fontWeight: 700, fontSize: '13px' }}>database</span>
+      <span style={{ color: '#34d399' }}>▸</span><span style={{ color: '#e9eafc', fontWeight: 700, fontSize: '13px' }}>coding-agent</span><span style={{ color: '#6f72b0' }}>→</span><span style={{ color: '#8fe6c8', fontWeight: 700, fontSize: '13px' }}>database</span>
     </div>
 
     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
@@ -116,18 +123,23 @@ For the full mental model, see [the control plane](/concepts/control-plane).
 </div>
 
 <p style={{ textAlign: 'center', fontSize: '13.5px', opacity: 0.72, margin: '0 auto 8px', maxWidth: '58ch' }}>
-  Agents and their servers connect through Steerholm. Every connection carries a
-  policy you set — which tools, which arguments — and defaults to deny.
+  Your agents work on the plane, and your resources are connected to it. Every
+  connection carries rules you set — which actions, with which arguments — and
+  defaults to deny.
 </p>
 
 ## Why it exists
 
-Today each agent configures its own MCP servers, with no shared management and no
-way to limit what an agent can do once it's connected. Steerholm brings them onto one
-plane you control: agents act in one place, and every action is checked against
-your policy before it reaches a server.
+Connect an agent to a resource and it can use every tool the resource's MCP server
+offers — any file in the folder, any git command on the repository, any query on
+the database. There is no way to say
+"read the history but don't commit" or "only `SELECT` on this database".
 
-## Agents, servers, and grants
+Steerholm puts that decision with you. Your agents work on one plane with your
+resources connected to it, and every action an agent takes there is checked
+against your rules before it reaches the resource.
+
+## Agents, resources, and grants
 
 <CardGroup cols={3}>
   <Card title="Agents" icon="robot" color="#10b981">
@@ -135,26 +147,28 @@ your policy before it reaches a server.
     name, an access key, and a policy.
   </Card>
 
-  <Card title="Servers" icon="server" color="#10b981">
-    The MCP servers you add. Each one exposes tools — the capabilities an agent
-    might use.
+  <Card title="Resources" icon="server" color="#10b981">
+    Your files, repositories, databases and services — each connected to the plane
+    by its **MCP server**, a small connector program that gives agents tools for
+    it. Those tools are the actions an agent can take on it.
   </Card>
 
   <Card title="Grants" icon="key" color="#10b981">
-    Scoped access from an agent to a server's tools — per tool, per argument.
+    Your rules for an agent on a resource — which actions, with which arguments.
     No grant means no access.
   </Card>
 </CardGroup>
 
-Two things you **add** — agents and servers — and one governed connection you
-**grant** between them. See [Permissions](/concepts/permissions) for the tool and
-argument syntax.
+Two things you **add** — agents, and connections to your resources — and the
+rules you **grant** between them. See [Permissions](/concepts/permissions) for
+the tool and argument syntax.
 
 ## Set it up in three moves
 
 <Steps>
-  <Step title="Add a server">
-    Register an MCP server once; the daemon starts and supervises it.
+  <Step title="Connect a resource">
+    A resource is connected to the plane by its MCP server — here, the git MCP
+    server for your repositories.
 
     ```bash
     holm add server git --command "uvx mcp-server-git"
@@ -169,8 +183,9 @@ argument syntax.
     ```
   </Step>
 
-  <Step title="Grant scoped access">
-    Give the agent exactly the tools it needs, down to the argument.
+  <Step title="Grant it, on your rules">
+    Allow exactly the actions it needs, down to the argument — here, reading
+    history, only for repositories under your projects folder.
 
     ```bash
     holm grant coding-agent git --tool "git_log" --args "repo_path=/home/user/projects/**"
