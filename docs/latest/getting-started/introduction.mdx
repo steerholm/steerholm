@@ -28,9 +28,9 @@ For the full mental model, see [One plane](/concepts/one-plane).
         </pattern>
 
         <radialGradient id="iphalo" cx="0.5" cy="0.5" r="0.6">
-          <stop offset="0" stopColor="#4a4dae" stopOpacity="0.24" />
+          <stop offset="0" stopColor="#4547a6" stopOpacity="0.24" />
 
-          <stop offset="1" stopColor="#4a4dae" stopOpacity="0" />
+          <stop offset="1" stopColor="#4547a6" stopOpacity="0" />
         </radialGradient>
       </defs>
 
@@ -130,14 +130,15 @@ For the full mental model, see [One plane](/concepts/one-plane).
 
 ## Why it exists
 
-Connect an agent to a resource and it can use every tool the resource's MCP server
-offers — any file in the folder, any git command on the repository, any query on
-the database. There is no way to say
-"read the history but don't commit" or "only `SELECT` on this database".
+Connect an agent to a resource directly, and the only rules you can set are the
+ones that agent offers. They differ from one agent to the next, and each agent
+enforces them on itself, for itself only.
 
-Steerholm puts that decision with you. Your agents work on one plane with your
-resources connected to it, and every action an agent takes there is checked
-against your rules before it reaches the resource.
+Steerholm takes that decision out of the agent and puts it with you. Your agents
+work on one plane with your resources connected to it, and every action an agent
+takes there is checked against your rules before it reaches the resource, down
+to its arguments: "read the history but don't commit", or "only `SELECT` on this
+database".
 
 ## Agents, resources, and grants
 
