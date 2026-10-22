@@ -80,3 +80,38 @@ jobs:
             uninstall.sh
             uninstall.ps1
             checksums.txt
+
+  release-branch:
+    # A release (not a pre-release) starts its line's release branch, release/X.Y,
+    # or moves it to this tag. The Docs workflow publishes each line from it. A
+    # branch is never moved while it has a commit this tag doesn't contain.
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Start or move the release branch
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          branch="release/$(printf '%s' "$TAG" | sed -E 's/^v([0-9]+\.[0-9]+).*/\1/')"
+          ref="refs/remotes/origin/$branch"
+          if ! git rev-parse -q --verify "$ref" >/dev/null; then
+            echo "creating $branch at $TAG"
+            git push origin "$TAG^{commit}:refs/heads/$branch"
+          elif git merge-base --is-ancestor "$TAG" "$ref"; then
+            echo "$branch already contains $TAG"
+          elif git cherry "$TAG" "$ref" | grep -q '^+'; then
+            echo "::error::$branch has commits that $TAG does not contain; cherry-pick them onto main and move the branch by hand:"
+            git cherry -v "$TAG" "$ref" | grep '^+'
+            exit 1
+          else
+            echo "moving $branch to $TAG"
+            git push --force-with-lease="refs/heads/$branch:$(git rev-parse "$ref")" \
+              origin "$TAG^{commit}:refs/heads/$branch"
+          fi

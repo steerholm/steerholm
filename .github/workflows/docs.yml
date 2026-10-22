@@ -1,18 +1,24 @@
 name: Docs
 
 # Publishes versioned docs to the `docs-live` branch, which Mintlify deploys.
-# `docs-live` is rebuilt deterministically from the release tags: every vX.Y.Z tag is
-# grouped by its minor line (vX.Y), the latest patch per line is frozen as that version,
-# and the highest line becomes the default, served at /latest/... (older lines at /vX.Y/...). The working docs on `main` stay a single,
-# flat "next" version (served only via Mintlify PR previews).
+# `docs-live` is rebuilt from the release branches: each `release/X.Y` branch is
+# published as version vX.Y, and the highest line becomes the default, served at
+# /latest/... (older lines at /vX.Y/...). The Release workflow keeps each branch
+# at its line's newest release; docs fixes for a released version are
+# cherry-picked onto its branch. The working docs on `main` stay a single, flat
+# "next" version (served only via Mintlify PR previews).
 #
-# Runs automatically on each release tag, and can be re-run manually with no inputs
-# (used once to seed the first version, or any time to rebuild from scratch).
+# Runs after each Release run, after each push to a release branch, and manually.
+# A push runs the workflow file on the pushed branch, which can be older than
+# main's, so that run only starts this workflow on main, where the build runs.
 
 on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
   push:
-    tags:
-      - "v*"
+    branches:
+      - "release/**"
   workflow_dispatch:
 
 permissions:
@@ -23,7 +29,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  forward:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Start the docs build on main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run docs.yml --ref main --repo "${{ github.repository }}"
+
   publish:
+    if: >-
+      github.event_name != 'push' && github.ref == 'refs/heads/main' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -51,31 +71,27 @@ jobs:
             git -C live remote add origin "$url"
           fi
 
-      - name: Rebuild docs-live from release tags
+      - name: Rebuild docs-live from release branches
         shell: bash
         run: |
           rm -rf live/docs && mkdir -p live/docs
-          declare -A latest
-          while read -r tag; do
-            [ -z "$tag" ] && continue
-            line="$(printf '%s' "$tag" | sed -E 's/^(v[0-9]+\.[0-9]+).*/\1/')"
-            latest["$line"]="$tag"   # tags arrive version-sorted, so this keeps the highest patch
-          done < <(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
-
-          if [ "${#latest[@]}" -eq 0 ]; then
-            echo "no release tags found; nothing to publish"
+          branches="$(git for-each-ref --format='%(refname:strip=3)' 'refs/remotes/origin/release/' \
+            | grep -E '^release/[0-9]+\.[0-9]+$' || true)"
+          if [ -z "$branches" ]; then
+            echo "no release branches found; nothing to publish"
             exit 0
           fi
 
-          for line in "${!latest[@]}"; do
-            tag="${latest[$line]}"
-            if ! git cat-file -e "$tag:docs" 2>/dev/null; then
-              echo "skip $line: $tag has no docs/ tree"
+          for branch in $branches; do
+            line="v${branch#release/}"
+            ref="origin/$branch"
+            if ! git cat-file -e "$ref:docs" 2>/dev/null; then
+              echo "skip $line: $branch has no docs/ tree"
               continue
             fi
-            echo "snapshotting $line from $tag"
+            echo "snapshotting $line from $branch"
             rm -rf content && mkdir -p content
-            git archive "$tag" docs | tar -x -C content
+            git archive "$ref" docs | tar -x -C content
             python3 scripts/snapshot_docs.py \
               --version "$line" \
               --content-source content/docs \
@@ -95,5 +111,5 @@ jobs:
             echo "no docs changes to publish"
             exit 0
           fi
-          git commit -m "docs: rebuild docs-live from release tags"
+          git commit -m "docs: rebuild docs-live from release branches"
           git push origin docs-live
