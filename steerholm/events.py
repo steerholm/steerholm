@@ -18,6 +18,7 @@ from typing import Deque, List, Optional
 from pydantic import BaseModel
 
 from . import config as _config
+from .files import restrict
 
 logger = logging.getLogger("steerholm.events")
 
@@ -317,7 +318,7 @@ class EventLog:
             with open(self._current, "a", encoding="utf-8", newline="") as f:
                 f.write(line)
             self._size += size
-            _config._restrict(self._current, 0o600)
+            restrict(self._current, 0o600)
             if rolled:
                 self._prune()
         except Exception as e:  # audit is best-effort; never break the call path

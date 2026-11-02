@@ -13,6 +13,7 @@ from .models import (
     AuditSettings, Config, Server, Agent, AgentPolicy, ToolPermission,
     ArgumentPolicy, ServerType,
 )
+from .files import read_text, restrict, write_atomic
 
 logger = logging.getLogger("steerholm.config")
 
@@ -79,25 +80,8 @@ def get_or_create_control_token() -> str:
     )
     path = control_token_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"control-token.{os.getpid()}.tmp")
-    try:
-        tmp.write_text(token + "\n", encoding="utf-8")
-        _restrict(tmp, 0o600)
-        os.replace(tmp, path)
-    finally:
-        tmp.unlink(missing_ok=True)
+    write_atomic(path, token + "\n")
     return token
-
-
-def _restrict(path, mode: int) -> None:
-    """Restrict a config file or directory to the owner only. No-op on Windows,
-    where per-user AppData already isolates it via ACLs and POSIX modes don't map."""
-    if os.name == "nt":
-        return
-    try:
-        os.chmod(path, mode)
-    except OSError:
-        pass
 
 
 # Env var name rule shared by Kubernetes and Docker's build/Compose layer:
@@ -303,12 +287,12 @@ class ConfigManager:
         # covers both the dirs and any files already on disk.
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         POLICIES_DIR.mkdir(parents=True, exist_ok=True)
-        _restrict(CONFIG_DIR, 0o700)
-        _restrict(POLICIES_DIR, 0o700)
+        restrict(CONFIG_DIR, 0o700)
+        restrict(POLICIES_DIR, 0o700)
         if CONFIG_FILE.exists():
-            _restrict(CONFIG_FILE, 0o600)
+            restrict(CONFIG_FILE, 0o600)
         for policy in POLICIES_DIR.glob("*.json"):
-            _restrict(policy, 0o600)
+            restrict(policy, 0o600)
 
     def _load_config(self) -> Config:
         """Load config.json. Absent loads as empty; present but broken raises.
@@ -321,9 +305,7 @@ class ConfigManager:
         if not CONFIG_FILE.exists():
             return Config()
         try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return Config(**data)
+            return Config(**json.loads(read_text(CONFIG_FILE)))
         except (ValueError, TypeError, OSError) as e:
             raise ConfigError(
                 f"{CONFIG_FILE} cannot be loaded — {_describe_load_failure(e)}. "
@@ -348,9 +330,7 @@ class ConfigManager:
         # Before the open, not left to `self.config` below: "w" empties the file
         # first, and this must never write over one it could not read.
         self.verify_loaded()
-        with open(CONFIG_FILE, "w") as f:
-            f.write(self.config.model_dump_json(indent=2))
-        _restrict(CONFIG_FILE, 0o600)
+        write_atomic(CONFIG_FILE, self.config.model_dump_json(indent=2))
 
     def reload(self):
         before = self._load_error
@@ -619,10 +599,7 @@ class ConfigManager:
     def save_policy(self, agent_name: str, policy: AgentPolicy):
         """Persist a policy. Takes the agent NAME so the path comes from the
         config rather than from the document being written."""
-        path = self.policy_path_for(agent_name)
-        with open(path, "w") as f:
-            f.write(policy.model_dump_json(indent=2))
-        _restrict(path, 0o600)
+        write_atomic(self.policy_path_for(agent_name), policy.model_dump_json(indent=2))
 
     def grant_permission(self, agent_name: str, server_name: str,
                          tool: str = "*", arg_policies: List[str] = None):
@@ -700,9 +677,7 @@ class ConfigManager:
         if not path.exists():
             return None
         try:
-            with open(path, "r") as f:
-                data = json.load(f)
-            return AgentPolicy(**data)
+            return AgentPolicy(**json.loads(read_text(path)))
         except Exception as e:
             logger.error("Could not load the policy for %r: %s", agent_name, e)
             return None

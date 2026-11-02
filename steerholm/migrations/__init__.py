@@ -28,7 +28,8 @@ import os
 import shutil
 from pathlib import Path
 
-from .store import MigrationStore, StateError, restrict
+from ..files import fsync_dir, restrict
+from .store import MigrationStore, StateError
 from . import m0001_id_keyed_grants
 from . import m0002_key_hash_in_config
 
@@ -469,7 +470,7 @@ def _swap(root: Path, staging: Path, backup: Path, step: int) -> None:
         # the device is free to order the marker ahead of the data — leaving a
         # state that reads as migrated while `policies/` still holds the old
         # shape, which nothing would ever re-run.
-        _fsync_dir(root)
+        fsync_dir(root)
         _commit_marker(root, staging, backup)
     except OSError as e:
         stranded = []
@@ -515,8 +516,8 @@ def _swap(root: Path, staging: Path, backup: Path, step: int) -> None:
     # carries the swapped-in names AND `backup`'s own name, which
     # `backup.mkdir` created — so one flush of `root` covers what previously
     # needed the parent too, now that the working directories live inside.
-    _fsync_dir(backup)
-    _fsync_dir(root)
+    fsync_dir(backup)
+    fsync_dir(root)
     shutil.rmtree(staging, ignore_errors=True)
 
 
@@ -547,24 +548,3 @@ def _commit_marker(root: Path, staging: Path, backup: Path) -> None:
         restrict(kept, 0o700)
         shutil.copy2(live, kept / MARKER_FILE)
     os.replace(staged, live)
-
-
-def _fsync_dir(path: Path) -> None:
-    """Flush a directory's entries.
-
-    The ordering `_swap` relies on — data first, marker last — is only a
-    guarantee once the renames are durable. Without this a crash can make the
-    marker visible and the data not, which is the inversion it exists to stop.
-    """
-    if os.name == "nt":
-        return
-    try:
-        fd = os.open(path, os.O_RDONLY)
-    except OSError:
-        return
-    try:
-        os.fsync(fd)
-    except OSError:
-        pass
-    finally:
-        os.close(fd)

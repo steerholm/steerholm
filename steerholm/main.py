@@ -8,6 +8,7 @@ from rich.table import Table
 from . import __version__
 from .childenv import child_env
 from .config import ConfigManager, EX_CONFIG, UnusableStateError
+from .files import write_atomic
 from .models import ServerType
 from .updater import UpdateError, run_update_installer, update_binary
 
@@ -106,9 +107,7 @@ def _maybe_notify_update() -> None:
             latest = cache.get("latest")
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_suffix(".tmp")
-            tmp.write_text(json.dumps({"checked_at": now, "latest": latest}))
-            tmp.replace(path)
+            write_atomic(path, json.dumps({"checked_at": now, "latest": latest}))
         except Exception:
             pass
 

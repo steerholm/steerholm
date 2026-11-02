@@ -14,12 +14,12 @@ because a marker the migration engine owns needs no co-ordination with the
 models, which would otherwise have to carry a field for it.
 """
 import json
-import os
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-ENCODING = "utf-8"
+from ..files import ENCODING, read_text, restrict, write_atomic
+
 SUFFIX = ".json"
 
 _DIGITS = re.compile(r"[0-9]+")
@@ -27,38 +27,6 @@ _DIGITS = re.compile(r"[0-9]+")
 
 class StateError(Exception):
     """The state directory is not in a shape that can be read safely."""
-
-
-def restrict(path: Path, mode: int) -> None:
-    """Keep state owner-only, the way the config directory itself is kept.
-
-    The state holds `--env` secrets and key prefixes, and staging and backup
-    directories are siblings of it — so they sit OUTSIDE the 0700 that protects
-    the live directory and have to be hardened in their own right. No-op on
-    Windows, where per-user AppData provides the isolation via ACLs.
-    """
-    if os.name == "nt":
-        return
-    try:
-        os.chmod(path, mode)
-    except OSError:
-        pass
-
-
-def _write(path: Path, text: str) -> None:
-    """Write a file and flush its contents to the device.
-
-    `_swap` renames staged files into place and fsyncs the directories, which
-    makes the NAMES durable — not the bytes under them. Without this a crash
-    shortly after a migration that reported success can leave a policy present
-    but empty while the only name-keyed original has already been moved into the
-    backup, or leave a zero-length marker, which reads back as a state error
-    that refuses every command including `migrate`.
-    """
-    with open(path, "w", encoding=ENCODING) as f:
-        f.write(text)
-        f.flush()
-        os.fsync(f.fileno())
 
 
 class MigrationStore:
@@ -112,10 +80,7 @@ class MigrationStore:
         # and the marker is what decides whether migrations re-run.
         self.meta_dir.mkdir(parents=True, exist_ok=True)
         restrict(self.meta_dir, 0o700)
-        tmp = self.version_file.with_name(f"version.{os.getpid()}.tmp")
-        _write(tmp, f"{value}\n")
-        restrict(tmp, 0o600)
-        os.replace(tmp, self.version_file)
+        write_atomic(self.version_file, f"{value}\n")
 
     # ── documents ───────────────────────────────────────────────────
 
@@ -123,7 +88,7 @@ class MigrationStore:
         if not self.config_file.exists():
             return {}
         try:
-            return json.loads(self.config_file.read_text(encoding=ENCODING))
+            return json.loads(read_text(self.config_file))
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
             # A torn write or a bad hand-edit. Raised as a StateError so the
             # engine can say what to do about it: the bare decoder message
@@ -137,8 +102,7 @@ class MigrationStore:
             ) from e
 
     def write_config(self, doc: Dict[str, Any]) -> None:
-        _write(self.config_file, json.dumps(doc, indent=2))
-        restrict(self.config_file, 0o600)
+        write_atomic(self.config_file, json.dumps(doc, indent=2))
 
     def policy_files(self) -> List[Path]:
         if not self.policies_dir.is_dir():
@@ -161,7 +125,7 @@ class MigrationStore:
 
     def read_policy(self, path: Path) -> Dict[str, Any]:
         try:
-            return json.loads(path.read_text(encoding=ENCODING))
+            return json.loads(read_text(path))
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
             # 0.1.x wrote policies with a plain truncate-and-write, so a crash
             # or a full disk mid-save leaves one of these behind. Name it: the
@@ -171,6 +135,5 @@ class MigrationStore:
     def write_policy(self, name: str, doc: Dict[str, Any]) -> Path:
         self.policies_dir.mkdir(parents=True, exist_ok=True)
         path = self.policies_dir / f"{name}{SUFFIX}"
-        _write(path, json.dumps(doc, indent=2))
-        restrict(path, 0o600)
+        write_atomic(path, json.dumps(doc, indent=2))
         return path

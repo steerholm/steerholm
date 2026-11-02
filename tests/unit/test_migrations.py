@@ -461,9 +461,10 @@ def test_a_genuinely_empty_state_dir_does_not_refuse(tmp_path, monkeypatch):
 
 
 def test_permissions_are_not_fsynced_on_windows(state):
-    with mock.patch.object(migrations.os, "name", "nt"), \
-         mock.patch.object(migrations.os, "open") as opened:
-        migrations._fsync_dir(state)
+    from steerholm import files
+    with mock.patch.object(files.os, "name", "nt"), \
+         mock.patch.object(files.os, "open") as opened:
+        files.fsync_dir(state)
     opened.assert_not_called()
 
 
@@ -613,12 +614,12 @@ def test_the_lock_survives_a_missing_state_directory(tmp_path):
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes")
 def test_restrict_is_a_no_op_on_windows(tmp_path):
-    from steerholm.migrations import store as store_mod
+    from steerholm import files
     target = tmp_path / "f"
     target.write_text("x")
     target.chmod(0o644)
-    with mock.patch.object(store_mod.os, "name", "nt"):
-        store_mod.restrict(target, 0o600)
+    with mock.patch.object(files.os, "name", "nt"):
+        files.restrict(target, 0o600)
     assert target.stat().st_mode & 0o777 == 0o644     # untouched
 
 
