@@ -1,0 +1,20 @@
+ERROR    mcp.server.streamable_http:streamable_http.py:728 Error in standalone SSE writer
+Traceback (most recent call last):
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages\mcp\server\streamable_http.py", line 718, in standalone_sse_writer
+    async for event_message in standalone_stream_reader:
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages\anyio\abc\_streams.py", line 37, in __anext__
+    return await self.receive()
+           ^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages\anyio\streams\memory.py", line 141, in receive
+    raise ClosedResourceError from None
+anyio.ClosedResourceError
+ERROR    mcp.server.streamable_http:streamable_http.py:728 Error in standalone SSE writer
+Traceback (most recent call last):
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages\mcp\server\streamable_http.py", line 718, in standalone_sse_writer
+    async for event_message in standalone_stream_reader:
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages\anyio\abc\_streams.py", line 37, in __anext__
+    return await self.receive()
+           ^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\site-packages\anyio\streams\memory.py", line 141, in receive
+    raise ClosedResourceError from None
+anyio.ClosedResourceError

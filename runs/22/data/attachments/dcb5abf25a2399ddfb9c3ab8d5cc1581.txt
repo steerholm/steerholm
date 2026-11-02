@@ -1,0 +1,1 @@
+ERROR    steerholm:gateway.py:383 Failed to stop server 'ghost': stuck

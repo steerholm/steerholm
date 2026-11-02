@@ -1,0 +1,2 @@
+WARNING  steerholm:gateway.py:514 Server 'broken' failed its health check; will restart: dead
+ERROR    steerholm:gateway.py:524 Failed to stop unhealthy server 'broken': cant stop

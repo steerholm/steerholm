@@ -1,0 +1,1 @@
+{"id":"0fb69177bf3247f64b5c3cd45ed21a5b.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_files#test_read_text_still_refuses_undecodable_bytes","name":"test_read_text_still_refuses_undecodable_bytes","status":"passed","testResultsByEnv":{"default":"8d30bba974162e452e53762f87edbd35"}}

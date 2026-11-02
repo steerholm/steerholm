@@ -1,0 +1,1 @@
+{"id":"b70a22f410187bc585121cc5fbfb1595.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands.TestInstallerUndoesAnOldBinarysLibraryPath#test_restores_the_users_value","name":"test_restores_the_users_value","status":"passed","testResultsByEnv":{"default":"395de0d0f54307f5ec7d4cd5a1ec81a3"}}
