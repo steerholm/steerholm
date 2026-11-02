@@ -1,0 +1,1 @@
+{"id":"b4aab39a008bc09a1f736b80ce8ecdf8.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands#test_list_servers_a_server_not_started_shows_stopped","name":"test_list_servers_a_server_not_started_shows_stopped","status":"passed","testResultsByEnv":{"default":"5278841dfaa72dbfccac9d8e56ee1f85"}}

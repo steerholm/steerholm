@@ -1,0 +1,1 @@
+{"id":"a8c147c4ab470228bdb0bd91953474a0.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_files#test_full_fsync_falls_back_to_fsync_when_refused","name":"test_full_fsync_falls_back_to_fsync_when_refused","status":"passed","testResultsByEnv":{"default":"3b2f32517da79669beac30a8c384a0a6"}}

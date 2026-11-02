@@ -1,0 +1,8 @@
+ERROR    steerholm.admin:admin.py:213 Admin request 'broken' failed
+Traceback (most recent call last):
+  File "D:\a\steerholm\steerholm\steerholm\admin.py", line 209, in _answer
+    return {"ok": True, "result": await handler(caller, args)}
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\a\steerholm\steerholm\tests\integration\test_admin_channel.py", line 50, in broken
+    raise RuntimeError("disk on fire")
+RuntimeError: disk on fire
