@@ -320,3 +320,18 @@ def make_mock_process(server_name: str, tool_names: list[str]) -> ServerProcess:
     proc.stop = AsyncMock()
 
     return proc
+
+
+def in_process_admin(gateway: SteerholmGateway):
+    """`admin.request` answered by `gateway` in this process: the daemon's real
+    handlers and request handling, without a socket or pipe in between."""
+    from steerholm import admin
+
+    server = admin.AdminServer(gateway.admin_handlers())
+
+    def request(op, **args):
+        line = admin.encode_request(op, args)
+        return admin.parse_answer(asyncio.run(server.answer(admin.own_identity(), line)))
+
+    return request
+

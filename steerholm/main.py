@@ -5,7 +5,7 @@ from typing import List, Optional
 from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
-from . import __version__
+from . import __version__, admin
 from .childenv import child_env
 from .config import ConfigManager, EX_CONFIG, UnusableStateError
 from .files import write_atomic
@@ -152,6 +152,18 @@ def _handle(fn, *args, **kwargs):
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {escape(str(e))}")
         raise typer.Exit(code=1)
+
+
+def _ask_daemon(op: str, **args):
+    """Send a request to the daemon, and exit with its reason if it can't answer."""
+    try:
+        return admin.request(op, **args)
+    except admin.DaemonNotRunning:
+        console.print("[bold red]Error:[/bold red] The daemon is not running. "
+                      "Start it with [bold]holm start[/bold].")
+    except admin.AdminError as e:
+        console.print(f"[bold red]Error:[/bold red] {escape(str(e))}")
+    raise typer.Exit(code=1)
 
 
 def _parse_env(pairs: Optional[List[str]]) -> dict:
@@ -453,12 +465,10 @@ def _status_markup(state: str) -> str:
 @list_app.command("servers")
 def list_servers():
     """List all servers with their live status."""
-    servers = config_manager.list_servers()
+    servers = _ask_daemon("list_servers")
     if not servers:
         console.print("No servers added yet. Add one with [bold]holm add server <name>[/bold].")
         return
-
-    status = _daemon_server_status()
 
     table = Table(title="Servers")
     table.add_column("Name", style="cyan")
@@ -468,20 +478,17 @@ def list_servers():
     table.add_column("Uptime", style="dim")
     table.add_column("Tools", justify="right")
     for server in servers:
-        st = (status or {}).get(server.name, {})
-        state = st.get("state", "unknown" if status is None else "stopped")
-        n_tools = len(st.get("tools", [])) if st else 0
+        st = server["status"] or {}
+        state = st.get("state", "stopped")
         table.add_row(
-            escape(server.name),
-            escape(server.command or server.url),
-            server.server_type.value,
+            escape(server["name"]),
+            escape(server["command"] or server["url"]),
+            server["type"],
             _status_markup(state),
             _format_uptime(st.get("uptime_seconds")),
-            str(n_tools) if state == "running" else "-",
+            str(len(st.get("tools", []))) if state == "running" else "-",
         )
     console.print(table)
-    if status is None:
-        console.print("[dim]Daemon not running; live status unavailable.[/dim]")
 
 
 def _print_server_status(name: str) -> None:

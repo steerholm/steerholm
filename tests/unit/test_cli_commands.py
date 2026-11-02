@@ -15,11 +15,21 @@ runner = CliRunner()
 
 @pytest.fixture
 def cli(config_manager, monkeypatch):
-    """CliRunner bound to a temp-config CLI, with the daemon reported down by
-    default (no network) so command output is deterministic."""
+    """CliRunner bound to a temp-config CLI. Admin requests are answered by an
+    in-process gateway; the HTTP side of the daemon is reported down (no network)
+    so command output is deterministic."""
+    from conftest import in_process_admin, make_gateway
     monkeypatch.setattr(m, "config_manager", config_manager)
     monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: False)
+    monkeypatch.setattr(m.admin, "request", in_process_admin(make_gateway(config_manager)))
     return config_manager
+
+
+@pytest.fixture
+def daemon_down(monkeypatch):
+    def request(op, **args):
+        raise m.admin.DaemonNotRunning()
+    monkeypatch.setattr(m.admin, "request", request)
 
 
 # ─── Pure helpers ───────────────────────────────────────────────────
@@ -406,11 +416,21 @@ def test_list_servers_empty(cli):
     assert "No servers added" in result.output
 
 
-def test_list_servers_daemon_down(cli):
+def test_list_servers_daemon_down(cli, daemon_down):
     cli.add_server("fs", command="echo")
     result = runner.invoke(app, ["list", "servers"])
-    assert "fs" in result.output
-    assert "status unavailable" in result.output
+    assert result.exit_code == 1
+    assert "daemon is not running" in result.output
+    assert "holm start" in result.output
+
+
+def test_list_servers_shows_the_daemons_refusal(cli, monkeypatch):
+    def request(op, **args):
+        raise m.admin.AdminError("This daemon belongs to another account.")
+    monkeypatch.setattr(m.admin, "request", request)
+    result = runner.invoke(app, ["list", "servers"])
+    assert result.exit_code == 1
+    assert "another account" in result.output
 
 
 def test_list_servers_command_with_brackets_shown_literally(cli):
@@ -442,12 +462,21 @@ def test_show_server_grantee_tool_pattern_brackets_shown_literally(cli):
 
 
 def test_list_servers_daemon_up_running(cli, monkeypatch):
+    from steerholm.gateway import SteerholmGateway
     cli.add_server("fs", command="echo")
-    monkeypatch.setattr(m, "_daemon_server_status",
-                        lambda: {"fs": {"state": "running", "uptime_seconds": 5,
-                                        "tools": [{"name": "t", "description": "d"}]}})
+    monkeypatch.setattr(SteerholmGateway, "server_status",
+                        lambda self: {"fs": {"state": "running", "uptime_seconds": 5,
+                                             "tools": [{"name": "t", "description": "d"}]}})
     result = runner.invoke(app, ["list", "servers"])
     assert "running" in result.output
+    assert "5s" in result.output
+
+
+def test_list_servers_a_server_not_started_shows_stopped(cli):
+    cli.add_server("fs", command="echo")
+    result = runner.invoke(app, ["list", "servers"])
+    assert result.exit_code == 0
+    assert "stopped" in result.output
 
 
 def test_show_server_not_found(cli):

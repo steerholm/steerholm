@@ -23,6 +23,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from . import __version__
+from .admin import AdminServer
 from .config import (
     ConfigError, ConfigManager, get_or_create_control_token, read_control_token,
 )
@@ -484,6 +485,30 @@ class SteerholmGateway:
                 }
         return result
 
+    def admin_handlers(self) -> dict:
+        """The requests the admin channel serves, by op name."""
+        return {"list_servers": self._admin_list_servers}
+
+    async def _admin_list_servers(self, caller: str, args: dict) -> list:
+        self._load_for_admin()
+        status = self.server_status()
+        return [
+            {
+                "name": s.name, "id": s.id, "type": s.server_type.value,
+                "command": s.command, "url": s.url, "status": status.get(s.name),
+            }
+            for s in self.config_manager.list_servers()
+        ]
+
+    def _load_for_admin(self) -> None:
+        """Re-read the state for an admin request; a config that cannot be
+        loaded is the caller's answer, not a daemon failure."""
+        self.config_manager.reload()
+        try:
+            self.config_manager.verify_loaded()
+        except ConfigError as e:
+            raise ValueError(str(e)) from e
+
     async def _reconcile_loop(self, interval: float = 30.0):
         """Supervisor backstop: periodically restart servers whose session died,
         retry failed starts, and correct any drift — all without a daemon restart."""
@@ -656,6 +681,8 @@ class SteerholmGateway:
         logger.info(f"Listening on http://{host}:{port}/mcp")
         config = uvicorn.Config(app, host=host, port=port, log_level="info")
         server = uvicorn.Server(config)
+        admin = AdminServer(self.admin_handlers())
+        await admin.start()
         supervisor = asyncio.create_task(self._reconcile_loop())
         # The servers start behind the open port, not before it. Managing them is
         # one of the daemon's jobs, so it answers — health, status, control — from
@@ -667,6 +694,7 @@ class SteerholmGateway:
         try:
             await server.serve()
         finally:
+            await admin.close()
             for task in [supervisor, *self._background]:
                 task.cancel()
                 try:
