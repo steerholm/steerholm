@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Stage 3 (Linux/macOS): simulate the real end-user flow against the built binary.
-#   build check -> configure -> run install.sh WITH service -> verify the
-#   service-managed daemon is answering -> live usage test -> re-run install over
+#   build check -> run install.sh WITH service -> verify the service-managed
+#   daemon is answering -> configure through it -> live usage test -> re-run install over
 #   the running daemon (self-update regression) -> uninstall + verify.
 # Each phase is recorded into Allure (parentSuite=OS, suite=phase). The job fails
 # if install, usage, update, or uninstall fails.
@@ -27,9 +27,6 @@ if "$BIN_TMP" version >/dev/null 2>&1; then
 else
   emit "built binary runs ($PLATFORM)" Build failed
 fi
-
-# ── Configure before the daemon starts (the service reads this config) ──
-TOKEN="$(python tests/smoke/scenario.py configure --holm "$BIN_TMP" | sed -n 's/^TOKEN=//p')"
 
 export PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring
 # The service-managed daemon must use the SAME (file) keyring backend as the
@@ -64,6 +61,12 @@ if [ "$up" = 1 ]; then
   emit "service-managed daemon up ($PLATFORM)" Install passed
 else
   emit "service-managed daemon up ($PLATFORM)" Install failed
+fi
+
+# ── Configure through the running daemon (the CLI reaches state only through it) ──
+TOKEN=""
+if [ "$up" = 1 ]; then
+  TOKEN="$(python tests/smoke/scenario.py configure --holm "$BIN" | sed -n 's/^TOKEN=//p')"
 fi
 
 # ── Usage: live test against the running daemon ─────────────────────

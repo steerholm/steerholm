@@ -1,6 +1,6 @@
 # Stage 3 (Windows): simulate the real end-user flow against the built binary.
-#   build check -> configure -> run install.ps1 WITH service -> verify the
-#   service-managed daemon is answering -> live usage test -> re-run install over
+#   build check -> run install.ps1 WITH service -> verify the service-managed
+#   daemon is answering -> configure through it -> live usage test -> re-run install over
 #   the running daemon (self-update regression) -> uninstall + verify.
 # Each phase is recorded into Allure (parentSuite=OS, suite=phase). The job fails
 # if install, usage, update, or uninstall fails.
@@ -30,10 +30,6 @@ $binTmp = Join-Path $tmp 'holm.exe'
 if ($LASTEXITCODE -eq 0) { Emit "built binary runs ($env:PLATFORM)" Build passed }
 else { Emit "built binary runs ($env:PLATFORM)" Build failed }
 
-# ── Configure before the daemon starts (the service reads this config) ──
-$out = python tests/smoke/scenario.py configure --holm $binTmp
-$token = ($out | Select-String -Pattern '^TOKEN=(.+)$').Matches.Groups[1].Value
-
 $env:PYTHON_KEYRING_BACKEND = 'keyrings.alt.file.PlaintextKeyring'
 # The logon-task-spawned daemon must use the SAME (file) keyring backend as the
 # configure step, or it can't verify the token (401). The task inherits the
@@ -61,6 +57,13 @@ if ($up) { Emit "service-managed daemon up ($env:PLATFORM)" Install passed }
 else { Emit "service-managed daemon up ($env:PLATFORM)" Install failed }
 if ($up -and -not $triggerFired) {
     Write-Host "NOTE: usage validated against the real daemon binary; the logon trigger itself is not exercisable on a non-interactive hosted runner."
+}
+
+# ── Configure through the running daemon (the CLI reaches state only through it) ──
+$token = ''
+if ($up) {
+    $out = python tests/smoke/scenario.py configure --holm (Join-Path $env:LOCALAPPDATA 'steerholm\bin\holm.exe')
+    $token = ($out | Select-String -Pattern '^TOKEN=(.+)$').Matches.Groups[1].Value
 }
 
 # ── Usage: live test against the running daemon ─────────────────────
