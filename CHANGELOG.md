@@ -8,6 +8,17 @@ The release workflow publishes the section for the tagged version as its GitHub
 release notes, so update the entry for the version you're about to tag **before**
 tagging it. At tag time, rename `[Unreleased]` to the version and date.
 
+## [Unreleased]
+
+### Fixed
+
+- `config.json` and policy files are written to a temporary file and renamed
+  into place, so a full disk or a failing drive during a save no longer leaves
+  them cut off.
+- Windows: a non-ASCII value in `config.json` (an `--env` value, a path) no
+  longer makes it unreadable after the next change. State is now written as
+  UTF-8; files written by earlier versions are still read.
+
 ## [0.1.2] - 2026-10-19
 
 Changes since 0.1.1. The installer migrates your stored data to the new layout
