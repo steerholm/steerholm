@@ -76,6 +76,27 @@ def _allure_grouping(request):
             allure.dynamic.suite(suite)
             break
 
+
+@pytest.fixture(autouse=True)
+def _private_admin_channel(monkeypatch):
+    """Every test gets its own admin socket path / pipe name, so a daemon a test
+    starts never meets a real one on the machine. The socket lives in a short
+    directory: macOS caps a Unix socket path at 104 bytes, which pytest's
+    tmp_path can exceed."""
+    import shutil
+    import uuid
+    from pathlib import Path
+    from steerholm import admin
+
+    if os.name == "nt":
+        monkeypatch.setattr(admin, "PIPE_NAME", rf"\\.\pipe\steerholm-test-{uuid.uuid4().hex}")
+        yield
+        return
+    directory = Path(tempfile.mkdtemp(prefix="holm", dir="/tmp"))
+    monkeypatch.setattr(admin, "socket_path", lambda: directory / "admin.sock")
+    yield
+    shutil.rmtree(directory, ignore_errors=True)
+
 from mcp.server import Server as MCPServer
 from mcp.server.lowlevel.server import request_ctx
 from mcp.shared.context import RequestContext

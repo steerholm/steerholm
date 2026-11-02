@@ -2,29 +2,10 @@
 (Windows): the transport, the peer identity the OS reports, and the answers."""
 import asyncio
 import os
-import shutil
-import tempfile
-import uuid
-from pathlib import Path
 
 import pytest
 
 from steerholm import admin
-
-
-@pytest.fixture
-def channel(monkeypatch):
-    """A private socket path / pipe name, so a daemon running on the machine is
-    never reached. The socket lives in a short directory: macOS caps a Unix
-    socket path at 104 bytes, which pytest's tmp_path can exceed."""
-    if os.name == "nt":
-        monkeypatch.setattr(admin, "PIPE_NAME", rf"\\.\pipe\steerholm-test-{uuid.uuid4().hex}")
-        yield
-        return
-    directory = Path(tempfile.mkdtemp(prefix="holm", dir="/tmp"))
-    monkeypatch.setattr(admin, "socket_path", lambda: directory / "admin.sock")
-    yield
-    shutil.rmtree(directory, ignore_errors=True)
 
 
 async def _serve(handlers, call):
@@ -39,7 +20,7 @@ async def _serve(handlers, call):
 
 
 @pytest.mark.asyncio
-async def test_a_request_gets_its_result_and_the_callers_identity(channel):
+async def test_a_request_gets_its_result_and_the_callers_identity():
     async def whoami(caller, args):
         return {"caller": caller, "args": args}
 
@@ -49,7 +30,7 @@ async def test_a_request_gets_its_result_and_the_callers_identity(channel):
 
 
 @pytest.mark.asyncio
-async def test_a_refusal_reaches_the_caller(channel):
+async def test_a_refusal_reaches_the_caller():
     async def refuse(caller, args):
         raise ValueError("Server 'git' not found.")
 
@@ -58,13 +39,13 @@ async def test_a_refusal_reaches_the_caller(channel):
 
 
 @pytest.mark.asyncio
-async def test_an_unknown_request_is_refused(channel):
+async def test_an_unknown_request_is_refused():
     with pytest.raises(admin.AdminError, match="Unknown request 'nope'"):
         await _serve({}, lambda: admin.request("nope"))
 
 
 @pytest.mark.asyncio
-async def test_a_handler_failure_is_reported_not_raised(channel):
+async def test_a_handler_failure_is_reported_not_raised():
     async def broken(caller, args):
         raise RuntimeError("disk on fire")
 
@@ -73,7 +54,7 @@ async def test_a_handler_failure_is_reported_not_raised(channel):
 
 
 @pytest.mark.asyncio
-async def test_another_account_is_refused(channel):
+async def test_another_account_is_refused():
     async def whoami(caller, args):
         return caller
 
@@ -87,13 +68,13 @@ async def test_another_account_is_refused(channel):
         await server.close()
 
 
-def test_nothing_listening_is_daemon_not_running(channel):
+def test_nothing_listening_is_daemon_not_running():
     with pytest.raises(admin.DaemonNotRunning):
         admin.request("list_servers")
 
 
 @pytest.mark.skipif(os.name == "nt", reason="a socket file is a Unix thing")
-def test_a_leftover_socket_file_is_daemon_not_running(channel):
+def test_a_leftover_socket_file_is_daemon_not_running():
     import socket
     path = admin.socket_path()
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -105,7 +86,7 @@ def test_a_leftover_socket_file_is_daemon_not_running(channel):
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX modes; Windows uses the pipe's ACL")
 @pytest.mark.asyncio
-async def test_the_socket_is_owner_only_and_removed_on_close(channel):
+async def test_the_socket_is_owner_only_and_removed_on_close():
     server = admin.AdminServer({})
     await server.start()
     path = admin.socket_path()
@@ -116,7 +97,7 @@ async def test_the_socket_is_owner_only_and_removed_on_close(channel):
 
 @pytest.mark.skipif(os.name == "nt", reason="a socket file is a Unix thing")
 @pytest.mark.asyncio
-async def test_a_previous_daemons_socket_file_is_replaced(channel):
+async def test_a_previous_daemons_socket_file_is_replaced():
     admin.socket_path().write_text("left behind")
     server = admin.AdminServer({})
     await server.start()
@@ -142,7 +123,7 @@ def test_an_unreadable_answer_is_an_error():
 
 @pytest.mark.skipif(os.name == "nt", reason="a raw Unix socket client")
 @pytest.mark.asyncio
-async def test_a_client_that_hangs_up_does_not_break_the_server(channel):
+async def test_a_client_that_hangs_up_does_not_break_the_server():
     import socket
 
     async def ping(caller, args):
@@ -162,7 +143,7 @@ async def test_a_client_that_hangs_up_does_not_break_the_server(channel):
 
 @pytest.mark.skipif(os.name == "nt", reason="Unix peer credentials")
 @pytest.mark.asyncio
-async def test_a_connection_whose_peer_cannot_be_identified_is_dropped(channel, monkeypatch):
+async def test_a_connection_whose_peer_cannot_be_identified_is_dropped(monkeypatch):
     monkeypatch.setattr(admin, "_peer_uid", lambda sock: (_ for _ in ()).throw(OSError("no creds")))
     server = admin.AdminServer({})
     await server.start()
