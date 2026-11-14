@@ -136,28 +136,6 @@ class TestControlPlane:
             )
         assert resp.status_code == 401
 
-    @pytest.mark.asyncio
-    async def test_servers_status_requires_control_token(self, config_manager):
-        app = make_gateway(config_manager).create_asgi_app("127.0.0.1", 4767)
-        async with _asgi_client(app) as client:
-            resp = await client.get("/control/servers")
-        assert resp.status_code == 401
-
-    @pytest.mark.asyncio
-    async def test_servers_status_returns_state(self, config_manager):
-        from steerholm.config import get_or_create_control_token
-
-        config_manager.add_server("srv", command="echo")
-        token = get_or_create_control_token()
-        app = make_gateway(config_manager).create_asgi_app("127.0.0.1", 4767)
-        async with _asgi_client(app) as client:
-            resp = await client.get(
-                "/control/servers", headers={"Authorization": f"Bearer {token}"}
-            )
-        assert resp.status_code == 200
-        # Added but not started in this gateway → reported as stopped.
-        assert resp.json()["srv"]["state"] == "stopped"
-
     def test_control_token_isolated_from_agent_keyring(self, config_manager):
         from steerholm.config import get_or_create_control_token
 

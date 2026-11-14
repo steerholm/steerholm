@@ -413,28 +413,6 @@ def _notify_daemon_reconcile() -> None:
         console.print(f"See when it is up with [bold]holm show server {escape(starting[0])}[/bold].")
 
 
-def _daemon_server_status() -> Optional[dict]:
-    """Fetch live per-server status from the running daemon, or None if it's down."""
-    import json
-    import urllib.request
-    from .config import DEFAULT_HOST, DEFAULT_PORT, read_control_token
-
-    if not _daemon_up(DEFAULT_HOST, DEFAULT_PORT):
-        return None
-    try:
-        token = read_control_token()
-        if not token:
-            return None
-        req = urllib.request.Request(
-            f"http://{DEFAULT_HOST}:{DEFAULT_PORT}/control/servers",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read() or b"{}")
-    except Exception:
-        return None
-
-
 def _format_uptime(seconds: Optional[float]) -> str:
     if seconds is None:
         return "-"
@@ -491,14 +469,8 @@ def list_servers():
     console.print(table)
 
 
-def _print_server_status(name: str) -> None:
+def _print_server_status(st: Optional[dict]) -> None:
     """Print live status + the tools a server provides (shared by `show server`)."""
-    status = _daemon_server_status()
-    if status is None:
-        console.print("[bold]Status:[/bold] [dim]daemon not running[/dim]")
-        return
-
-    st = status.get(name)
     if st is None:
         console.print("[bold]Status:[/bold] [dim]unknown[/dim]")
         return
@@ -522,52 +494,41 @@ def _print_server_status(name: str) -> None:
         console.print("[dim]This server exposes no tools.[/dim]")
 
 
-def _print_server_grantees(name: str) -> None:
+def _print_server_grantees(grantees: list) -> None:
     """Print which agents have been granted access to a server."""
-    server = config_manager.get_server(name)
-    server_id = server.id if server else None
-    grantees = []
-    for agent_name in config_manager.config.agents:
-        policy = config_manager.load_policy(agent_name)
-        if policy and server_id in policy.permissions:
-            tools = ", ".join(t.name for t in policy.permissions[server_id])
-            grantees.append((agent_name, tools))
     if not grantees:
         console.print("[dim]No agents have been granted access to this server.[/dim]")
         return
     table = Table(title="Agents with access")
     table.add_column("Agent", style="cyan")
     table.add_column("Tools", style="green")
-    for agent_name, tools in grantees:
-        table.add_row(escape(agent_name), escape(tools))
+    for grantee in grantees:
+        table.add_row(escape(grantee["agent"]), escape(", ".join(grantee["tools"])))
     console.print(table)
 
 
 @show_app.command("server")
 def show_server(name: str):
     """Show a server: its config, live status, tools, and which agents can reach it."""
-    server = config_manager.get_server(name)
-    if not server:
-        console.print(f"[bold red]Error:[/bold red] Server '{escape(name)}' not found.")
-        raise typer.Exit(code=1)
+    server = _ask_daemon("show_server", name=name)
 
     # escape() the user-supplied values so a '[' in a name/command/url/env key
     # isn't parsed as Rich markup (which would misrender or raise and abort).
-    console.print(f"[bold]Name:[/bold] {escape(server.name)}")
-    if server.id:
-        console.print(f"[bold]ID:[/bold] {server.id}")
-    if server.command:
-        console.print(f"[bold]Command:[/bold] {escape(server.command)}")
-    if server.url:
-        console.print(f"[bold]URL:[/bold] {escape(server.url)}")
-    if server.env:
-        # Show which env vars are set, but mask values so secrets don't leak.
-        keys = ", ".join(f"{escape(k)}=***" for k in server.env)
+    console.print(f"[bold]Name:[/bold] {escape(server['name'])}")
+    if server["id"]:
+        console.print(f"[bold]ID:[/bold] {server['id']}")
+    if server["command"]:
+        console.print(f"[bold]Command:[/bold] {escape(server['command'])}")
+    if server["url"]:
+        console.print(f"[bold]URL:[/bold] {escape(server['url'])}")
+    if server["env_keys"]:
+        # Which env vars are set; the daemon never sends their values.
+        keys = ", ".join(f"{escape(k)}=***" for k in server["env_keys"])
         console.print(f"[bold]Env:[/bold] {keys}")
-    console.print(f"[bold]Type:[/bold] {server.server_type.value}")
+    console.print(f"[bold]Type:[/bold] {server['type']}")
 
-    _print_server_grantees(name)
-    _print_server_status(name)
+    _print_server_grantees(server["grantees"])
+    _print_server_status(server["status"])
 
 
 @app.command()
@@ -869,7 +830,7 @@ def rotate_agent(name: str):
 @list_app.command("agents")
 def list_agents():
     """List all agents."""
-    agents = config_manager.config.agents
+    agents = _ask_daemon("list_agents")
     if not agents:
         console.print("No agents yet. Add one with [bold]holm add agent <name>[/bold].")
         return
@@ -877,8 +838,8 @@ def list_agents():
     table = Table(title="Agents")
     table.add_column("Name", style="cyan")
     table.add_column("Access key", style="magenta")
-    for name, agent in agents.items():
-        table.add_row(escape(name), agent.key_prefix)
+    for agent in agents:
+        table.add_row(escape(agent["name"]), agent["key_prefix"])
     console.print(table)
 
 
@@ -892,34 +853,27 @@ def remove_agent(name: str):
 @show_app.command("agent")
 def show_agent(name: str):
     """Show an agent: its access-key prefix, its grants, and how to connect."""
-    agent = config_manager.get_agent(name)
-    if not agent:
-        console.print(f"[bold red]Error:[/bold red] Agent '{escape(name)}' not found.")
-        raise typer.Exit(code=1)
+    agent = _ask_daemon("show_agent", name=name)
 
-    console.print(f"[bold]Agent:[/bold] {escape(agent.name)}")
-    if agent.id:
-        console.print(f"[bold]ID:[/bold] {agent.id}")
-    console.print(f"[bold]Access key:[/bold] {agent.key_prefix}")
+    console.print(f"[bold]Agent:[/bold] {escape(agent['name'])}")
+    if agent["id"]:
+        console.print(f"[bold]ID:[/bold] {agent['id']}")
+    console.print(f"[bold]Access key:[/bold] {agent['key_prefix']}")
 
-    policy = config_manager.load_policy(name)
-    if not policy or not policy.permissions:
+    if not agent["access"]:
         console.print("[bold]Access:[/bold] [dim]none granted (default-deny)[/dim]")
     else:
         console.print("[bold]Access:[/bold]")
-        # Grants are stored by server id; show the name the user knows it by,
-        # falling back to the id if the server is gone.
-        names_by_id = {s.id: s.name for s in config_manager.list_servers() if s.id}
-        for server_id, tools in policy.permissions.items():
-            console.print(f"  [cyan]{escape(names_by_id.get(server_id, server_id))}[/cyan]")
-            for tool in tools:
+        for grant in agent["access"]:
+            console.print(f"  [cyan]{escape(grant['server'])}[/cyan]")
+            for tool in grant["tools"]:
                 pol_str = ""
-                if tool.policies:
+                if tool["policies"]:
                     pol_str = " -> " + ", ".join(
-                        f"{p.arg_name}={'re:' if p.match_type == 'regex' else ''}{p.pattern}"
-                        for p in tool.policies
+                        f"{p['arg']}={'re:' if p['type'] == 'regex' else ''}{p['pattern']}"
+                        for p in tool["policies"]
                     )
-                console.print(f"    - [green]{escape(tool.name)}[/green]{escape(pol_str)}")
+                console.print(f"    - [green]{escape(tool['name'])}[/green]{escape(pol_str)}")
 
     from .config import DEFAULT_HOST, DEFAULT_PORT
     console.print(
@@ -1233,12 +1187,6 @@ def _limit_text(value: int, unit: str) -> str:
     return f"{value} {unit}" if value else "unlimited"
 
 
-def _segment_mb() -> int:
-    from .events import MAX_SEGMENT_BYTES
-    return MAX_SEGMENT_BYTES // (1024 * 1024)
-
-
-
 def _retention_summary(audit) -> str:
     return (f"at most {_limit_text(audit.max_files, 'files')}, "
             f"kept for {_limit_text(audit.max_age_days, 'days')}")
@@ -1250,20 +1198,16 @@ def log_config():
 
     Read-only — change these with `holm log set`.
     """
-    audit = config_manager.config.audit
-    from .config import CONFIG_DIR
-    from .events import SEGMENT_PREFIX, SEGMENT_SUFFIX
-    per_file = _segment_mb()
+    audit = _ask_daemon("log_config")
+    per_file = audit["segment_bytes"] // (1024 * 1024)
 
     console.print("[bold]Audit log[/bold]")
     # soft_wrap so a long path is never broken mid-filename (it must stay
     # copy-pasteable into grep/jq).
-    console.print(f"  Files:         "
-                  f"{escape(str(CONFIG_DIR / f'{SEGMENT_PREFIX}*{SEGMENT_SUFFIX}'))}",
-                  soft_wrap=True)
-    console.print(f"  Max files:     {audit.max_files or 'unlimited'}")
-    console.print(f"  Max age:       {_limit_text(audit.max_age_days, 'days')}")
-    total = per_file * audit.max_files
+    console.print(f"  Files:         {escape(audit['files'])}", soft_wrap=True)
+    console.print(f"  Max files:     {audit['max_files'] or 'unlimited'}")
+    console.print(f"  Max age:       {_limit_text(audit['max_age_days'], 'days')}")
+    total = per_file * audit["max_files"]
     console.print(
         f"  Disk ceiling:  {str(total) + ' MB' if total else 'unbounded (no file limit)'}"
         f" [dim]({per_file} MB per file)[/dim]")

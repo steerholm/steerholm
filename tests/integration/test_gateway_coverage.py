@@ -607,3 +607,13 @@ async def test_serve_refuses_when_another_daemon_has_the_admin_channel(config_ma
     with pytest.raises(SystemExit):
         await gateway.serve("127.0.0.1", 0)
 
+
+
+@pytest.mark.asyncio
+async def test_an_admin_read_reports_an_unloadable_config(config_manager):
+    import steerholm.config as config_mod
+
+    gateway = make_gateway(config_manager)
+    config_mod.CONFIG_FILE.write_text("{ not json", encoding="utf-8")
+    with pytest.raises(ValueError, match="cannot be loaded"):
+        await gateway.admin_handlers()["list_agents"]("uid:0", {})

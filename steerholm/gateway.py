@@ -487,7 +487,13 @@ class SteerholmGateway:
 
     def admin_handlers(self) -> dict:
         """The requests the admin channel serves, by op name."""
-        return {"list_servers": self._admin_list_servers}
+        return {
+            "list_servers": self._admin_list_servers,
+            "show_server": self._admin_show_server,
+            "list_agents": self._admin_list_agents,
+            "show_agent": self._admin_show_agent,
+            "log_config": self._admin_log_config,
+        }
 
     async def _admin_list_servers(self, caller: str, args: dict) -> list:
         self._load_for_admin()
@@ -499,6 +505,76 @@ class SteerholmGateway:
             }
             for s in self.config_manager.list_servers()
         ]
+
+    async def _admin_show_server(self, caller: str, args: dict) -> dict:
+        self._load_for_admin()
+        name = args.get("name")
+        server = self.config_manager.get_server(name)
+        if server is None:
+            raise ValueError(f"Server '{name}' not found.")
+        grantees = []
+        for agent_name in self.config_manager.config.agents:
+            policy = self.config_manager.load_policy(agent_name)
+            if policy and server.id in policy.permissions:
+                grantees.append({
+                    "agent": agent_name,
+                    "tools": [t.name for t in policy.permissions[server.id]],
+                })
+        return {
+            "name": server.name, "id": server.id, "type": server.server_type.value,
+            "command": server.command, "url": server.url,
+            # Names only: the values are often secrets, and never leave the daemon.
+            "env_keys": list(server.env or {}),
+            "grantees": grantees,
+            "status": self.server_status().get(server.name),
+        }
+
+    async def _admin_list_agents(self, caller: str, args: dict) -> list:
+        self._load_for_admin()
+        return [
+            {"name": name, "key_prefix": agent.key_prefix}
+            for name, agent in self.config_manager.config.agents.items()
+        ]
+
+    async def _admin_show_agent(self, caller: str, args: dict) -> dict:
+        self._load_for_admin()
+        name = args.get("name")
+        agent = self.config_manager.get_agent(name)
+        if agent is None:
+            raise ValueError(f"Agent '{name}' not found.")
+        policy = self.config_manager.load_policy(name)
+        # Grants are stored by server id; report the name the user knows it by,
+        # falling back to the id if the server is gone.
+        names_by_id = {s.id: s.name for s in self.config_manager.list_servers() if s.id}
+        access = [
+            {
+                "server": names_by_id.get(server_id, server_id),
+                "tools": [
+                    {
+                        "name": tool.name,
+                        "policies": [
+                            {"arg": p.arg_name, "type": p.match_type, "pattern": p.pattern}
+                            for p in tool.policies
+                        ],
+                    }
+                    for tool in tools
+                ],
+            }
+            for server_id, tools in (policy.permissions.items() if policy else [])
+        ]
+        return {"name": agent.name, "id": agent.id, "key_prefix": agent.key_prefix, "access": access}
+
+    async def _admin_log_config(self, caller: str, args: dict) -> dict:
+        from .config import CONFIG_DIR
+        from .events import MAX_SEGMENT_BYTES, SEGMENT_PREFIX, SEGMENT_SUFFIX
+        self._load_for_admin()
+        audit = self.config_manager.config.audit
+        return {
+            "files": str(CONFIG_DIR / f"{SEGMENT_PREFIX}*{SEGMENT_SUFFIX}"),
+            "max_files": audit.max_files,
+            "max_age_days": audit.max_age_days,
+            "segment_bytes": MAX_SEGMENT_BYTES,
+        }
 
     def _load_for_admin(self) -> None:
         """Re-read the state for an admin request; a config that cannot be
@@ -617,14 +693,6 @@ class SteerholmGateway:
             self._reconcile_in_background()
             return JSONResponse(plan)
 
-        async def control_servers(request):
-            # Control plane: live per-server status (state, uptime, tools) for the CLI.
-            denied = self._control_unauthorized(request)
-            if denied is not None:
-                return denied
-            self.config_manager.reload()
-            return JSONResponse(self.server_status())
-
         @asynccontextmanager
         async def lifespan(app):
             async with manager.run():
@@ -634,7 +702,6 @@ class SteerholmGateway:
             routes=[
                 Route("/healthz", endpoint=health, methods=["GET"]),
                 Route("/control/reconcile", endpoint=control_reconcile, methods=["POST"]),
-                Route("/control/servers", endpoint=control_servers, methods=["GET"]),
                 Route("/mcp", endpoint=http_app, methods=["GET", "POST", "DELETE"]),
             ],
             lifespan=lifespan,

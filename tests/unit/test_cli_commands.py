@@ -8,6 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 import steerholm.main as m
+from steerholm.gateway import SteerholmGateway
 from steerholm.main import app, _format_uptime, _status_markup
 
 runner = CliRunner()
@@ -76,28 +77,6 @@ def test_daemon_up_false_on_wrong_service(monkeypatch):
 def test_daemon_up_false_on_error(monkeypatch):
     with patch("urllib.request.urlopen", side_effect=OSError("refused")):
         assert m._daemon_up("127.0.0.1", 4767) is False
-
-
-# ─── _daemon_server_status ──────────────────────────────────────────
-
-
-def test_daemon_server_status_none_when_down(monkeypatch):
-    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: False)
-    assert m._daemon_server_status() is None
-
-
-def test_daemon_server_status_returns_dict_when_up(monkeypatch):
-    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
-    monkeypatch.setattr("steerholm.config.read_control_token", lambda: "tok")
-    with patch("urllib.request.urlopen", return_value=_fake_urlopen({"srv": {"state": "running"}})):
-        assert m._daemon_server_status() == {"srv": {"state": "running"}}
-
-
-def test_daemon_server_status_none_on_error(monkeypatch):
-    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
-    monkeypatch.setattr("steerholm.config.read_control_token", lambda: "tok")
-    with patch("urllib.request.urlopen", side_effect=OSError("boom")):
-        assert m._daemon_server_status() is None
 
 
 # ─── _notify_daemon_reconcile ───────────────────────────────────────
@@ -462,7 +441,6 @@ def test_show_server_grantee_tool_pattern_brackets_shown_literally(cli):
 
 
 def test_list_servers_daemon_up_running(cli, monkeypatch):
-    from steerholm.gateway import SteerholmGateway
     cli.add_server("fs", command="echo")
     monkeypatch.setattr(SteerholmGateway, "server_status",
                         lambda self: {"fs": {"state": "running", "uptime_seconds": 5,
@@ -485,11 +463,11 @@ def test_show_server_not_found(cli):
     assert "not found" in result.output
 
 
-def test_show_server_daemon_down(cli):
+def test_show_server_daemon_down(cli, daemon_down):
     cli.add_server("fs", command="echo")
     result = runner.invoke(app, ["show", "server", "fs"])
-    assert "fs" in result.output
-    assert "daemon not running" in result.output
+    assert result.exit_code == 1
+    assert "daemon is not running" in result.output
 
 
 def test_show_server_lists_grantees(cli):
@@ -504,8 +482,8 @@ def test_show_server_lists_grantees(cli):
 
 def test_show_server_running_with_tools(cli, monkeypatch):
     cli.add_server("fs", command="echo")
-    monkeypatch.setattr(m, "_daemon_server_status",
-                        lambda: {"fs": {"state": "running", "uptime_seconds": 12,
+    monkeypatch.setattr(SteerholmGateway, "server_status",
+                        lambda self: {"fs": {"state": "running", "uptime_seconds": 12,
                                         "error": None,
                                         "tools": [{"name": "read", "description": "Read a file"}]}})
     result = runner.invoke(app, ["show", "server", "fs"])
@@ -515,15 +493,16 @@ def test_show_server_running_with_tools(cli, monkeypatch):
 
 def test_show_server_running_no_tools(cli, monkeypatch):
     cli.add_server("fs", command="echo")
-    monkeypatch.setattr(m, "_daemon_server_status",
-                        lambda: {"fs": {"state": "running", "uptime_seconds": 1, "error": None, "tools": []}})
+    monkeypatch.setattr(SteerholmGateway, "server_status",
+                        lambda self: {"fs": {"state": "running", "uptime_seconds": 1, "error": None, "tools": []}})
     result = runner.invoke(app, ["show", "server", "fs"])
     assert "no tools" in result.output.lower()
 
 
 def test_show_server_unknown_status(cli, monkeypatch):
     cli.add_server("fs", command="echo")
-    monkeypatch.setattr(m, "_daemon_server_status", lambda: {})  # daemon up but server absent
+    monkeypatch.setattr(SteerholmGateway, "server_status",
+                        lambda self: {})  # daemon up but server absent
     result = runner.invoke(app, ["show", "server", "fs"])
     assert "unknown" in result.output.lower()
 
@@ -762,8 +741,8 @@ def test_show_server_url_server(cli):
 
 def test_show_server_failed_shows_error(cli, monkeypatch):
     cli.add_server("fs", command="echo")
-    monkeypatch.setattr(m, "_daemon_server_status",
-                        lambda: {"fs": {"state": "failed", "uptime_seconds": None,
+    monkeypatch.setattr(SteerholmGateway, "server_status",
+                        lambda self: {"fs": {"state": "failed", "uptime_seconds": None,
                                         "error": "connection refused", "tools": []}})
     result = runner.invoke(app, ["show", "server", "fs"])
     assert "connection refused" in result.output
