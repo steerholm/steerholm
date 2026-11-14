@@ -201,11 +201,11 @@ async def test_a_connection_that_never_asks_is_closed(monkeypatch):
 
 
 @pytest.mark.skipif(os.name != "nt", reason="named pipes")
-def test_a_busy_pipe_is_retried(monkeypatch):
-    busy = OSError("All pipe instances are busy")
-    busy.winerror = admin._ERROR_PIPE_BUSY
+def test_a_busy_pipe_is_waited_for(monkeypatch):
+    busy = OSError(22, "Invalid argument")      # how open() reports ERROR_PIPE_BUSY
     opened = object()
     attempts = iter([busy, busy, opened])
+    waits = []
 
     def fake_open(*a, **k):
         result = next(attempts)
@@ -214,5 +214,17 @@ def test_a_busy_pipe_is_retried(monkeypatch):
         return result
 
     monkeypatch.setattr("builtins.open", fake_open)
-    monkeypatch.setattr(admin.time, "sleep", lambda s: None)
+    monkeypatch.setattr(admin, "_wait_for_pipe", lambda: waits.append(1) or True)
     assert admin._open_pipe() is opened
+    assert len(waits) == 2
+
+
+@pytest.mark.skipif(os.name != "nt", reason="named pipes")
+def test_a_pipe_that_stays_busy_gives_up(monkeypatch):
+    def fake_open(*a, **k):
+        raise OSError(22, "Invalid argument")
+
+    monkeypatch.setattr("builtins.open", fake_open)
+    monkeypatch.setattr(admin, "_wait_for_pipe", lambda: False)
+    with pytest.raises(OSError):
+        admin._open_pipe()

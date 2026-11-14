@@ -15,7 +15,6 @@ import os
 import socket
 import struct
 import sys
-import time
 from typing import Any, Awaitable, Callable, Dict
 
 from . import config as _config
@@ -28,8 +27,8 @@ REQUEST_TIMEOUT = 30.0
 # How long the daemon waits for a request on a connection it has accepted.
 IDLE_TIMEOUT = 30.0
 _LINE_LIMIT = 1024 * 1024
-_ERROR_PIPE_BUSY = 231
-_PIPE_BUSY_ATTEMPTS = 20
+_PIPE_ATTEMPTS = 5
+_PIPE_WAIT_MS = 1000
 
 Handler = Callable[[str, Dict[str, Any]], Awaitable[Any]]
 
@@ -86,6 +85,7 @@ if os.name == "nt":
     _kernel32.LocalFree.restype = ctypes.c_void_p
     _kernel32.GetNamedPipeClientProcessId.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.ULONG))
     _kernel32.GetNamedPipeServerProcessId.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.ULONG))
+    _kernel32.WaitNamedPipeW.argtypes = (wintypes.LPCWSTR, wintypes.DWORD)
     _kernel32.SetNamedPipeHandleState.argtypes = (
         wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p, ctypes.c_void_p,
     )
@@ -129,6 +129,11 @@ if os.name == "nt":
                 _kernel32.CloseHandle(token)
         finally:
             _kernel32.CloseHandle(process)
+
+    def _wait_for_pipe() -> bool:
+        """Wait until an instance of the pipe can be opened; False if none
+        becomes free in time, or the pipe is gone."""
+        return bool(_kernel32.WaitNamedPipeW(PIPE_NAME, _PIPE_WAIT_MS))
 
     def _pipe_peer_sid(handle: int, *, server: bool) -> str:
         pid = wintypes.ULONG()
@@ -307,17 +312,17 @@ def _exchange_socket(payload: bytes) -> bytes:
 
 
 def _open_pipe():
-    # Between serving one client and listening for the next, the pipe is
-    # briefly busy; the standard answer is to wait and try again.
-    for attempt in range(_PIPE_BUSY_ATTEMPTS):
+    # Between serving one client and listening for the next, every instance of
+    # the pipe can be busy. `open` reports that as a bare EINVAL, so rather than
+    # read the error, wait for a free instance the way Windows intends.
+    for attempt in range(_PIPE_ATTEMPTS):
         try:
             return open(PIPE_NAME, "r+b", buffering=0)
         except FileNotFoundError:
             raise DaemonNotRunning()
-        except OSError as e:
-            if getattr(e, "winerror", None) != _ERROR_PIPE_BUSY or attempt == _PIPE_BUSY_ATTEMPTS - 1:
+        except OSError:
+            if attempt == _PIPE_ATTEMPTS - 1 or not _wait_for_pipe():
                 raise
-            time.sleep(0.05)
 
 
 def _exchange_pipe(payload: bytes) -> bytes:
