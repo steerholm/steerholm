@@ -5,8 +5,8 @@ and validates real MCP behavior. Reused by every layer of the test framework,
 on every OS.
 
 Modes:
-  serve-check   Self-contained: isolated config, start `holm serve`, add
-                server/add agent/grant, connect, assert, tear down. (binary smoke, L5)
+  serve-check   Self-contained: isolated config, add server/add agent/grant,
+                start `holm serve`, connect, assert, tear down. (binary smoke, L5)
   configure     Write servers/agents/policies into the ambient config dir
                 (STEERHOLM_CONFIG_DIR or the installed default) and print
                 `TOKEN=<access key>`. Used before starting the real service. (L8)
@@ -169,10 +169,9 @@ def downstream_command() -> str:
     return f"{Path(sys.executable).as_posix()} {DOWNSTREAM.as_posix()}"
 
 
-def setup_config(holm: list[str], env: dict, checks: Checks) -> str:
-    """Add the downstream server, add an agent, grant a scoped policy, and assert
-    the surrounding CLI surface (list servers/show server/show agent/list agents).
-    Returns the access key."""
+def setup_config(holm: list[str], env: dict) -> str:
+    """Add the downstream server, add an agent, grant a scoped policy. Returns
+    the access key."""
     run_cli(holm, env, "add", "server", "smoke", "--command", downstream_command())
     created = run_cli(holm, env, "add", "agent", "agent")
     match = TOKEN_RE.search(created.stdout)
@@ -181,8 +180,12 @@ def setup_config(holm: list[str], env: dict, checks: Checks) -> str:
     token = match.group(0)
     run_cli(holm, env, "grant", "agent", "smoke", "--tool", "echo")
     run_cli(holm, env, "grant", "agent", "smoke", "--tool", "add", "--args", "a=re:^\\d+$")
+    return token
 
-    # L9 — CLI surface assertions against the same binary.
+
+def check_cli_surface(holm: list[str], env: dict, checks: Checks) -> None:
+    """L9 — CLI surface assertions against the same binary (list servers/show
+    server/show agent/list agents). Reads go through the daemon, so it runs."""
     listed = run_cli(holm, env, "list", "servers").stdout
     checks.check("smoke" in listed, "`list servers` shows the server")
     inspected = run_cli(holm, env, "show", "server", "smoke").stdout
@@ -191,8 +194,6 @@ def setup_config(holm: list[str], env: dict, checks: Checks) -> str:
     checks.check("agent" in agents, "`list agents` shows the agent")
     policy = run_cli(holm, env, "show", "agent", "agent").stdout
     checks.check("echo" in policy and "add" in policy, "`show agent` lists granted tools")
-
-    return token
 
 
 async def run_client_checks(url: str, token: str, checks: Checks) -> None:
@@ -266,6 +267,9 @@ def cmd_serve_check(args) -> int:
     with tempfile.TemporaryDirectory(prefix="holm-smoke-") as tmp:
         env = {**os.environ, "STEERHOLM_CONFIG_DIR": tmp}
         print(f"holm: {' '.join(holm)}\nconfig:  {tmp}")
+        # Before the daemon starts: a change made while it runs is only applied
+        # by a daemon on the default port, and this one runs on a free port.
+        token = setup_config(holm, env)
 
         port = free_port()
         url = f"http://127.0.0.1:{port}/mcp"
@@ -283,8 +287,7 @@ def cmd_serve_check(args) -> int:
                 logf.flush()
                 print(log_path.read_text(errors="replace"))
                 return 1
-            # The CLI changes and reads state through the daemon, so it runs first.
-            token = setup_config(holm, env, checks)
+            check_cli_surface(holm, env, checks)
             check_unauthenticated(url, checks)
             asyncio.run(run_client_checks(url, token, checks))
         finally:
@@ -297,7 +300,8 @@ def cmd_configure(args) -> int:
     holm = holm_command(args.holm)
     checks = Checks()
     env = dict(os.environ)  # ambient config dir (installed default or override)
-    token = setup_config(holm, env, checks)
+    token = setup_config(holm, env)
+    check_cli_surface(holm, env, checks)
     if getattr(args, "alluredir", None):
         write_allure(
             checks, args.alluredir, getattr(args, "allure_name", None) or "configure",

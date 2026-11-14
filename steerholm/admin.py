@@ -15,6 +15,7 @@ import os
 import socket
 import struct
 import sys
+import time
 from typing import Any, Awaitable, Callable, Dict
 
 from . import config as _config
@@ -24,7 +25,11 @@ logger = logging.getLogger("steerholm.admin")
 
 PIPE_NAME = r"\\.\pipe\steerholm"
 REQUEST_TIMEOUT = 30.0
+# How long the daemon waits for a request on a connection it has accepted.
+IDLE_TIMEOUT = 30.0
 _LINE_LIMIT = 1024 * 1024
+_ERROR_PIPE_BUSY = 231
+_PIPE_BUSY_ATTEMPTS = 20
 
 Handler = Callable[[str, Dict[str, Any]], Awaitable[Any]]
 
@@ -35,6 +40,10 @@ class DaemonNotRunning(Exception):
 
 class AdminError(Exception):
     """The daemon refused or failed a request; the message says why."""
+
+
+class ChannelInUse(Exception):
+    """Another daemon already serves the admin channel."""
 
 
 def socket_path():
@@ -150,6 +159,13 @@ class AdminServer:
         self._servers = []
 
     async def start(self) -> None:
+        """Open the channel. Raises ChannelInUse when another daemon serves it:
+        a second daemon on another port must not take the CLI's channel over."""
+        if _channel_answers():
+            raise ChannelInUse(
+                "Another Steerholm daemon is already running for this account. "
+                "Check with holm status."
+            )
         if os.name == "nt":
             loop = asyncio.get_running_loop()
 
@@ -160,8 +176,8 @@ class AdminServer:
             self._servers = await loop.start_serving_pipe(protocol, PIPE_NAME)
             return
         path = socket_path()
-        # The daemon already holds its TCP port, so it is the only one: a socket
-        # file left here is a previous daemon's, and binding needs it gone.
+        # Nothing answers on it, so a socket file left here is a stopped
+        # daemon's, and binding needs it gone.
         path.unlink(missing_ok=True)
         server = await asyncio.start_unix_server(self._connection, path=str(path), limit=_LINE_LIMIT)
         restrict(path, 0o600)
@@ -179,7 +195,10 @@ class AdminServer:
     async def _connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             caller = peer_identity(writer)
-            line = await reader.readline()
+            try:
+                line = await asyncio.wait_for(reader.readline(), IDLE_TIMEOUT)
+            except TimeoutError:
+                return   # connected and never asked; don't hold the connection
             if not line:
                 return
             writer.write(await self.answer(caller, line))
@@ -258,6 +277,24 @@ def _read_line(read) -> bytes:
     return data
 
 
+def _channel_answers() -> bool:
+    """Whether a daemon is serving the admin channel right now."""
+    if os.name == "nt":
+        try:
+            open(PIPE_NAME, "rb").close()
+        except FileNotFoundError:
+            return False
+        except OSError:
+            return True      # busy, or another account's: either way it is taken
+        return True
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        try:
+            sock.connect(str(socket_path()))
+        except OSError:
+            return False
+        return True
+
+
 def _exchange_socket(payload: bytes) -> bytes:
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
         sock.settimeout(REQUEST_TIMEOUT)
@@ -269,12 +306,24 @@ def _exchange_socket(payload: bytes) -> bytes:
         return _read_line(lambda: sock.recv(65536))
 
 
+def _open_pipe():
+    # Between serving one client and listening for the next, the pipe is
+    # briefly busy; the standard answer is to wait and try again.
+    for attempt in range(_PIPE_BUSY_ATTEMPTS):
+        try:
+            return open(PIPE_NAME, "r+b", buffering=0)
+        except FileNotFoundError:
+            raise DaemonNotRunning()
+        except OSError as e:
+            if getattr(e, "winerror", None) != _ERROR_PIPE_BUSY or attempt == _PIPE_BUSY_ATTEMPTS - 1:
+                raise
+            time.sleep(0.05)
+
+
 def _exchange_pipe(payload: bytes) -> bytes:
-    try:
-        pipe = open(PIPE_NAME, "r+b", buffering=0)
-    except FileNotFoundError:
-        raise DaemonNotRunning()
-    with pipe:
+    # No timeout here, unlike the socket: a blocking read on a pipe cannot be
+    # given one without overlapped I/O.
+    with _open_pipe() as pipe:
         handle = msvcrt.get_osfhandle(pipe.fileno())
         # Any account can create a pipe by this name; only talk to one run by
         # this account, the way the daemon only answers this account.

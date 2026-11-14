@@ -592,3 +592,18 @@ async def test_a_tool_no_answering_server_has_is_still_denied(config_manager):
         await gateway._call_tool_for_agent("agent", "no-such-tool", {})
     assert raised.value.error.code == AUTHORIZATION_DENIED_CODE
     assert gateway.event_log.recent()[-1].decision == "denied"
+
+
+@pytest.mark.asyncio
+async def test_serve_refuses_when_another_daemon_has_the_admin_channel(config_manager, monkeypatch):
+    from steerholm import admin
+
+    gateway = make_gateway(config_manager)
+
+    async def taken(self):
+        raise admin.ChannelInUse("Another Steerholm daemon is already running for this account.")
+
+    monkeypatch.setattr(admin.AdminServer, "start", taken)
+    with pytest.raises(SystemExit):
+        await gateway.serve("127.0.0.1", 0)
+

@@ -23,7 +23,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from . import __version__
-from .admin import AdminServer
+from .admin import AdminServer, ChannelInUse
 from .config import (
     ConfigError, ConfigManager, get_or_create_control_token, read_control_token,
 )
@@ -682,7 +682,11 @@ class SteerholmGateway:
         config = uvicorn.Config(app, host=host, port=port, log_level="info")
         server = uvicorn.Server(config)
         admin = AdminServer(self.admin_handlers())
-        await admin.start()
+        try:
+            await admin.start()
+        except ChannelInUse as e:
+            logger.error(str(e))
+            raise SystemExit(1)
         supervisor = asyncio.create_task(self._reconcile_loop())
         # The servers start behind the open port, not before it. Managing them is
         # one of the daemon's jobs, so it answers — health, status, control — from

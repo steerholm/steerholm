@@ -162,3 +162,57 @@ def test_a_daemon_that_does_not_answer_in_time(monkeypatch):
     with pytest.raises(admin.AdminError, match="did not answer within 30s"):
         admin.request("x")
 
+
+
+@pytest.mark.asyncio
+async def test_a_second_daemon_does_not_take_the_channel_over():
+    async def ping(caller, args):
+        return "pong"
+
+    first = admin.AdminServer({"ping": ping})
+    await first.start()
+    try:
+        second = admin.AdminServer({})
+        with pytest.raises(admin.ChannelInUse, match="already running"):
+            await second.start()
+        # The first daemon still serves the CLI.
+        assert await asyncio.to_thread(lambda: admin.request("ping")) == "pong"
+    finally:
+        await first.close()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a raw Unix socket client")
+@pytest.mark.asyncio
+async def test_a_connection_that_never_asks_is_closed(monkeypatch):
+    import socket
+
+    monkeypatch.setattr(admin, "IDLE_TIMEOUT", 0.2)
+    server = admin.AdminServer({})
+    await server.start()
+    try:
+        def idle():
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+                sock.settimeout(5)
+                sock.connect(str(admin.socket_path()))
+                return sock.recv(1)          # b"" once the daemon hangs up
+        assert await asyncio.to_thread(idle) == b""
+    finally:
+        await server.close()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="named pipes")
+def test_a_busy_pipe_is_retried(monkeypatch):
+    busy = OSError("All pipe instances are busy")
+    busy.winerror = admin._ERROR_PIPE_BUSY
+    opened = object()
+    attempts = iter([busy, busy, opened])
+
+    def fake_open(*a, **k):
+        result = next(attempts)
+        if isinstance(result, OSError):
+            raise result
+        return result
+
+    monkeypatch.setattr("builtins.open", fake_open)
+    monkeypatch.setattr(admin.time, "sleep", lambda s: None)
+    assert admin._open_pipe() is opened
