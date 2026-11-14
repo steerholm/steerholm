@@ -131,20 +131,18 @@ async def e2e_daemon(e2e_setup):
 
     daemon_task = asyncio.create_task(gateway.serve("127.0.0.1", port))
 
-    async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as client:
-        # serve() spawns the npx downstream before it binds the port, so a cold
-        # npx download can push first-start well past a few seconds on CI. Probe
-        # the unauthenticated /healthz and allow a generous budget.
-        for _ in range(180):  # ~90s cap; breaks as soon as it is up
-            try:
-                if (await client.get("/healthz")).status_code == 200:
-                    break
-            except (httpx.ConnectError, httpx.ConnectTimeout):
-                pass
-            await asyncio.sleep(0.5)
-        else:
-            daemon_task.cancel()
-            pytest.fail("Daemon did not start in time")
+    # The daemon answers at once and starts its servers behind the open port, so
+    # wait for the downstream itself: a cold npx download can take well past a
+    # few seconds on CI. Allow a generous budget.
+    for _ in range(180):  # ~90s cap; breaks as soon as it is up
+        if gateway.server_status().get("everything", {}).get("state") == "running":
+            break
+        if daemon_task.done():
+            pytest.fail(f"Daemon exited: {daemon_task.exception()!r}")
+        await asyncio.sleep(0.5)
+    else:
+        daemon_task.cancel()
+        pytest.fail(f"Server 'everything' did not start in time: {gateway.server_status()}")
 
     yield {"port": port, **e2e_setup}
 
