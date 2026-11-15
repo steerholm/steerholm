@@ -727,9 +727,10 @@ class SteerholmGateway:
             return JSONResponse({"service": "steerholm", "version": __version__})
 
         async def control_reconcile(request):
-            # Control plane: the CLI (add/remove server) calls this so the daemon
-            # applies lifecycle changes immediately. The control token authenticates
-            # it — agent tokens never match, so they cannot drive lifecycle.
+            # Control plane: `holm log set` calls this so the daemon applies a
+            # retention change immediately (server changes go through the admin
+            # channel). The control token authenticates it — agent tokens never
+            # match, so they cannot drive lifecycle.
             denied = self._control_unauthorized(request)
             if denied is not None:
                 return denied
