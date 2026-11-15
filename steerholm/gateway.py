@@ -23,7 +23,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from . import __version__
-from .admin import AdminServer, ChannelInUse
+from .admin import AdminServer, ChannelInUse, channel_name
 from .config import (
     ConfigError, ConfigManager, get_or_create_control_token, read_control_token,
 )
@@ -753,6 +753,9 @@ class SteerholmGateway:
             await admin.start()
         except ChannelInUse as e:
             logger.error(str(e))
+            raise SystemExit(1)
+        except OSError as e:
+            logger.error(f"Could not open the admin channel at {channel_name()}: {e}")
             raise SystemExit(1)
         supervisor = asyncio.create_task(self._reconcile_loop())
         # The servers start behind the open port, not before it. Managing them is

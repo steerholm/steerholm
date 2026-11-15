@@ -617,3 +617,18 @@ async def test_an_admin_read_reports_an_unloadable_config(config_manager):
     config_mod.CONFIG_FILE.write_text("{ not json", encoding="utf-8")
     with pytest.raises(ValueError, match="cannot be loaded"):
         await gateway.admin_handlers()["list_agents"]("uid:0", {})
+
+
+@pytest.mark.asyncio
+async def test_serve_exits_cleanly_when_the_admin_channel_cannot_open(config_manager, monkeypatch, caplog):
+    from steerholm import admin
+
+    gateway = make_gateway(config_manager)
+
+    async def fails(self):
+        raise OSError("AF_UNIX path too long")
+
+    monkeypatch.setattr(admin.AdminServer, "start", fails)
+    with pytest.raises(SystemExit):
+        await gateway.serve("127.0.0.1", 0)
+    assert "Could not open the admin channel" in caplog.text

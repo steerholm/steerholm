@@ -10,6 +10,13 @@ tagging it. At tag time, rename `[Unreleased]` to the version and date.
 
 ## [Unreleased]
 
+### Changed
+
+- `holm list servers`, `show server`, `list agents`, `show agent` and
+  `log config` ask the running daemon, over a local channel only your account
+  can use. With the daemon stopped they say so; `list servers` and
+  `show server` used to show the configuration without live status.
+
 ### Fixed
 
 - `config.json` and policy files are written to a temporary file and renamed

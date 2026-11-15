@@ -49,6 +49,11 @@ def socket_path():
     return _config.CONFIG_DIR / "admin.sock"
 
 
+def channel_name() -> str:
+    """Where the admin channel lives, for messages."""
+    return PIPE_NAME if os.name == "nt" else str(socket_path())
+
+
 # ── who is on the other end ─────────────────────────────────────────
 
 def own_identity() -> str:
@@ -167,8 +172,11 @@ class AdminServer:
         """Open the channel. Raises ChannelInUse when another daemon serves it:
         a second daemon on another port must not take the CLI's channel over."""
         if _channel_answers():
+            # The pipe name is machine-wide; the socket lives in this account's
+            # state directory.
+            where = "on this machine" if os.name == "nt" else "for this account"
             raise ChannelInUse(
-                "Another Steerholm daemon is already running for this account. "
+                f"Another Steerholm daemon is already running {where}. "
                 "Check with holm status."
             )
         if os.name == "nt":
@@ -224,7 +232,9 @@ class AdminServer:
         try:
             request = json.loads(line)
             op, args = request["op"], request.get("args") or {}
-        except (ValueError, KeyError, TypeError):
+            if not isinstance(op, str) or not isinstance(args, dict):
+                raise TypeError
+        except (ValueError, KeyError, TypeError, AttributeError):
             return {"ok": False, "error": "Malformed request."}
         handler = self._handlers.get(op)
         if handler is None:

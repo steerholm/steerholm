@@ -228,3 +228,11 @@ def test_a_pipe_that_stays_busy_gives_up(monkeypatch):
     monkeypatch.setattr(admin, "_wait_for_pipe", lambda: False)
     with pytest.raises(OSError):
         admin._open_pipe()
+
+
+@pytest.mark.asyncio
+async def test_a_request_with_the_wrong_shape_is_malformed():
+    server = admin.AdminServer({"x": None})
+    for line in (b'{"op": "x", "args": "not an object"}\n', b'{"op": 1}\n', b'"just a string"\n'):
+        with pytest.raises(admin.AdminError, match="Malformed request"):
+            admin.parse_answer(await server.answer(admin.own_identity(), line))
