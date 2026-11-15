@@ -1,0 +1,1 @@
+ERROR    steerholm:gateway.py:808 Could not open the admin channel at /tmp/holmq1ysidwt/admin.sock: AF_UNIX path too long

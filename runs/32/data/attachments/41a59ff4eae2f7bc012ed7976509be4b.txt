@@ -1,0 +1,1 @@
+ERROR    steerholm:gateway.py:808 Could not open the admin channel at \\.\pipe\steerholm-test-0807a9ffc65a485d95b36eba81c8b1ef: AF_UNIX path too long
