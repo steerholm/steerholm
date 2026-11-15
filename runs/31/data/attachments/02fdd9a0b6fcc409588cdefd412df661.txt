@@ -1,0 +1,1 @@
+ERROR    steerholm:gateway.py:804 Another Steerholm daemon is already running for this account.

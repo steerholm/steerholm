@@ -1,0 +1,8 @@
+INFO:     127.0.0.1:57010 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57022 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:57024 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57032 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57042 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:57058 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57068 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "POST /mcp HTTP/1.1" 200 OK
