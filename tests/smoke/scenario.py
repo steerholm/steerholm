@@ -5,8 +5,8 @@ and validates real MCP behavior. Reused by every layer of the test framework,
 on every OS.
 
 Modes:
-  serve-check   Self-contained: isolated config, add server/add agent/grant,
-                start `holm serve`, connect, assert, tear down. (binary smoke, L5)
+  serve-check   Self-contained: isolated config, start `holm serve`, add
+                server/add agent/grant, connect, assert, tear down. (binary smoke, L5)
   configure     Write servers/agents/policies into the ambient config dir
                 (STEERHOLM_CONFIG_DIR or the installed default) and print
                 `TOKEN=<access key>`. Used before starting the real service. (L8)
@@ -267,9 +267,6 @@ def cmd_serve_check(args) -> int:
     with tempfile.TemporaryDirectory(prefix="holm-smoke-") as tmp:
         env = {**os.environ, "STEERHOLM_CONFIG_DIR": tmp}
         print(f"holm: {' '.join(holm)}\nconfig:  {tmp}")
-        # Before the daemon starts: a change made while it runs is only applied
-        # by a daemon on the default port, and this one runs on a free port.
-        token = setup_config(holm, env)
 
         port = free_port()
         url = f"http://127.0.0.1:{port}/mcp"
@@ -287,6 +284,8 @@ def cmd_serve_check(args) -> int:
                 logf.flush()
                 print(log_path.read_text(errors="replace"))
                 return 1
+            # The CLI changes and reads state through the daemon, so it runs first.
+            token = setup_config(holm, env)
             check_cli_surface(holm, env, checks)
             check_unauthenticated(url, checks)
             asyncio.run(run_client_checks(url, token, checks))

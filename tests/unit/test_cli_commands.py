@@ -111,14 +111,12 @@ def test_notify_reconcile_reports_unreachable(monkeypatch, capsys):
 # ─── add / remove server ────────────────────────────────────────────
 
 
-def test_add_server_and_notifies(cli, monkeypatch):
-    notify = MagicMock()
-    monkeypatch.setattr(m, "_notify_daemon_reconcile", notify)
+def test_add_server_and_reports_the_start(cli, monkeypatch):
     result = runner.invoke(app, ["add", "server", "fs", "--command", "echo hi"])
     assert result.exit_code == 0
     assert "Added server" in result.output
     assert cli.get_server("fs") is not None
-    notify.assert_called_once()
+    assert "Daemon is starting: fs" in result.output
 
 
 def test_add_server_invalid_shows_error(cli):
@@ -129,7 +127,6 @@ def test_add_server_invalid_shows_error(cli):
 
 
 def test_add_server_with_env(cli, monkeypatch):
-    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
     result = runner.invoke(app, [
         "add", "server", "db", "--command", "uvx x",
         "--env", "DATABASE_URI=postgresql://u:p@h/db", "--env", "LOG=debug",
@@ -157,7 +154,6 @@ def test_show_server_masks_env_values(cli):
 
 def test_add_server_env_value_with_equals(cli, monkeypatch):
     # The '=' in the value must survive — parsing splits on the FIRST '=' only.
-    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
     dsn = "postgresql://u:p@h/db?sslmode=require&opt=1"
     result = runner.invoke(app, ["add", "server", "db", "--command", "uvx x", "--env", f"DSN={dsn}"])
     assert result.exit_code == 0
@@ -166,7 +162,6 @@ def test_add_server_env_value_with_equals(cli, monkeypatch):
 
 def test_add_server_env_empty_value_ok(cli, monkeypatch):
     # 'KEY=' is a deliberate set-to-empty, not a format error.
-    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
     result = runner.invoke(app, ["add", "server", "db", "--command", "uvx x", "--env", "FLAG="])
     assert result.exit_code == 0
     assert cli.get_server("db").env == {"FLAG": ""}
@@ -187,7 +182,6 @@ def test_add_server_env_duplicate_key_errors(cli):
 
 
 def test_add_server_env_key_whitespace_trimmed(cli, monkeypatch):
-    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
     result = runner.invoke(app, ["add", "server", "db", "--command", "uvx x", "--env", "  K  =v"])
     assert result.exit_code == 0
     assert cli.get_server("db").env == {"K": "v"}
@@ -220,7 +214,6 @@ def test_show_server_survives_malformed_markup_in_command(cli):
 
 def test_add_server_env_key_portable_name_allowed(cli, monkeypatch):
     # A portable name with '.' and '-' (valid under the K8s rule) goes through.
-    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
     result = runner.invoke(app, [
         "add", "server", "db", "--command", "uvx x", "--env", "my.env-name=1",
     ])
@@ -243,7 +236,6 @@ def test_add_server_env_key_leading_digit_errors(cli):
 
 def test_remove_server(cli, monkeypatch):
     cli.add_server("fs", command="echo")
-    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
     result = runner.invoke(app, ["remove", "server", "fs"])
     assert result.exit_code == 0
     assert "Removed server" in result.output
@@ -1666,9 +1658,7 @@ def test_log_follow_scan_skips_non_matching_events(cli, tmp_config_dir, monkeypa
 # ─── modify server ──────────────────────────────────────────────────
 
 
-def test_modify_server_reports_the_change_and_notifies(cli, monkeypatch):
-    notify = MagicMock()
-    monkeypatch.setattr(m, "_notify_daemon_reconcile", notify)
+def test_modify_server_reports_the_change_and_the_restart(cli, monkeypatch):
     cli.add_server("git", command="old", env={"A": "1"})
     result = runner.invoke(app, ["modify", "server", "git",
                                  "--command", "new", "--env", "B=2", "--unset", "A"])
@@ -1676,11 +1666,10 @@ def test_modify_server_reports_the_change_and_notifies(cli, monkeypatch):
     assert "old -> new" in result.output
     assert "-A" in result.output and "+B" in result.output
     assert cli.get_server("git").env == {"B": "2"}
-    notify.assert_called_once()          # the daemon restarts it
+    assert "Daemon is starting: git" in result.output   # the daemon restarts it
 
 
 def test_modify_server_keeps_the_id(cli, monkeypatch):
-    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
     cli.add_server("git", command="old")
     sid = cli.get_server("git").id
     runner.invoke(app, ["modify", "server", "git", "--command", "new"])
@@ -1688,23 +1677,20 @@ def test_modify_server_keeps_the_id(cli, monkeypatch):
 
 
 def test_modify_server_warns_before_a_transport_switch(cli, monkeypatch):
-    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
     cli.add_server("git", command="uvx x", env={"A": "1", "B": "2"})
     result = runner.invoke(app, ["modify", "server", "git", "--url", "http://x/mcp"])
     assert result.exit_code == 0
-    assert "drops its launch command and 2 env vars" in result.output
+    assert "dropped its launch command and 2 env vars" in result.output
     assert cli.get_server("git").env == {}
 
 
 def test_modify_server_warns_switching_back_to_a_command(cli, monkeypatch):
-    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
     cli.add_server("api", url="http://x/mcp")
     result = runner.invoke(app, ["modify", "server", "api", "--command", "uvx x"])
-    assert "drops its URL" in result.output
+    assert "dropped its URL" in result.output
 
 
 def test_modify_server_names_the_agents_still_granted(cli, monkeypatch):
-    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
     cli.add_server("git", command="old")
     cli.add_agent("coder")
     cli.grant_permission("coder", "git", tool="git_log")
@@ -1714,7 +1700,6 @@ def test_modify_server_names_the_agents_still_granted(cli, monkeypatch):
 
 
 def test_modify_server_silent_about_grants_when_there_are_none(cli, monkeypatch):
-    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
     cli.add_server("git", command="old")
     result = runner.invoke(app, ["modify", "server", "git", "--command", "new"])
     assert "grants on" not in result.output
@@ -1741,7 +1726,6 @@ def test_modify_server_rejects_bad_env_name(cli):
 
 
 def test_modify_server_bracketed_values_are_escaped(cli, monkeypatch):
-    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
     cli.add_server("git", command="old")
     result = runner.invoke(app, ["modify", "server", "git", "--command", "serve [core]"])
     assert result.exit_code == 0
@@ -1749,7 +1733,6 @@ def test_modify_server_bracketed_values_are_escaped(cli, monkeypatch):
 
 
 def test_remove_server_reports_revoked_grants(cli, monkeypatch):
-    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
     cli.add_server("git", command="x")
     cli.add_agent("coder")
     cli.grant_permission("coder", "git", tool="git_log")
@@ -1762,7 +1745,6 @@ def test_remove_server_reports_revoked_grants(cli, monkeypatch):
 
 
 def test_remove_server_silent_when_no_grants(cli, monkeypatch):
-    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
     cli.add_server("git", command="x")
     result = runner.invoke(app, ["remove", "server", "git"])
     assert result.exit_code == 0
@@ -2475,3 +2457,19 @@ class TestAnUnloadableConfigAtTheCli:
         self._break()
         _serve_must_not_start(monkeypatch)
         assert runner.invoke(app, ["serve"]).exit_code == EX_CONFIG
+
+
+def test_add_server_with_the_daemon_stopped_changes_nothing(cli, daemon_down):
+    result = runner.invoke(app, ["add", "server", "fs", "--command", "echo"])
+    assert result.exit_code == 1
+    assert "daemon is not running" in result.output
+    assert cli.get_server("fs") is None
+
+
+def test_modify_server_does_not_send_env_values(cli):
+    # The CLI learns which variables changed, never what they hold.
+    cli.add_server("db", command="x", env={"TOKEN": "s3cret"})
+    result = runner.invoke(app, ["modify", "server", "db", "--env", "TOKEN=n3w"])
+    assert result.exit_code == 0
+    assert "+TOKEN" in result.output
+    assert "s3cret" not in result.output and "n3w" not in result.output

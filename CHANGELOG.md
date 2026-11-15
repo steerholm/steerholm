@@ -12,10 +12,13 @@ tagging it. At tag time, rename `[Unreleased]` to the version and date.
 
 ### Changed
 
-- `holm list servers`, `show server`, `list agents`, `show agent` and
-  `log config` ask the running daemon, over a local channel only your account
-  can use. With the daemon stopped they say so; `list servers` and
-  `show server` used to show the configuration without live status.
+- `holm list servers`, `show server`, `list agents`, `show agent`,
+  `log config`, and `add`, `modify` and `remove server` go to the running
+  daemon, over a local channel only your account can use, and the daemon
+  applies a server change as part of the request. With the daemon stopped they
+  say so and change nothing; before, `list servers` and `show server` showed
+  the configuration without live status, and a server change was written and
+  applied when the daemon next started.
 
 ### Fixed
 

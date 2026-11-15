@@ -282,9 +282,10 @@ def add_server(
       holm add server db --command "uvx postgres-mcp" --env "DATABASE_URI=postgresql://..."
       holm add server remote-api --url "http://localhost:8000/mcp"
     """
-    _handle(config_manager.add_server, name, command=command, url=url, env=_parse_env(env))
+    plan = _ask_daemon("add_server", name=name, command=command, url=url,
+                       env=_parse_env(env))
     console.print(f"[bold green]Added server '{escape(name)}'.[/bold green]")
-    _notify_daemon_reconcile()
+    _print_plan(plan)
     console.print(f"Next: let an agent use it with [bold]holm grant <agent> {escape(name)}[/bold].")
 
 
@@ -310,40 +311,34 @@ def modify_server(
       holm modify server db --env "DATABASE_URI=postgresql://..." --unset OLD_VAR
       holm modify server api --url "http://localhost:9000/mcp"
     """
-    before = config_manager.get_server(name)
-    if before is None:
-        console.print(f"[bold red]Error:[/bold red] Server '{escape(name)}' not found.")
-        raise typer.Exit(code=1)
     if command is None and url is None and not env and not unset:
         console.print("[bold red]Error:[/bold red] Give at least one change to make.")
         raise typer.Exit(code=1)
 
-    # Say what a transport switch discards before it happens.
-    if url is not None and before.server_type == ServerType.stdio:
-        dropped = f" and {len(before.env)} env var{'' if len(before.env) == 1 else 's'}" if before.env else ""
-        console.print(f"[yellow]Switching '{escape(name)}' to a remote URL drops its "
+    changed = _ask_daemon("modify_server", name=name, command=command, url=url,
+                          env=_parse_env(env), unset=list(unset or []))
+    before, after = changed["before"], changed["after"]
+
+    # Say what a transport switch discarded.
+    if url is not None and before["type"] == ServerType.stdio.value:
+        count = before["env_count"]
+        dropped = f" and {count} env var{'' if count == 1 else 's'}" if count else ""
+        console.print(f"[yellow]Switching '{escape(name)}' to a remote URL dropped its "
                       f"launch command{dropped}.[/yellow]")
-    if command is not None and before.server_type == ServerType.http:
-        console.print(f"[yellow]Switching '{escape(name)}' to a launch command drops "
+    if command is not None and before["type"] == ServerType.http.value:
+        console.print(f"[yellow]Switching '{escape(name)}' to a launch command dropped "
                       f"its URL.[/yellow]")
 
-    after = _handle(config_manager.modify_server, name, command=command, url=url,
-                    env=_parse_env(env), unset=list(unset or []))
-
     console.print(f"[bold green]Modified server '{escape(name)}'.[/bold green]")
-    for label, old, new in (("Command", before.command, after.command),
-                            ("URL", before.url, after.url)):
-        if old != new:
-            console.print(f"  [bold]{label}:[/bold] {escape(old or '(none)')} "
-                          f"-> {escape(new or '(none)')}")
-    changed_env = sorted(set(before.env) ^ set(after.env)
-                         | {k for k in set(before.env) & set(after.env)
-                            if before.env[k] != after.env[k]})
-    if changed_env:
-        marks = ", ".join(("+" if k in after.env else "-") + escape(k) for k in changed_env)
+    for label, key in (("Command", "command"), ("URL", "url")):
+        if before[key] != after[key]:
+            console.print(f"  [bold]{label}:[/bold] {escape(before[key] or '(none)')} "
+                          f"-> {escape(after[key] or '(none)')}")
+    if changed["env"]:
+        marks = ", ".join(("+" if e["set"] else "-") + escape(e["key"]) for e in changed["env"])
         console.print(f"  [bold]Env:[/bold] {marks}")
 
-    grantees = config_manager.agents_with_grants(name)
+    grantees = changed["grantees"]
     if grantees:
         console.print(
             f"[yellow]Note:[/yellow] {len(grantees)} agent"
@@ -351,7 +346,7 @@ def modify_server(
             f"{'has' if len(grantees) == 1 else 'have'} grants on '{escape(name)}': "
             f"{', '.join(escape(g) for g in grantees)}."
         )
-    _notify_daemon_reconcile()
+    _print_plan(changed["plan"])
 
 
 @remove_app.command("server")
@@ -362,7 +357,8 @@ def remove_server(name: str):
     would silently apply to whatever is added under that name next. To change a
     server without losing its grants, use `holm modify server`.
     """
-    affected = _handle(config_manager.remove_server, name)
+    removed = _ask_daemon("remove_server", name=name)
+    affected = removed["revoked"]
     console.print(f"[bold green]Removed server '{escape(name)}'.[/bold green]")
     if affected:
         console.print(
@@ -370,7 +366,7 @@ def remove_server(name: str):
             f"{'' if len(affected) == 1 else 's'}: "
             f"{', '.join(escape(a) for a in affected)}."
         )
-    _notify_daemon_reconcile()
+    _print_plan(removed["plan"])
 
 
 def _notify_daemon_reconcile() -> None:
@@ -402,10 +398,15 @@ def _notify_daemon_reconcile() -> None:
         console.print(f"[yellow]Could not reach the daemon to apply the change: {escape(str(e))}[/yellow]")
         return
 
-    # The daemon applies the change in the background — starting a server can
-    # take a while — so this reports what it is doing, not how it ended.
-    stopping = result.get("stopping") or []
-    starting = result.get("starting") or []
+    _print_plan(result)
+
+
+def _print_plan(plan: dict) -> None:
+    """Report what the daemon is doing about a change. It applies the change
+    in the background — starting a server can take a while — so this is what
+    it is doing, not how it ended."""
+    stopping = plan.get("stopping") or []
+    starting = plan.get("starting") or []
     if stopping:
         console.print(f"[green]Daemon is stopping:[/green] {', '.join(escape(s) for s in stopping)}")
     if starting:

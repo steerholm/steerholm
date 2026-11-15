@@ -493,7 +493,56 @@ class SteerholmGateway:
             "list_agents": self._admin_list_agents,
             "show_agent": self._admin_show_agent,
             "log_config": self._admin_log_config,
+            "add_server": self._admin_add_server,
+            "modify_server": self._admin_modify_server,
+            "remove_server": self._admin_remove_server,
         }
+
+    def _apply_server_changes(self) -> dict:
+        """Answer a server change with what the daemon will do, and do it in the
+        background: starting a server can take longer than the CLI waits (a
+        first `npx` run downloads its package)."""
+        plan = self._reconcile_plan()
+        self._reconcile_in_background()
+        return plan
+
+    async def _admin_add_server(self, caller: str, args: dict) -> dict:
+        self._load_for_admin()
+        self.config_manager.add_server(
+            args.get("name"), command=args.get("command"), url=args.get("url"),
+            env=args.get("env") or {},
+        )
+        return self._apply_server_changes()
+
+    async def _admin_modify_server(self, caller: str, args: dict) -> dict:
+        self._load_for_admin()
+        name = args.get("name")
+        before = self.config_manager.get_server(name)
+        if before is None:
+            raise ValueError(f"Server '{name}' not found.")
+        before = before.model_copy(deep=True)
+        after = self.config_manager.modify_server(
+            name, command=args.get("command"), url=args.get("url"),
+            env=args.get("env") or {}, unset=list(args.get("unset") or []),
+        )
+        # Which variables were set or removed, by name: their values stay here.
+        changed_env = sorted(
+            set(before.env) ^ set(after.env)
+            | {k for k in set(before.env) & set(after.env) if before.env[k] != after.env[k]}
+        )
+        return {
+            "before": {"type": before.server_type.value, "command": before.command,
+                       "url": before.url, "env_count": len(before.env)},
+            "after": {"command": after.command, "url": after.url},
+            "env": [{"key": k, "set": k in after.env} for k in changed_env],
+            "grantees": self.config_manager.agents_with_grants(name),
+            "plan": self._apply_server_changes(),
+        }
+
+    async def _admin_remove_server(self, caller: str, args: dict) -> dict:
+        self._load_for_admin()
+        affected = self.config_manager.remove_server(args.get("name"))
+        return {"revoked": affected, "plan": self._apply_server_changes()}
 
     async def _admin_list_servers(self, caller: str, args: dict) -> list:
         self._load_for_admin()
