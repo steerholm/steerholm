@@ -20,6 +20,12 @@ tagging it. At tag time, rename `[Unreleased]` to the version and date.
 - `holm log --follow` gets each decision from the daemon as it is recorded,
   instead of watching the log files.
 
+### Removed
+
+- The `control-token` file and the daemon's HTTP control route. The CLI reaches
+  the daemon over the local channel instead; the daemon deletes a token left by
+  an earlier version when it starts.
+
 ### Fixed
 
 - `holm grant` refuses an agent whose policy file cannot be read, instead of

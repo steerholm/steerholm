@@ -10,7 +10,7 @@ description: Config files, directory layout, and platform support.
 ```bash Linux / macOS
 ~/.steerholm/
 ├── config.json
-├── control-token           # the CLI's credential for the running daemon
+├── admin.sock              # while the daemon runs: how the CLI reaches it
 ├── events-000001.jsonl     # audit log (rotated)
 ├── events-000002.jsonl
 ├── update-check.json       # cached "update available" check
@@ -32,7 +32,6 @@ description: Config files, directory layout, and platform support.
 ├── daemon.log
 ├── migrations\
 │   └── version
-├── control-token
 ├── .pre-migration\
 └── policies\
     ├── agt_9f2a1c4e7b3d05a1.json
@@ -43,11 +42,11 @@ description: Config files, directory layout, and platform support.
 
 `config.json` holds the bcrypt hash of each agent's access key. A hash verifies a
 key; it cannot be turned back into one, and the raw key is shown once at creation
-and never stored. `control-token` holds the credential the CLI uses to talk to a
-running daemon — stored raw, because the CLI has to present it, and owner-only
-like everything else here. The daemon creates it when it first starts, so it is
-absent until then. `.pre-migration` is the state as it was before the last
-upgrade changed its format — see
+and never stored. `admin.sock` is how the CLI reaches the running daemon; only
+your account can use it, and the daemon checks who is asking on every request.
+On Windows the CLI uses the named pipe `\\.\pipe\steerholm` instead.
+`.pre-migration` is the state as it was before the last upgrade changed its
+format — see
 [Upgrading](/reference/policy-format#upgrading-from-an-older-steerholm).
 
 Set `STEERHOLM_CONFIG_DIR` to override the config directory (both the CLI and

@@ -35,55 +35,6 @@ POLICIES_DIR = CONFIG_DIR / "policies"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 4767
 
-# Its own file rather than a field in config.json: not user-facing
-# configuration, and it would otherwise show up in every dump of that model.
-#
-# Resolved at call time, not bound at import: CONFIG_DIR is re-pointed in tests
-# and a constant captured here would keep addressing the directory it had when
-# the module loaded.
-def control_token_path() -> Path:
-    return CONFIG_DIR / "control-token"
-
-
-def read_control_token() -> Optional[str]:
-    """The loopback control-plane token, or None if it has not been created.
-
-    Everything except daemon startup reads: the CLI only reaches here after
-    `_daemon_up()`, so the daemon has already created it, and the verifier is
-    checking against whatever is on disk. Minting one here instead would be the
-    worst answer available — a token nobody was issued, so the CLI would present
-    a value the daemon rejects and a missing file would surface as a silent 401.
-    """
-    path = control_token_path()
-    if not path.exists():
-        return None
-    return path.read_text(encoding="utf-8").strip() or None
-
-
-def get_or_create_control_token() -> str:
-    """Create the control token if absent and return it. Daemon startup only.
-
-    Stored raw, unlike agent keys: the CLI has to present the value, so both
-    ends need the real thing. Owner-only, the same protection `config.json`
-    gets for the `--env` values it already holds.
-
-    Written via a temp file and a rename so a reader never catches it
-    half-written. Two daemons racing to start would both write, and that is
-    harmless: nothing caches the token, so whichever value lands is what every
-    later read — verifier and CLI alike — agrees on.
-    """
-    existing = read_control_token()
-    if existing:
-        return existing
-    token = "steer_ctl_" + "".join(
-        secrets.choice(string.ascii_letters + string.digits) for _ in range(32)
-    )
-    path = control_token_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_atomic(path, token + "\n")
-    return token
-
-
 # Env var name rule shared by Kubernetes and Docker's build/Compose layer:
 # letters, digits, '_', '-', '.', not starting with a digit. Every name it
 # accepts is valid on every OS we support, so a config stays portable.

@@ -217,7 +217,6 @@ async def test_serve_runs_and_cancels_supervisor(config_manager, monkeypatch):
     import uvicorn
     gateway = make_gateway(config_manager)
     monkeypatch.setattr(gateway, "reconcile_servers", AsyncMock())
-    monkeypatch.setattr("steerholm.gateway.get_or_create_control_token", lambda: "tok")
     monkeypatch.setattr(gateway, "create_asgi_app", lambda host, port: MagicMock())
 
     async def hang(interval=30.0):
@@ -343,13 +342,6 @@ async def test_restart_unhealthy_stop_failure_is_logged(config_manager):
     await gateway._restart_unhealthy_servers()  # must not raise
 
 
-def test_check_control_token_returns_false_on_error(config_manager, monkeypatch):
-    gateway = make_gateway(config_manager)
-    monkeypatch.setattr("steerholm.gateway.get_or_create_control_token",
-                        MagicMock(side_effect=RuntimeError("keyring down")))
-    assert gateway._check_control_token("anytoken") is False
-
-
 # ─── serve() error branches ─────────────────────────────────────────
 
 
@@ -364,31 +356,9 @@ def _mock_bind_socket(errno):
 
 
 @pytest.mark.asyncio
-async def test_serve_control_token_init_error_is_logged(config_manager, monkeypatch):
-    import uvicorn
-    gateway = make_gateway(config_manager)
-    monkeypatch.setattr(gateway, "reconcile_servers", AsyncMock())
-    monkeypatch.setattr("steerholm.gateway.get_or_create_control_token",
-                        MagicMock(side_effect=RuntimeError("keyring")))
-    monkeypatch.setattr(gateway, "create_asgi_app", lambda host, port: MagicMock())
-
-    async def hang(interval=30.0):
-        await asyncio.sleep(3600)
-
-    monkeypatch.setattr(gateway, "_reconcile_loop", hang)
-    fake = MagicMock()
-    fake.serve = AsyncMock()
-    monkeypatch.setattr(uvicorn, "Server", lambda config: fake)
-    monkeypatch.setattr(uvicorn, "Config", lambda *a, **k: MagicMock())
-    await gateway.serve("127.0.0.1", 0)  # token init error swallowed
-    fake.serve.assert_awaited_once()
-
-
-@pytest.mark.asyncio
 async def test_serve_port_in_use_exits(config_manager, monkeypatch):
     gateway = make_gateway(config_manager)
     monkeypatch.setattr(gateway, "reconcile_servers", AsyncMock())
-    monkeypatch.setattr("steerholm.gateway.get_or_create_control_token", lambda: "t")
     monkeypatch.setattr("socket.socket", lambda *a, **k: _mock_bind_socket(98))
     with pytest.raises(SystemExit):
         await gateway.serve("127.0.0.1", 4767)
@@ -398,7 +368,6 @@ async def test_serve_port_in_use_exits(config_manager, monkeypatch):
 async def test_serve_other_bind_error_reraises(config_manager, monkeypatch):
     gateway = make_gateway(config_manager)
     monkeypatch.setattr(gateway, "reconcile_servers", AsyncMock())
-    monkeypatch.setattr("steerholm.gateway.get_or_create_control_token", lambda: "t")
     monkeypatch.setattr("socket.socket", lambda *a, **k: _mock_bind_socket(13))
     with pytest.raises(OSError):
         await gateway.serve("127.0.0.1", 4767)
@@ -477,17 +446,6 @@ async def test_a_grant_naming_a_server_that_is_gone_is_skipped(config_manager):
     assert reachable == ["srv"]
 
 
-def test_control_requests_are_refused_when_the_token_is_missing(config_manager, monkeypatch):
-    # The verifier reads; it must not create. Creating here would start
-    # accepting a token that was never issued to anyone.
-    import steerholm.gateway as gw
-
-    gateway = make_gateway(config_manager)
-    monkeypatch.setattr(gw, "read_control_token", lambda: None)
-
-    assert gateway._check_control_token("steer_ctl_anything") is False
-
-
 def test_a_hashless_agent_is_reported_once_not_per_attempt(config_manager, caplog):
     # The check sits in the authentication path, so warning on every attempt
     # would put a line in the daemon log per tool call.
@@ -516,7 +474,6 @@ async def test_the_daemon_answers_while_its_servers_are_still_starting(config_ma
 
     config_manager.add_server("slow", command="never-connects")
     gateway = make_gateway(config_manager)
-    monkeypatch.setattr("steerholm.gateway.get_or_create_control_token", lambda: "t")
     started, cancelled = asyncio.Event(), []
 
     async def never_connects(self):
@@ -632,3 +589,21 @@ async def test_serve_exits_cleanly_when_the_admin_channel_cannot_open(config_man
     with pytest.raises(SystemExit):
         await gateway.serve("127.0.0.1", 0)
     assert "Could not open the admin channel" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_serve_removes_the_old_control_token(config_manager, monkeypatch):
+    import steerholm.config as config_mod
+    from steerholm import admin
+
+    stale = config_mod.CONFIG_DIR / "control-token"
+    stale.write_text("steer_ctl_left_by_0.1.2\n", encoding="utf-8")
+    gateway = make_gateway(config_manager)
+
+    async def stop_here(self):
+        raise admin.ChannelInUse("stop the test once startup has run")
+
+    monkeypatch.setattr(admin.AdminServer, "start", stop_here)
+    with pytest.raises(SystemExit):
+        await gateway.serve("127.0.0.1", 0)
+    assert not stale.exists()

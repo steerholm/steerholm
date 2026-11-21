@@ -1,6 +1,5 @@
 import asyncio
 import hashlib
-import hmac
 import logging
 import os
 import socket
@@ -24,9 +23,7 @@ from starlette.routing import Route
 
 from . import __version__
 from .admin import AdminServer, ChannelInUse, channel_name
-from .config import (
-    ConfigError, ConfigManager, get_or_create_control_token, read_control_token,
-)
+from .config import ConfigError, ConfigManager
 from .errors import AUTHORIZATION_DENIED_CODE, authorization_denied, server_unavailable
 from .events import DecisionEvent, EventLog, now_iso, read_events, summarize_args
 from .models import AgentPolicy
@@ -801,32 +798,6 @@ class SteerholmGateway:
                         logger.error(f"Failed to stop unhealthy server '{name}': {e}")
         # reconcile_servers (next in the supervisor loop) restarts them.
 
-    def _check_control_token(self, token: Optional[str]) -> bool:
-        if not token:
-            return False
-        try:
-            expected = read_control_token()
-        except Exception as e:
-            logger.error(f"Could not read control token: {e}")
-            return False
-        if not expected:
-            # Creating one here would start accepting a token nobody was issued.
-            logger.error("No control token on disk; refusing control requests.")
-            return False
-        return hmac.compare_digest(token, expected)
-
-    def _control_unauthorized(self, request):
-        """Return a 401 JSONResponse if the request lacks a valid control token,
-        else None. Shared by every /control/* endpoint."""
-        token = self._extract_bearer_token(request.headers.get("authorization"))
-        if self._check_control_token(token):
-            return None
-        return JSONResponse(
-            {"error": "Unauthorized"},
-            status_code=HTTPStatus.UNAUTHORIZED,
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
     def _security_settings(self, host: str, port: int) -> TransportSecuritySettings:
         allowed_hosts = [
             host,
@@ -853,23 +824,6 @@ class SteerholmGateway:
             # it is Steerholm answering (not just any open port).
             return JSONResponse({"service": "steerholm", "version": __version__})
 
-        async def control_reconcile(request):
-            # Control plane: `holm log set` calls this so the daemon applies a
-            # retention change immediately (server changes go through the admin
-            # channel). The control token authenticates it — agent tokens never
-            # match, so they cannot drive lifecycle.
-            denied = self._control_unauthorized(request)
-            if denied is not None:
-                return denied
-            self.config_manager.reload()
-            # Answer with what will happen, then do it in the background. A server
-            # can take longer to start than the CLI waits — a first `npx` run
-            # downloads its package — and the CLI reported a change it had
-            # successfully made as "Could not reach the daemon".
-            plan = self._reconcile_plan()
-            self._reconcile_in_background()
-            return JSONResponse(plan)
-
         @asynccontextmanager
         async def lifespan(app):
             async with manager.run():
@@ -878,7 +832,6 @@ class SteerholmGateway:
         return Starlette(
             routes=[
                 Route("/healthz", endpoint=health, methods=["GET"]),
-                Route("/control/reconcile", endpoint=control_reconcile, methods=["POST"]),
                 Route("/mcp", endpoint=http_app, methods=["GET", "POST", "DELETE"]),
             ],
             lifespan=lifespan,
@@ -893,12 +846,13 @@ class SteerholmGateway:
         self.config_manager.verify_schema()
         self.config_manager.reload()
         self.config_manager.verify_loaded()
-        # Create the control token now so it exists before the CLI's first call
-        # (avoids a first-use race where each side would mint a different token).
+        # Earlier versions left a credential here for the CLI; the admin channel
+        # replaced it, so don't leave a secret lying around that nothing uses.
+        from .config import CONFIG_DIR
         try:
-            get_or_create_control_token()
-        except Exception as e:
-            logger.error(f"Could not initialize control token: {e}")
+            (CONFIG_DIR / "control-token").unlink(missing_ok=True)
+        except OSError as e:
+            logger.warning(f"Could not remove the old control token: {e}")
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             # SO_REUSEADDR lets the daemon rebind over a predecessor's TIME_WAIT

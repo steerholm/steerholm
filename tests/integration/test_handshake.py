@@ -69,40 +69,14 @@ class TestHealthEndpoint:
         assert response.status_code == 200
 
 
-class TestControlPlane:
+class TestServerChanges:
     @pytest.mark.asyncio
-    async def test_reconcile_requires_control_token(self, config_manager):
-        app = make_gateway(config_manager).create_asgi_app("127.0.0.1", 4767)
-        async with _asgi_client(app) as client:
-            no_auth = await client.post("/control/reconcile")
-            bad = await client.post(
-                "/control/reconcile", headers={"Authorization": "Bearer steer_sk_wrong"}
-            )
-        assert no_auth.status_code == 401
-        assert bad.status_code == 401
-
-    @pytest.mark.asyncio
-    async def test_reconcile_with_control_token(self, config_manager):
-        from steerholm.config import get_or_create_control_token
-
-        token = get_or_create_control_token()
-        app = make_gateway(config_manager).create_asgi_app("127.0.0.1", 4767)
-        async with _asgi_client(app) as client:
-            resp = await client.post(
-                "/control/reconcile", headers={"Authorization": f"Bearer {token}"}
-            )
-        assert resp.status_code == 200
-        body = resp.json()
-        assert set(body) >= {"starting", "stopping"}
-
-    @pytest.mark.asyncio
-    async def test_reconcile_answers_before_a_slow_server_has_started(self, config_manager, monkeypatch):
-        # It started the server inside the request: a first `npx` run outlasted
+    async def test_a_change_answers_before_a_slow_server_has_started(self, config_manager, monkeypatch):
+        # Starting the server inside the request made a first `npx` run outlast
         # the CLI's 30s wait, and `holm add server` said it could not reach the
         # daemon although the change was made.
         import asyncio
         from steerholm import process_manager as pm
-        from steerholm.config import get_or_create_control_token
 
         release = asyncio.Event()
 
@@ -110,15 +84,11 @@ class TestControlPlane:
             await release.wait()
 
         monkeypatch.setattr(pm.ServerProcess, "start", slow_start)
-        token = get_or_create_control_token()
-        config_manager.add_server("slow", command="never-mind")
         gateway = make_gateway(config_manager)
-        app = gateway.create_asgi_app("127.0.0.1", 4767)
-        async with _asgi_client(app) as client:
-            resp = await asyncio.wait_for(client.post(
-                "/control/reconcile", headers={"Authorization": f"Bearer {token}"}), 5)
-        assert resp.status_code == 200
-        assert resp.json() == {"starting": ["slow"], "stopping": []}
+        plan = await asyncio.wait_for(gateway.admin_handlers()["add_server"](
+            "uid:0", {"name": "slow", "command": "never-mind"}), 5)
+        assert plan == {"starting": ["slow"], "stopping": []}
+        await asyncio.sleep(0)
         assert gateway.daemon.get_server_health("slow").state == "starting"
 
         release.set()
@@ -126,27 +96,13 @@ class TestControlPlane:
         assert gateway.daemon.get_server_health("slow").state == "healthy"
 
     @pytest.mark.asyncio
-    async def test_agent_token_cannot_drive_control_plane(self, config_manager):
-        # An agent's Bearer token must not be accepted on /control/*.
-        agent_token = config_manager.add_agent("agent")
+    async def test_there_is_no_http_control_route(self, config_manager):
+        # The CLI reaches the daemon over the admin channel; nothing on the
+        # agents' port changes servers.
         app = make_gateway(config_manager).create_asgi_app("127.0.0.1", 4767)
         async with _asgi_client(app) as client:
-            resp = await client.post(
-                "/control/reconcile", headers={"Authorization": f"Bearer {agent_token}"}
-            )
-        assert resp.status_code == 401
-
-    def test_control_token_isolated_from_agent_keyring(self, config_manager):
-        from steerholm.config import get_or_create_control_token
-
-        token = get_or_create_control_token()
-        assert token.startswith("steer_ctl_")
-        # An agent whose name would collide with the old control account must
-        # not corrupt the control token (it lives in its own file, not in config.json).
-        config_manager.add_agent("__control__")
-        config_manager.add_agent("token")
-        assert get_or_create_control_token() == token
-
+            resp = await client.post("/control/reconcile")
+        assert resp.status_code == 404
 
 class TestHTTPAuthentication:
     @pytest.mark.asyncio
