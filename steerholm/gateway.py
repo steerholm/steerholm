@@ -5,7 +5,7 @@ import logging
 import os
 import socket
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from contextlib import asynccontextmanager
 from fnmatch import fnmatch
 from http import HTTPStatus
@@ -28,7 +28,7 @@ from .config import (
     ConfigError, ConfigManager, get_or_create_control_token, read_control_token,
 )
 from .errors import AUTHORIZATION_DENIED_CODE, authorization_denied, server_unavailable
-from .events import DecisionEvent, EventLog, now_iso, summarize_args
+from .events import DecisionEvent, EventLog, now_iso, read_events, summarize_args
 from .models import AgentPolicy
 from .permissions import PermissionEngine
 from .process_manager import SteerholmDaemon
@@ -108,6 +108,27 @@ class SteerholmAuthenticatedStreamableHTTPApp:
         await response(scope, receive, send)
 
 
+LOG_STATUSES = ("allowed", "denied", "error")
+# How many decisions a `holm log --follow` may fall behind before its stream
+# ends, and how often an idle stream says it is still there.
+_FOLLOW_BACKLOG = 1000
+_KEEP_ALIVE = 1.0
+
+
+def _event_filter(args: dict):
+    """The match for `holm log`'s filters: --agent and --server take a name or
+    an id; --status is the recorded decision."""
+    agent, server, status = args.get("agent"), args.get("server"), args.get("status")
+    if status is not None and status not in LOG_STATUSES:
+        raise ValueError(f"--status must be one of {', '.join(LOG_STATUSES)}.")
+
+    def matches(e: dict) -> bool:
+        return ((agent is None or agent in (e.get("agent"), e.get("agent_id")))
+                and (server is None or server in (e.get("server"), e.get("server_id")))
+                and (status is None or e.get("decision") == status))
+    return matches
+
+
 class SteerholmGateway:
     def __init__(self):
         self.config_manager = ConfigManager()
@@ -129,6 +150,8 @@ class SteerholmGateway:
         # Reconciles running behind the open port; kept so they are not garbage
         # collected mid-run, and so shutdown can cancel them.
         self._background: set = set()
+        # One queue per `holm log --follow`; every recorded decision is put on each.
+        self._log_followers: set = set()
         self._register_handlers()
 
     def _register_handlers(self) -> None:
@@ -348,7 +371,7 @@ class SteerholmGateway:
                 agent = self.config_manager.get_agent(agent_name)
                 server_cfg = (self.config_manager.get_server(server_name)
                               if server_name else None)
-                self.event_log.record(DecisionEvent(
+                self._record(DecisionEvent(
                     ts=now_iso(),
                     agent=agent_name,
                     agent_id=agent.id if agent else None,
@@ -361,6 +384,19 @@ class SteerholmGateway:
                     latency_ms=int((time.monotonic() - started) * 1000),
                     args_summary=summarize_args(arguments),
                 ))
+
+    def _record(self, event: DecisionEvent) -> None:
+        """Record a decision, and hand it to everyone following the log."""
+        self.event_log.record(event)
+        payload = event.model_dump(mode="json")
+        for queue in list(self._log_followers):
+            try:
+                queue.put_nowait(payload)
+            except asyncio.QueueFull:
+                # This far behind, the follower is not reading. End its stream
+                # rather than hold decisions for it without limit.
+                self._log_followers.discard(queue)
+                queue.lagged = True
 
     async def reconcile_servers(self) -> dict:
         """The daemon's single lifecycle primitive: make the running shared servers
@@ -501,6 +537,9 @@ class SteerholmGateway:
             "remove_agent": self._admin_remove_agent,
             "grant": self._admin_grant,
             "revoke": self._admin_revoke,
+            "log": self._admin_log,
+            "log_follow": self._admin_log_follow,
+            "log_set": self._admin_log_set,
         }
 
     def _apply_server_changes(self) -> dict:
@@ -657,6 +696,61 @@ class SteerholmGateway:
         removed = self.config_manager.revoke_permission(
             args.get("agent"), args.get("server"), tool=args.get("tool"))
         return {"removed": removed}
+
+    async def _admin_log(self, caller: str, args: dict) -> dict:
+        matches = _event_filter(args)
+        # In a thread: the log can run to tens of megabytes, and agents' calls
+        # must not wait on it.
+        return await asyncio.to_thread(self._log_history, args, matches, None)
+
+    async def _admin_log_follow(self, caller: str, args: dict):
+        matches = _event_filter(args)
+        queue = asyncio.Queue(maxsize=_FOLLOW_BACKLOG)
+        # Subscribe and mark the log's end with nothing in between: a decision
+        # is then either before the mark, in the history, or on the queue —
+        # never both, never neither. The history is read only up to the mark.
+        self._log_followers.add(queue)
+        end = self.event_log.end()
+        try:
+            yield await asyncio.to_thread(self._log_history, args, matches, end)
+            while not getattr(queue, "lagged", False) or not queue.empty():
+                try:
+                    event = await asyncio.wait_for(queue.get(), _KEEP_ALIVE)
+                except TimeoutError:
+                    yield None                       # keep-alive
+                    continue
+                if matches(event):
+                    yield event
+            raise ValueError("Stopped following: decisions came faster than they were read.")
+        finally:
+            self._log_followers.discard(queue)
+
+    async def _admin_log_set(self, caller: str, args: dict) -> dict:
+        self._load_for_admin()
+        audit = self.config_manager.set_audit_settings(
+            max_files=args.get("max_files"), max_age_days=args.get("max_age_days"))
+        self.event_log.configure(**self.config_manager.audit_kwargs())
+        return {"max_files": audit.max_files, "max_age_days": audit.max_age_days}
+
+    def _log_history(self, args: dict, matches, until) -> dict:
+        """The last `number` matching decisions (0 for all), and the ids seen
+        behind a filtered name — removing and re-adding reuses a name for a
+        different agent or server, which the CLI points out."""
+        from .config import CONFIG_DIR
+        number = args.get("number", 50)
+        agent, server = args.get("agent"), args.get("server")
+        kept = deque(maxlen=number or None)
+        agent_ids, server_ids = set(), set()
+        for e in read_events(CONFIG_DIR, until=until):
+            if not matches(e):
+                continue
+            kept.append(e)
+            if agent and e.get("agent") == agent and e.get("agent_id"):
+                agent_ids.add(e["agent_id"])
+            if server and e.get("server") == server and e.get("server_id"):
+                server_ids.add(e["server_id"])
+        return {"events": list(kept), "agent_ids": sorted(agent_ids),
+                "server_ids": sorted(server_ids)}
 
     def _load_for_admin(self) -> None:
         """Re-read the state for an admin request; a config that cannot be

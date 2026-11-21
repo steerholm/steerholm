@@ -12,14 +12,13 @@ tagging it. At tag time, rename `[Unreleased]` to the version and date.
 
 ### Changed
 
-- `holm list servers`, `show server`, `list agents`, `show agent`,
-  `log config`, `add`, `modify` and `remove server`, `add`, `rotate` and
-  `remove agent`, `grant` and `revoke` go to the running daemon, over a local
-  channel only your account can use, and the daemon applies a server change as
-  part of the request. With the daemon stopped they say so and change nothing;
-  before, `list servers` and `show server` showed the configuration without
-  live status, and a change was written and applied when the daemon next
-  started.
+- Every `holm` command that reads or changes servers, agents, grants or the
+  audit log goes to the running daemon, over a local channel only your account
+  can use, and the daemon applies a change as part of the request. With the
+  daemon stopped they say so and change nothing; before, they read and wrote
+  the files directly and a change applied when the daemon next started.
+- `holm log --follow` gets each decision from the daemon as it is recorded,
+  instead of watching the log files.
 
 ### Fixed
 

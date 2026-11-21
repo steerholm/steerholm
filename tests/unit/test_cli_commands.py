@@ -8,6 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 import steerholm.main as m
+from steerholm.events import read_events
 from steerholm.gateway import SteerholmGateway
 from steerholm.main import app, _format_uptime, _status_markup
 
@@ -80,32 +81,6 @@ def test_daemon_up_false_on_error(monkeypatch):
 
 
 # ─── _notify_daemon_reconcile ───────────────────────────────────────
-
-
-def test_notify_reconcile_noop_when_down(monkeypatch, capsys):
-    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: False)
-    m._notify_daemon_reconcile()
-    assert "not running" in capsys.readouterr().out
-
-
-def test_notify_reconcile_reports_what_the_daemon_is_doing(monkeypatch, capsys):
-    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
-    monkeypatch.setattr("steerholm.config.read_control_token", lambda: "tok")
-    payload = {"starting": ["alpha"], "stopping": ["beta"]}
-    with patch("urllib.request.urlopen", return_value=_fake_urlopen(payload)):
-        m._notify_daemon_reconcile()
-    out = " ".join(capsys.readouterr().out.split())
-    assert "Daemon is starting: alpha" in out
-    assert "Daemon is stopping: beta" in out
-    assert "holm show server alpha" in out
-
-
-def test_notify_reconcile_reports_unreachable(monkeypatch, capsys):
-    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
-    monkeypatch.setattr("steerholm.config.read_control_token", lambda: "tok")
-    with patch("urllib.request.urlopen", side_effect=OSError("nope")):
-        m._notify_daemon_reconcile()
-    assert "Could not reach the daemon" in capsys.readouterr().out
 
 
 # ─── add / remove server ────────────────────────────────────────────
@@ -882,195 +857,7 @@ def test_log_invalid_decision_rejected(cli):
 # ─── holm log --follow (tails the same file) ────────────────────────
 
 
-def _stop_after(n):
-    """A stop() predicate for _tail_event_log: allow n loop passes, then stop."""
-    calls = {"n": 0}
-    def stop():
-        calls["n"] += 1
-        return calls["n"] > n
-    return stop
-
-
-def test_tail_emits_events_appended_after_the_offset(cli, tmp_config_dir):
-    path = tmp_config_dir / "events-000001.jsonl"
-    path.write_text(json.dumps({"ts": _TS, "agent": "a", "tool": "old", "decision": "allowed"}) + "\n")
-    offset = path.stat().st_size
-    path.write_text(path.read_text()
-                    + json.dumps({"ts": _TS, "agent": "a", "tool": "new", "decision": "denied"}) + "\n")
-
-    seen = []
-    m._tail_event_log(seen.append, offset=offset, poll=0, stop=_stop_after(3))
-    assert [e["tool"] for e in seen] == ["new"]      # only what came after the offset
-
-
-
-def test_tail_skips_blank_torn_and_non_dict_lines(cli, tmp_config_dir):
-    path = tmp_config_dir / "events-000001.jsonl"
-    path.write_text(
-        "\n" "null\n" "{not json}\n"
-        + json.dumps({"ts": _TS, "agent": "a", "tool": "good", "decision": "allowed"}) + "\n"
-    )
-    seen = []
-    m._tail_event_log(seen.append, offset=0, poll=0, stop=_stop_after(3))
-    assert [e["tool"] for e in seen] == ["good"]
-
-
-
-def test_tail_reopens_after_truncation(cli, tmp_config_dir):
-    path = tmp_config_dir / "events-000001.jsonl"
-    path.write_text(json.dumps({"ts": _TS, "agent": "a", "tool": "first", "decision": "allowed"}) + "\n")
-    # Start past the end, then truncate + rewrite (as rotation would).
-    offset = path.stat().st_size + 500
-    path.write_text(json.dumps({"ts": _TS, "agent": "a", "tool": "rotated", "decision": "allowed"}) + "\n")
-
-    seen = []
-    m._tail_event_log(seen.append, offset=offset, poll=0, stop=_stop_after(4))
-    assert [e["tool"] for e in seen] == ["rotated"]
-
-
-
-def test_read_event_history_returns_events_and_exact_offset(cli, tmp_config_dir):
-    path = tmp_config_dir / "events-000001.jsonl"
-    _write_events(tmp_config_dir, [
-        {"ts": _TS, "agent": "a", "tool": "h1", "decision": "allowed"},
-        {"ts": _TS, "agent": "b", "tool": "h2", "decision": "allowed"},
-    ])
-    events, offset, _ = m._read_event_history(lambda e: True, 10)
-    assert [e["tool"] for e in events] == ["h1", "h2"]
-    assert offset == path.stat().st_size          # exactly at EOF -> no gap, no repeat
-
-
-def test_read_event_history_offset_excludes_a_partial_line(cli, tmp_config_dir):
-    path = tmp_config_dir / "events-000001.jsonl"
-    complete = (json.dumps({"ts": _TS, "agent": "a", "tool": "h1", "decision": "allowed"}) + "\n").encode()
-    path.write_bytes(complete + b'{"partial": ')  # bytes: write_text would emit CRLF on Windows
-    events, offset, _ = m._read_event_history(lambda e: True, 10)
-    assert [e["tool"] for e in events] == ["h1"]
-    assert offset == len(complete)                # partial line left for the tail
-
-
-def test_log_follow_prints_history_then_tails(cli, tmp_config_dir, monkeypatch):
-    _write_events(tmp_config_dir, [
-        {"ts": _TS, "agent": "a", "tool": "old_call", "decision": "allowed", "server": "s"},
-    ])
-    def fake_tail(on_event, offset=0, from_path=None, at_end=False, poll=0.25, stop=None):
-        on_event({"ts": _TS, "agent": "a", "tool": "live_call",
-                  "decision": "denied", "server": "s", "reason": "nope"})
-    monkeypatch.setattr(m, "_tail_event_log", fake_tail)
-
-    result = runner.invoke(app, ["log", "-f"])
-    assert result.exit_code == 0
-    assert "old_call" in result.output                      # scrollback
-    assert "Watching for new decisions" in result.output
-    assert "live_call" in result.output and "nope" in result.output
-
-
-def test_log_follow_applies_filters_to_new_events(cli, tmp_config_dir, monkeypatch):
-    def fake_tail(on_event, offset=0, from_path=None, at_end=False, poll=0.25, stop=None):
-        on_event({"ts": _TS, "agent": "a", "tool": "kept", "decision": "denied", "server": "s"})
-        on_event({"ts": _TS, "agent": "b", "tool": "filtered", "decision": "denied", "server": "s"})
-    monkeypatch.setattr(m, "_tail_event_log", fake_tail)
-
-    result = runner.invoke(app, ["log", "-f", "--agent", "a"])
-    assert "kept" in result.output
-    assert "filtered" not in result.output
-
-
-def test_log_follow_warns_when_daemon_is_down(cli, monkeypatch):
-    # Following still works offline (the file is the source) — just say so.
-    monkeypatch.setattr(m, "_tail_event_log", lambda *a, **k: None)
-    result = runner.invoke(app, ["log", "-f"])
-    assert result.exit_code == 0
-    assert "no new decisions will be recorded" in result.output
-
-
-def test_log_follow_truncates_a_long_reason(cli, monkeypatch):
-    def fake_tail(on_event, offset=0, from_path=None, at_end=False, poll=0.25, stop=None):
-        on_event({"ts": _TS, "agent": "a", "tool": "t", "decision": "denied",
-                  "server": "s", "reason": "x" * 200})
-    monkeypatch.setattr(m, "_tail_event_log", fake_tail)
-    result = runner.invoke(app, ["log", "-f"])
-    assert "…" in result.output
-    assert "x" * 61 not in result.output
-
-
-
 # ─── follow: regression tests for the audit-tail review findings ────
-
-
-class _StatRaises:
-    """A path stand-in whose stat() fails, to test _log_was_replaced portably
-    (unlinking an open file is not permitted on Windows)."""
-    def __init__(self, exc):
-        self.exc = exc
-
-    def stat(self):
-        raise self.exc
-
-
-def test_read_event_history_offset_is_exact_with_invalid_utf8_partial(cli, tmp_config_dir):
-    # errors="replace" turns each bad byte into U+FFFD (3 bytes re-encoded), so
-    # byte arithmetic done on the decoded text skews the resume offset.
-    path = tmp_config_dir / "events-000001.jsonl"
-    complete = json.dumps({"ts": _TS, "agent": "a", "tool": "h1", "decision": "allowed"}).encode() + b"\n"
-    path.write_bytes(complete + b'{"ts": "' + b"\xff" * 40)
-
-    events, offset, _ = m._read_event_history(lambda e: True, 10)
-    assert [e["tool"] for e in events] == ["h1"]
-    assert offset == len(complete)          # exact byte boundary, not skewed
-
-
-def test_follow_does_not_crash_on_a_badly_torn_partial(cli, tmp_config_dir):
-    # Enough invalid bytes drove the old arithmetic negative -> ValueError on seek.
-    path = tmp_config_dir / "events-000001.jsonl"
-    complete = json.dumps({"ts": _TS, "agent": "a", "tool": "h1", "decision": "allowed"}).encode() + b"\n"
-    path.write_bytes(complete + b'{"ts": "' + b"\xff" * 80)
-
-    _, offset, _ = m._read_event_history(lambda e: True, 10)
-    assert offset >= 0
-    seen = []
-    m._tail_event_log(seen.append, offset=offset, poll=0, stop=_stop_after(2))
-
-
-def test_tail_reassembles_a_multibyte_char_split_across_polls(cli, tmp_config_dir):
-    # A poll boundary must not finalize the decoder mid-character.
-    path = tmp_config_dir / "events-000001.jsonl"
-    line = json.dumps({"ts": _TS, "agent": "café", "tool": "t", "decision": "allowed"},
-                      ensure_ascii=False).encode("utf-8")
-    cut = line.index(b"\xc3") + 1           # split inside the 'é'
-    path.write_bytes(line[:cut])
-    rest = line[cut:] + b"\n"
-
-    state = {"n": 0}
-    def stop():
-        state["n"] += 1
-        if state["n"] == 2:                 # writer completes the line mid-follow
-            with open(path, "ab") as f:
-                f.write(rest)
-        return state["n"] > 5
-
-    seen = []
-    m._tail_event_log(seen.append, offset=0, poll=0, stop=stop)
-    assert [e["agent"] for e in seen] == ["café"]
-
-
-def test_tail_withholds_a_complete_looking_line_until_its_newline(cli, tmp_config_dir):
-    # Load-bearing version: the payload is VALID json, so only the newline gate
-    # can keep it from being emitted early.
-    path = tmp_config_dir / "events-000001.jsonl"
-    path.write_text(json.dumps({"ts": _TS, "agent": "a", "tool": "pending", "decision": "allowed"}))
-
-    state = {"n": 0}
-    def stop():
-        state["n"] += 1
-        if state["n"] == 2:
-            with open(path, "a") as f:
-                f.write("\n")
-        return state["n"] > 5
-
-    seen = []
-    m._tail_event_log(seen.append, offset=0, poll=0, stop=stop)
-    assert [e["tool"] for e in seen] == ["pending"]      # exactly once, after the newline
 
 
 def test_event_after_a_torn_line_is_not_swallowed(cli, tmp_config_dir):
@@ -1082,129 +869,7 @@ def test_event_after_a_torn_line_is_not_swallowed(cli, tmp_config_dir):
     EventLog(dir=tmp_config_dir).record(DecisionEvent(
         ts=now_iso(), agent="a", tool="next_real_event", decision="allowed"))
 
-    assert [e["tool"] for e in m._iter_event_log()] == ["next_real_event"]
-
-
-def test_log_was_replaced_detects_a_replaced_file(cli, tmp_config_dir):
-    # A replacement leaves a same-or-larger file, so size alone can't see it; the
-    # inode must. Simulated rather than renaming (Windows can't rename an open file).
-    path = tmp_config_dir / "events-000001.jsonl"
-    path.write_bytes(b'{"a":1}\n')
-    with open(path, "rb") as handle:
-        handle.read()
-        real = type(path).stat
-
-        class _Other:
-            st_size = 999
-            st_ino = real(path).st_ino + 1   # a different file at the same path
-            st_dev = real(path).st_dev
-
-        class _Replaced:
-            name = path.name
-            def stat(self):
-                return _Other()
-
-        assert m._log_was_replaced(handle, _Replaced()) is True
-
-
-def test_log_was_replaced_on_missing_file(cli, tmp_config_dir):
-    path = tmp_config_dir / "events-000001.jsonl"
-    path.write_bytes(b'{"a":1}\n')
-    with open(path, "rb") as handle:
-        assert m._log_was_replaced(handle, _StatRaises(FileNotFoundError())) is True
-
-
-def test_log_was_replaced_ignores_a_transient_stat_error(cli, tmp_config_dir):
-    # A momentary EACCES/EBUSY must NOT be read as "replaced" (that replays the log).
-    path = tmp_config_dir / "events-000001.jsonl"
-    path.write_bytes(b'{"a":1}\n')
-    with open(path, "rb") as handle:
-        assert m._log_was_replaced(handle, _StatRaises(PermissionError())) is False
-
-
-def test_tail_keyboard_interrupt_stops_the_loop(cli, tmp_config_dir):
-    path = tmp_config_dir / "events-000001.jsonl"
-    _write_events(tmp_config_dir, [
-        {"ts": _TS, "agent": "a", "tool": f"t{i}", "decision": "allowed"} for i in range(3)
-    ])
-    calls = []
-    def boom(e):
-        calls.append(e)
-        raise KeyboardInterrupt()
-    m._tail_event_log(boom, offset=0, poll=0, stop=_stop_after(10))
-    assert len(calls) == 1          # Ctrl-C ends the follow, not just one event
-
-
-def test_tail_picks_up_a_log_created_after_it_starts(cli, tmp_config_dir):
-    # "waits for a missing file" must mean it actually reads it once it appears.
-    path = tmp_config_dir / "events-000001.jsonl"
-    state = {"n": 0}
-    def stop():
-        state["n"] += 1
-        if state["n"] == 2:
-            path.write_text(json.dumps(
-                {"ts": _TS, "agent": "a", "tool": "first_ever", "decision": "allowed"}) + "\n")
-        return state["n"] > 5
-
-    seen = []
-    m._tail_event_log(seen.append, offset=0, poll=0, stop=stop)
-    assert [e["tool"] for e in seen] == ["first_ever"]
-
-
-def test_follow_handoff_shows_each_event_exactly_once(cli, tmp_config_dir):
-    # The headline property: an event landing between history and tail appears once.
-    path = tmp_config_dir / "events-000001.jsonl"
-    ev = lambda t: json.dumps({"ts": _TS, "agent": "a", "tool": t, "decision": "allowed"}) + "\n"
-    path.write_text(ev("h1") + ev("h2"))
-
-    history, offset, _ = m._read_event_history(lambda e: True, 10)
-    with open(path, "a") as f:
-        f.write(ev("raced"))                # lands in the handoff window
-    seen = []
-    m._tail_event_log(seen.append, offset=offset, poll=0, stop=_stop_after(3))
-
-    assert [e["tool"] for e in history] + [e["tool"] for e in seen] == ["h1", "h2", "raced"]
-
-
-def test_log_follow_wires_the_history_offset_into_the_tail(cli, tmp_config_dir, monkeypatch):
-    # Pins the seam: passing offset=0 would re-print history as live events.
-    _write_events(tmp_config_dir, [
-        {"ts": _TS, "agent": "a", "tool": "h1", "decision": "allowed", "server": "s"},
-    ])
-    captured = {}
-    def fake_tail(on_event, offset=0, from_path=None, at_end=False, poll=0.25, stop=None):
-        captured["offset"], captured["from_path"] = offset, from_path
-    monkeypatch.setattr(m, "_tail_event_log", fake_tail)
-
-    runner.invoke(app, ["log", "-f"])
-    _, expected, resume = m._read_event_history(lambda e: True, 10)
-    assert expected > 0 and captured["offset"] == expected
-    # The offset is only meaningful for the file it was measured against.
-    assert captured["from_path"] == resume
-
-
-def test_log_follow_zero_limit_shows_all_history(cli, tmp_config_dir, monkeypatch):
-    # -n 0 is documented as "all"; it must mean that with -f too.
-    _write_events(tmp_config_dir, [
-        {"ts": _TS, "agent": "a", "tool": f"t{i}", "decision": "allowed", "server": "s"}
-        for i in range(12)
-    ])
-    monkeypatch.setattr(m, "_tail_event_log", lambda *a, **k: None)
-    result = runner.invoke(app, ["log", "-n", "0", "-f"])
-    assert result.exit_code == 0
-    assert "t0" in result.output        # oldest shown -> not silently capped at 10
-
-
-def test_log_was_replaced_false_when_fstat_fails(cli, tmp_config_dir):
-    # An unusable fd is not evidence of replacement; replaying the log would be worse.
-    class _FilenoRaises:
-        def tell(self):
-            return 0
-        def fileno(self):
-            raise OSError("no fd")
-    path = tmp_config_dir / "events-000001.jsonl"
-    path.write_bytes(b'{"a":1}\n')
-    assert m._log_was_replaced(_FilenoRaises(), path) is False
+    assert [e["tool"] for e in read_events(tmp_config_dir)] == ["next_real_event"]
 
 
 # ─── rotation: readers span segments ────────────────────────────────
@@ -1219,7 +884,7 @@ def _seg(tmp_config_dir, n, tools):
 def test_log_reads_across_segments_in_order(cli, tmp_config_dir):
     _seg(tmp_config_dir, 1, ["old1", "old2"])
     _seg(tmp_config_dir, 2, ["new1"])
-    assert [e["tool"] for e in m._iter_event_log()] == ["old1", "old2", "new1"]
+    assert [e["tool"] for e in read_events(tmp_config_dir)] == ["old1", "old2", "new1"]
 
 
 
@@ -1233,30 +898,6 @@ def test_log_limit_spans_a_rotation_boundary(cli, tmp_config_dir):
     assert "a1" not in result.output          # trimmed by the limit, across files
 
 
-def test_history_offset_counts_only_the_newest_segment(cli, tmp_config_dir):
-    _seg(tmp_config_dir, 1, ["old1", "old2"])
-    _seg(tmp_config_dir, 2, ["new1"])
-    events, offset, _ = m._read_event_history(lambda e: True, 10)
-    assert [e["tool"] for e in events] == ["old1", "old2", "new1"]
-    assert offset == (tmp_config_dir / "events-000002.jsonl").stat().st_size
-
-
-def test_tail_follows_across_a_rotation(cli, tmp_config_dir):
-    _seg(tmp_config_dir, 1, ["a1"])
-    offset = (tmp_config_dir / "events-000001.jsonl").stat().st_size
-
-    state = {"n": 0}
-    def stop():
-        state["n"] += 1
-        if state["n"] == 2:
-            _seg(tmp_config_dir, 2, ["rolled"])   # rotation starts a new segment
-        return state["n"] > 6
-
-    seen = []
-    m._tail_event_log(seen.append, offset=offset, poll=0, stop=stop)
-    assert [e["tool"] for e in seen] == ["rolled"]   # picked up, exactly once
-
-
 def test_readers_skip_a_segment_pruned_mid_read(cli, tmp_config_dir, monkeypatch):
     # Rotation can delete a segment while a reader is walking the list.
     _seg(tmp_config_dir, 1, ["gone"])
@@ -1268,22 +909,7 @@ def test_readers_skip_a_segment_pruned_mid_read(cli, tmp_config_dir, monkeypatch
         return real_open(path, *a, **kw)
     monkeypatch.setattr("builtins.open", flaky_open)
 
-    assert [e["tool"] for e in m._iter_event_log()] == ["kept"]
-    events, _, _ = m._read_event_history(lambda e: True, 10)
-    assert [e["tool"] for e in events] == ["kept"]
-
-
-def test_tail_retries_when_the_newest_segment_cannot_be_opened(cli, tmp_config_dir, monkeypatch):
-    _seg(tmp_config_dir, 1, ["x"])
-    real_open = open
-    def flaky_open(path, *a, **kw):
-        if str(path).endswith(".jsonl"):
-            raise OSError("busy")
-        return real_open(path, *a, **kw)
-    monkeypatch.setattr("builtins.open", flaky_open)
-    seen = []
-    m._tail_event_log(seen.append, offset=0, poll=0, stop=_stop_after(3))   # no crash
-    assert seen == []
+    assert [e["tool"] for e in read_events(tmp_config_dir)] == ["kept"]
 
 
 # ─── show / set config ──────────────────────────────────────────────
@@ -1296,14 +922,13 @@ def test_show_config_displays_retention(cli):
     assert "unlimited" in result.output          # age unset by default
 
 
-def test_set_config_updates_and_notifies(cli, monkeypatch):
-    notify = MagicMock()
-    monkeypatch.setattr(m, "_notify_daemon_reconcile", notify)
+def test_set_config_updates(cli):
     result = runner.invoke(app, ["log", "set", "--max-files", "3", "--max-age-days", "30"])
     assert result.exit_code == 0
+    assert "at most 3 files, kept for 30 days" in result.output
+    cli.reload()
     audit = cli.config.audit
     assert (audit.max_files, audit.max_age_days) == (3, 30)
-    notify.assert_called_once()                  # applied live, no restart needed
 
 
 def test_log_config_shows_current(cli):
@@ -1329,8 +954,7 @@ def test_set_config_rejects_invalid(cli):
     assert "negative" in result.output
 
 
-def test_show_config_reflects_a_change(cli, monkeypatch):
-    monkeypatch.setattr(m, "_notify_daemon_reconcile", MagicMock())
+def test_show_config_reflects_a_change(cli):
     runner.invoke(app, ["log", "set", "--max-files", "4"])
     result = runner.invoke(app, ["log", "config"])
     assert "Max files:     4" in result.output
@@ -1397,17 +1021,6 @@ def test_log_does_not_warn_when_an_id_is_missing(cli, tmp_config_dir):
     assert "different agents" not in result.output
 
 
-def test_log_follow_filters_by_agent_id(cli, tmp_config_dir, monkeypatch):
-    def fake_tail(on_event, offset=0, from_path=None, at_end=False, poll=0.25, stop=None):
-        on_event({"ts": _TS, "agent": "cursor", "agent_id": _AG1, "tool": "kept",
-                  "decision": "denied", "server": "s"})
-        on_event({"ts": _TS, "agent": "cursor", "agent_id": _AG2, "tool": "dropped",
-                  "decision": "denied", "server": "s"})
-    monkeypatch.setattr(m, "_tail_event_log", fake_tail)
-    result = runner.invoke(app, ["log", "-f", "--agent", _AG1])
-    assert "kept" in result.output and "dropped" not in result.output
-
-
 # ─── log --server / --tool filters ──────────────────────────────────
 
 
@@ -1441,17 +1054,6 @@ def test_log_filters_combine(cli, tmp_config_dir):
     assert "postgres-execute-sql" not in result.output   # other server
 
 
-def test_log_follow_filters_by_server(cli, tmp_config_dir, monkeypatch):
-    def fake_tail(on_event, offset=0, from_path=None, at_end=False, poll=0.25, stop=None):
-        on_event({"ts": _TS, "agent": "a", "server": "git", "tool": "kept",
-                  "decision": "denied"})
-        on_event({"ts": _TS, "agent": "a", "server": "postgres", "tool": "dropped",
-                  "decision": "denied"})
-    monkeypatch.setattr(m, "_tail_event_log", fake_tail)
-    result = runner.invoke(app, ["log", "-f", "--server", "git"])
-    assert "kept" in result.output and "dropped" not in result.output
-
-
 def test_log_unknown_server_reports_no_activity(cli, tmp_config_dir):
     _mixed_events(tmp_config_dir)
     result = runner.invoke(app, ["log", "--server", "nope"])
@@ -1478,73 +1080,6 @@ def test_log_rejects_multiple_group_options_before_a_subcommand(cli):
 def test_log_subcommand_without_group_options_is_fine(cli):
     assert runner.invoke(app, ["log", "config"]).exit_code == 0
 
-
-
-def test_history_reports_no_resume_point_when_the_newest_file_is_unreadable(cli, tmp_config_dir, monkeypatch):
-    _seg(tmp_config_dir, 1, ["a"])
-    _seg(tmp_config_dir, 2, ["b"])
-    real_open = open
-    def flaky(path, *a, **kw):
-        if str(path).endswith("000002.jsonl"):
-            raise OSError("busy")
-        return real_open(path, *a, **kw)
-    monkeypatch.setattr("builtins.open", flaky)
-
-    events, offset, resume = m._read_event_history(lambda e: True, 10)
-    assert [e["tool"] for e in events] == ["a"]   # the readable segment still counts
-    assert (offset, resume) == (0, None)          # no trustworthy position
-
-
-
-def test_tail_does_not_carry_a_stale_offset_onto_another_file(cli, tmp_config_dir):
-    # If the file the offset was measured against is pruned, the offset is
-    # meaningless elsewhere — reusing it would skip the start of the next file.
-    _seg(tmp_config_dir, 1, ["gone1", "gone2"])
-    measured = tmp_config_dir / "events-000001.jsonl"
-    stale = measured.stat().st_size
-    _seg(tmp_config_dir, 2, ["n1", "n2", "n3"])
-    measured.unlink()
-
-    seen = []
-    m._tail_event_log(seen.append, offset=stale, from_path=measured,
-                      poll=0, stop=_stop_after(4))
-    assert [e["tool"] for e in seen] == ["n1", "n2", "n3"]
-
-
-def test_tail_at_end_does_not_replay_existing_events(cli, tmp_config_dir):
-    # The consequence, not the arguments: with no trustworthy resume point the
-    # tail must emit nothing for what is already on disk.
-    _seg(tmp_config_dir, 1, ["pre0", "pre1", "pre2"])
-    seen = []
-    m._tail_event_log(seen.append, at_end=True, poll=0, stop=_stop_after(3))
-    assert seen == []
-
-
-def test_tail_at_end_still_emits_new_events(cli, tmp_config_dir):
-    _seg(tmp_config_dir, 1, ["pre"])
-    path = tmp_config_dir / "events-000001.jsonl"
-    state = {"n": 0}
-    def stop():
-        state["n"] += 1
-        if state["n"] == 2:
-            with open(path, "a") as f:
-                f.write(json.dumps({"ts": _TS, "agent": "a", "tool": "after",
-                                    "decision": "allowed", "server": "s"}) + "\n")
-        return state["n"] > 5
-    seen = []
-    m._tail_event_log(seen.append, at_end=True, poll=0, stop=stop)
-    assert [e["tool"] for e in seen] == ["after"]
-
-
-def test_follow_uses_at_end_when_history_cannot_be_measured(cli, tmp_config_dir, monkeypatch):
-    _seg(tmp_config_dir, 1, ["already_printed"])
-    monkeypatch.setattr(m, "_read_event_history", lambda *a, **k: ([], 0, None))
-    captured = {}
-    def fake_tail(on_event, offset=0, from_path=None, at_end=False, poll=0.25, stop=None):
-        captured["at_end"] = at_end
-    monkeypatch.setattr(m, "_tail_event_log", fake_tail)
-    assert runner.invoke(app, ["log", "-f"]).exit_code == 0
-    assert captured["at_end"] is True
 
 
 # ─── server ids ─────────────────────────────────────────────────────
@@ -1599,60 +1134,6 @@ def test_show_server_prints_its_id(cli):
     result = runner.invoke(app, ["show", "server", "git"])
     assert result.exit_code == 0
     assert cli.get_server("git").id in result.output
-
-
-def test_log_follow_filters_by_server_id(cli, tmp_config_dir, monkeypatch):
-    def fake_tail(on_event, offset=0, from_path=None, at_end=False, poll=0.25, stop=None):
-        on_event({"ts": _TS, "agent": "a", "server": "git", "server_id": _SRV1,
-                  "tool": "kept", "decision": "denied"})
-        on_event({"ts": _TS, "agent": "a", "server": "git", "server_id": _SRV2,
-                  "tool": "dropped", "decision": "denied"})
-    monkeypatch.setattr(m, "_tail_event_log", fake_tail)
-    result = runner.invoke(app, ["log", "-f", "--server", _SRV1])
-    assert "kept" in result.output and "dropped" not in result.output
-
-
-def test_log_follow_warns_about_a_reused_name(cli, tmp_config_dir, monkeypatch):
-    # The scrollback scan must still surface a conflated name when following.
-    _write_events(tmp_config_dir, [
-        {"ts": _TS, "agent": "cursor", "agent_id": _AG1, "server": "git",
-         "server_id": _SRV1, "tool": "first", "decision": "allowed"},
-        {"ts": _TS, "agent": "cursor", "agent_id": _AG2, "server": "git",
-         "server_id": _SRV2, "tool": "second", "decision": "allowed"},
-    ])
-    monkeypatch.setattr(m, "_tail_event_log", lambda *a, **k: None)
-
-    by_agent = runner.invoke(app, ["log", "-f", "--agent", "cursor"])
-    assert "2 different agents have used the name" in by_agent.output
-
-    by_server = runner.invoke(app, ["log", "-f", "--server", "git"])
-    assert "2 different servers have used the name" in by_server.output
-
-
-def test_log_follow_skips_the_scan_without_a_filter(cli, tmp_config_dir, monkeypatch):
-    # No name to disambiguate -> no full-log scan, and no note.
-    _write_events(tmp_config_dir, [
-        {"ts": _TS, "agent": "cursor", "agent_id": _AG1, "tool": "t",
-         "decision": "allowed", "server": "s"},
-    ])
-    monkeypatch.setattr(m, "_tail_event_log", lambda *a, **k: None)
-    result = runner.invoke(app, ["log", "-f"])
-    assert result.exit_code == 0
-    assert "different" not in result.output
-
-
-def test_log_follow_scan_skips_non_matching_events(cli, tmp_config_dir, monkeypatch):
-    # The scan applies the same filters, so another agent's events are ignored.
-    _write_events(tmp_config_dir, [
-        {"ts": _TS, "agent": "other", "agent_id": "agt_other", "tool": "x",
-         "decision": "allowed", "server": "s"},
-        {"ts": _TS, "agent": "cursor", "agent_id": _AG1, "tool": "y",
-         "decision": "allowed", "server": "s"},
-    ])
-    monkeypatch.setattr(m, "_tail_event_log", lambda *a, **k: None)
-    result = runner.invoke(app, ["log", "-f", "--agent", "cursor"])
-    assert result.exit_code == 0
-    assert "different agents" not in result.output   # one principal only
 
 
 # ─── modify server ──────────────────────────────────────────────────
@@ -2410,20 +1891,6 @@ def test_windows_installer_ends_an_old_updater(tmp_path):
     assert parent.returncode != 0
 
 
-def test_reconcile_says_so_when_the_control_token_is_missing(monkeypatch, capsys):
-    # The daemon answers but its token is gone. Minting one would present a
-    # value the daemon rejects, surfacing as a bare 401 with no explanation.
-    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
-    monkeypatch.setattr("steerholm.config.read_control_token", lambda: None)
-
-    m._notify_daemon_reconcile()
-
-    # Normalised: rich wraps, and the wrap point moves with the path length.
-    out = " ".join(capsys.readouterr().out.split())
-    assert "control token is missing" in out
-    assert "holm stop" in out
-
-
 class TestAnUnloadableConfigAtTheCli:
     """Through the real commands, since the gate is where a user meets it."""
 
@@ -2513,3 +1980,94 @@ def test_grant_with_an_empty_tool_pattern_does_not_grant_every_tool(cli):
     assert result.exit_code == 0
     grants = cli.load_policy("coder").permissions[cli._server_id("git")]
     assert [g.name for g in grants] == [""]
+
+
+# ─── log --follow (the CLI's side; the daemon's is in test_log_follow) ──
+
+
+def _follow_with(monkeypatch, answers):
+    """Stand in for the daemon's follow stream: yields `answers` in order (an
+    exception in the list is raised there), and records the request."""
+    sent = {}
+
+    def stream(op, **args):
+        sent.update(op=op, args=args)
+        for answer in answers:
+            if isinstance(answer, BaseException):
+                raise answer
+            yield answer
+
+    monkeypatch.setattr(m.admin, "stream", stream)
+    return sent
+
+
+def _history(*tools, agent_ids=(), server_ids=()):
+    return {"events": [{"ts": _TS, "agent": "a", "tool": t, "decision": "allowed"} for t in tools],
+            "agent_ids": list(agent_ids), "server_ids": list(server_ids)}
+
+
+def test_log_follow_prints_the_history_then_new_decisions(cli, monkeypatch):
+    new = {"ts": _TS, "agent": "a", "tool": "live", "decision": "denied", "reason": "nope"}
+    sent = _follow_with(monkeypatch, [_history("old"), new])
+    result = runner.invoke(app, ["log", "--follow", "--status", "denied", "-n", "5"])
+    out = result.output
+    assert result.exit_code == 0
+    assert out.index("old") < out.index("Watching") < out.index("live")
+    assert "The daemon stopped" in out             # the stream ended
+    assert sent == {"op": "log_follow",
+                    "args": {"number": 5, "agent": None, "server": None, "status": "denied"}}
+
+
+def test_log_follow_truncates_a_long_reason(cli, monkeypatch):
+    new = {"ts": _TS, "agent": "a", "tool": "t", "decision": "denied", "reason": "x" * 200}
+    _follow_with(monkeypatch, [_history(), new])
+    result = runner.invoke(app, ["log", "--follow"])
+    assert "x" * 60 + "…" in result.output and "x" * 61 not in result.output
+
+
+def test_log_follow_warns_about_a_reused_name(cli, monkeypatch):
+    _follow_with(monkeypatch, [_history("t", agent_ids=["agt_1", "agt_2"])])
+    result = runner.invoke(app, ["log", "--follow", "--agent", "coder"])
+    assert "2 different agents have used the name 'coder'" in " ".join(result.output.split())
+
+
+def test_log_follow_stops_quietly_on_ctrl_c(cli, monkeypatch):
+    _follow_with(monkeypatch, [_history("old"), KeyboardInterrupt()])
+    result = runner.invoke(app, ["log", "--follow"])
+    assert result.exit_code == 0
+    assert "The daemon stopped" not in result.output
+
+
+def test_log_follow_with_the_daemon_stopped(cli, monkeypatch):
+    _follow_with(monkeypatch, [m.admin.DaemonNotRunning()])
+    result = runner.invoke(app, ["log", "--follow"])
+    assert result.exit_code == 1
+    assert "daemon is not running" in result.output
+
+
+def test_log_follow_shows_why_the_daemon_ended_it(cli, monkeypatch):
+    _follow_with(monkeypatch, [_history(), m.admin.AdminError("Stopped following: decisions came faster than they were read.")])
+    result = runner.invoke(app, ["log", "--follow"])
+    assert result.exit_code == 1
+    assert "faster than they were read" in " ".join(result.output.split())
+
+
+def test_log_follow_when_the_daemon_hangs_up_at_once(cli, monkeypatch):
+    _follow_with(monkeypatch, [])
+    result = runner.invoke(app, ["log", "--follow"])
+    assert result.exit_code == 1
+    assert "hung up without answering" in result.output
+
+
+def test_log_with_the_daemon_stopped(cli, daemon_down):
+    result = runner.invoke(app, ["log"])
+    assert result.exit_code == 1
+    assert "daemon is not running" in result.output
+
+
+def test_print_plan_names_what_starts_and_stops(capsys):
+    m._print_plan({"starting": ["alpha"], "stopping": ["beta"]})
+    out = " ".join(capsys.readouterr().out.split())
+    assert "Daemon is stopping: beta" in out
+    assert "Daemon is starting: alpha" in out
+    assert "holm show server alpha" in out

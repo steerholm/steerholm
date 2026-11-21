@@ -156,9 +156,13 @@ async def test_a_connection_whose_peer_cannot_be_identified_is_dropped(monkeypat
 
 
 def test_a_daemon_that_does_not_answer_in_time(monkeypatch):
-    def slow(payload):
+    import contextlib
+
+    @contextlib.contextmanager
+    def slow():
         raise TimeoutError()
-    monkeypatch.setattr(admin, "_exchange_pipe" if os.name == "nt" else "_exchange_socket", slow)
+        yield
+    monkeypatch.setattr(admin, "_open_channel", slow)
     with pytest.raises(admin.AdminError, match="did not answer within 30s"):
         admin.request("x")
 
@@ -236,3 +240,72 @@ async def test_a_request_with_the_wrong_shape_is_malformed():
     for line in (b'{"op": "x", "args": "not an object"}\n', b'{"op": 1}\n', b'"just a string"\n'):
         with pytest.raises(admin.AdminError, match="Malformed request"):
             admin.parse_answer(await server.answer(admin.own_identity(), line))
+
+
+@pytest.mark.asyncio
+async def test_a_streaming_request_gets_every_result_and_skips_keep_alives():
+    async def count(caller, args):
+        for i in range(args["n"]):
+            yield i
+            yield None                       # keep-alive
+
+    server = admin.AdminServer({"count": count})
+    await server.start()
+    try:
+        assert await asyncio.to_thread(lambda: list(admin.stream("count", n=3))) == [0, 1, 2]
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_a_stream_ends_when_the_cli_hangs_up():
+    stopped = asyncio.Event()
+
+    async def forever(caller, args):
+        try:
+            while True:
+                yield "tick"
+                await asyncio.sleep(0.01)
+        finally:
+            stopped.set()
+
+    server = admin.AdminServer({"forever": forever})
+    await server.start()
+    try:
+        def take_two():
+            results = admin.stream("forever")
+            taken = [next(results), next(results)]
+            results.close()                  # what Ctrl-C does
+            return taken
+        assert await asyncio.to_thread(take_two) == ["tick", "tick"]
+        await asyncio.wait_for(stopped.wait(), 5)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_a_stream_can_be_refused():
+    async def refuse(caller, args):
+        raise ValueError("--status must be one of allowed, denied, error.")
+        yield
+
+    server = admin.AdminServer({"refuse": refuse})
+    await server.start()
+    try:
+        with pytest.raises(admin.AdminError, match="--status must be"):
+            await asyncio.to_thread(lambda: list(admin.stream("refuse")))
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_a_stream_that_fails_says_so():
+    async def broken(caller, args):
+        yield "first"
+        raise RuntimeError("disk on fire")
+
+    server = admin.AdminServer({"broken": broken})
+    answers = [a async for a in server.answers(admin.own_identity(), admin.encode_request("broken", {}))]
+    assert admin.parse_answer(answers[0]) == "first"
+    with pytest.raises(admin.AdminError, match="could not complete the request: disk on fire"):
+        admin.parse_answer(answers[1])

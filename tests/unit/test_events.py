@@ -433,3 +433,32 @@ def test_resume_survives_a_stat_failure_on_the_newest_segment(tmp_path, monkeypa
                         lambda self: (_ for _ in ()).throw(OSError("denied")))
     log._resume_current_segment()
     assert log._current is None
+
+
+def test_read_events_stops_at_the_end_it_was_given(tmp_path):
+    from steerholm.events import DecisionEvent, EventLog, now_iso, read_events
+
+    log = EventLog(dir=tmp_path)
+    log.record(DecisionEvent(ts=now_iso(), agent="a", tool="before", decision="allowed"))
+    end = log.end()
+    log.record(DecisionEvent(ts=now_iso(), agent="a", tool="after", decision="allowed"))
+
+    assert [e["tool"] for e in read_events(tmp_path, until=end)] == ["before"]
+    assert [e["tool"] for e in read_events(tmp_path)] == ["before", "after"]
+
+
+def test_read_events_leaves_out_segments_started_after_the_end(tmp_path):
+    from steerholm.events import DecisionEvent, EventLog, now_iso, read_events
+
+    log = EventLog(dir=tmp_path, max_bytes=1)       # every event starts a new segment
+    log.record(DecisionEvent(ts=now_iso(), agent="a", tool="one", decision="allowed"))
+    end = log.end()
+    log.record(DecisionEvent(ts=now_iso(), agent="a", tool="two", decision="allowed"))
+
+    assert len(list(tmp_path.glob("events-*.jsonl"))) == 2
+    assert [e["tool"] for e in read_events(tmp_path, until=end)] == ["one"]
+
+
+def test_read_events_until_the_end_of_an_empty_log_reads_nothing(tmp_path):
+    from steerholm.events import EventLog, read_events
+    assert list(read_events(tmp_path, until=EventLog(dir=tmp_path).end())) == []

@@ -1,7 +1,7 @@
 import typer
 import asyncio
 from pathlib import Path
-from typing import List, Optional
+from typing import List, NoReturn, Optional
 from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
@@ -145,23 +145,20 @@ log_app = typer.Typer(invoke_without_command=True)
 app.add_typer(log_app, name="log")
 
 
-def _handle(fn, *args, **kwargs):
-    """Call a service method and display any error cleanly."""
-    try:
-        return fn(*args, **kwargs)
-    except Exception as e:
-        console.print(f"[bold red]Error:[/bold red] {escape(str(e))}")
-        raise typer.Exit(code=1)
-
-
 def _ask_daemon(op: str, **args):
     """Send a request to the daemon, and exit with its reason if it can't answer."""
     try:
         return admin.request(op, **args)
-    except admin.DaemonNotRunning:
+    except (admin.DaemonNotRunning, admin.AdminError) as e:
+        _daemon_failed(e)
+
+
+def _daemon_failed(e: Exception) -> NoReturn:
+    """Say why the daemon could not answer, and exit."""
+    if isinstance(e, admin.DaemonNotRunning):
         console.print("[bold red]Error:[/bold red] The daemon is not running. "
                       "Start it with [bold]holm start[/bold].")
-    except admin.AdminError as e:
+    else:
         console.print(f"[bold red]Error:[/bold red] {escape(str(e))}")
     raise typer.Exit(code=1)
 
@@ -372,38 +369,6 @@ def remove_server(name: str):
             f"on '{escape(name)}'; any it holds no longer apply to anything.[/yellow]"
         )
     _print_plan(removed["plan"])
-
-
-def _notify_daemon_reconcile() -> None:
-    """Tell a running daemon to apply server changes now (the CLI drives the
-    daemon, like `docker` drives `dockerd`). No-op with a note if it's down —
-    the change is persisted in config and applied when the daemon next starts.
-    """
-    import json
-    import urllib.request
-    from .config import DEFAULT_HOST, DEFAULT_PORT, read_control_token
-
-    if not _daemon_up(DEFAULT_HOST, DEFAULT_PORT):
-        console.print("[yellow]Daemon is not running; the change applies when it starts.[/yellow]")
-        return
-    try:
-        token = read_control_token()
-        if not token:
-            console.print("[yellow]The daemon is running but its control token is "
-                          "missing; restart it with 'holm stop && holm start'.[/yellow]")
-            return
-        req = urllib.request.Request(
-            f"http://{DEFAULT_HOST}:{DEFAULT_PORT}/control/reconcile",
-            method="POST",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            result = json.loads(resp.read() or b"{}")
-    except Exception as e:
-        console.print(f"[yellow]Could not reach the daemon to apply the change: {escape(str(e))}[/yellow]")
-        return
-
-    _print_plan(result)
 
 
 def _print_plan(plan: dict) -> None:
@@ -943,195 +908,6 @@ def revoke(
 # ─── Audit log ───────────────────────────────────────────────────────
 
 
-def _event_log_files():
-    """Every audit log file, oldest first (rotation splits the log into segments)."""
-    from . import config
-    from .events import log_files
-    return log_files(config.CONFIG_DIR)
-
-
-def _parse_event_line(line: str):
-    """Parse one JSONL line into an event dict, or None if it is blank, torn
-    (crash mid-write), or valid JSON that isn't an object."""
-    import json
-    line = line.strip()
-    if not line:
-        return None
-    try:
-        obj = json.loads(line)
-    except json.JSONDecodeError:
-        return None
-    return obj if isinstance(obj, dict) else None
-
-
-def _iter_event_log():
-    """Yield each decision event (a dict) from the durable JSONL audit log, oldest
-    first. Streams the file line by line and skips blank / torn / non-object lines,
-    so it tolerates a corrupted log and works with the daemon stopped."""
-    for path in _event_log_files():
-        # errors="replace" so a torn multibyte char (crash mid-write) can't abort
-        # the read; that line then fails JSON parsing and is skipped.
-        try:
-            with open(path, "rb") as f:
-                for raw in f:
-                    event = _parse_event_line(raw.decode("utf-8", errors="replace"))
-                    if event is not None:
-                        yield event
-        except OSError:
-            continue  # segment pruned mid-read
-
-
-def _read_event_history(matches, limit):
-    """Return (matching events, byte offset, the file that offset belongs to).
-
-    Taking the history and the resume point from a single pass is what makes
-    `--follow` exact: the tail resumes precisely where the printed history ended,
-    so no event is shown twice and none is missed in between. The path is returned
-    because an offset is only meaningful for the file it was measured against — a
-    rotation between this call and the tail attaching would otherwise apply it to
-    a different file. `None` means no resume point could be established.
-    """
-    from collections import deque
-    files = _event_log_files()
-    if not files:
-        return [], 0, None
-    kept = deque(maxlen=limit)
-    offset = 0
-    newest = files[-1]
-    resume = newest
-    # Read bytes, not text: the offset must be an exact byte count, and decoding
-    # with errors="replace" would make it drift (one bad byte -> U+FFFD -> 3 bytes).
-    # Only the newest file's bytes count, since that is the one the tail follows.
-    for path in files:
-        try:
-            with open(path, "rb") as f:
-                for raw in f:
-                    if not raw.endswith(b"\n"):
-                        break  # half-written append; leave it for the tail
-                    if path == newest:
-                        offset += len(raw)
-                    event = _parse_event_line(raw.decode("utf-8", errors="replace"))
-                    if event is not None and matches(event):
-                        kept.append(event)
-        except OSError:
-            if path == newest:
-                # We could not measure the file the tail resumes from, so there is
-                # no valid offset. Say so rather than returning 0, which would make
-                # the tail replay the whole segment as if it were new activity.
-                offset, resume = 0, None
-            continue  # segment pruned or briefly unreadable
-    return list(kept), offset, resume
-
-
-def _log_was_replaced(handle, path) -> bool:
-    """True if the log was truncated or rotated out from under an open handle.
-
-    A transient stat error is deliberately NOT treated as a replacement: doing so
-    would reopen at offset 0 and replay the whole log as if it were new activity.
-    """
-    import os
-    try:
-        st = path.stat()
-    except FileNotFoundError:
-        return True  # rotated away; reopen once it is recreated
-    except OSError:
-        return False  # momentary EACCES/EBUSY — keep following
-    if st.st_size < handle.tell():
-        return True  # truncated in place
-    try:
-        fst = os.fstat(handle.fileno())
-    except OSError:
-        return False
-    # Rotation by rename leaves a same-or-larger file, which the size check alone
-    # cannot see. Only trust inode identity where the platform reports one
-    # (Windows can report 0, in which case this comparison is skipped).
-    return bool(st.st_ino and fst.st_ino and st.st_ino != fst.st_ino)
-
-
-def _tail_event_log(on_event, offset: int = 0, from_path=None, at_end: bool = False,
-                    poll: float = 0.25, stop=None) -> None:
-    """Follow the audit log file from `offset`, calling on_event(dict) per new event.
-
-    Follows the same files `holm log` prints, so there is no second source to drift
-    against. `from_path` is the file `offset` was measured against — an offset is
-    meaningless for any other file. Only complete (newline-terminated) lines are
-    parsed, so a half-written append is never shown; on rotation the tail advances
-    one segment at a time, and a truncated file is reopened from the top.
-    """
-    import time
-    from .events import segment_number
-    handle = None
-    current = None
-    buf = b""
-    try:
-        while stop is None or not stop():
-            files = _event_log_files()
-            if not files:
-                time.sleep(poll)  # no log yet; wait for the first event
-                continue
-            if handle is None:
-                # An offset is only meaningful for the file it was measured
-                # against. Reuse it for that file (or when the caller named none
-                # and meant the newest), but never carry it onto a different file
-                # after the measured one has been pruned.
-                if at_end:
-                    # No trustworthy position was established, so begin at the end
-                    # of the newest file: missing the entries we could not read
-                    # beats replaying a whole segment as if it were new activity.
-                    target, start = files[-1], None
-                elif from_path is None:
-                    target, start = files[-1], offset
-                elif from_path in files:
-                    target, start = from_path, offset
-                else:
-                    target, start = files[-1], 0
-                try:
-                    # Open directly rather than checking exists() first: the file
-                    # may be pruned between the check and the open.
-                    handle = open(target, "rb")
-                except OSError:
-                    time.sleep(poll)
-                    continue
-                current = target
-                at_end = False  # only applies to the first file we attach to
-                if start is None:
-                    handle.seek(0, 2)   # EOF, without a stat that could fail
-                else:
-                    handle.seek(start)
-            chunk = handle.read()
-            if chunk:
-                # Buffer bytes and decode only whole lines, so a multibyte char
-                # split across two polls is reassembled instead of corrupted.
-                buf += chunk
-                while b"\n" in buf:
-                    raw, _, buf = buf.partition(b"\n")
-                    event = _parse_event_line(raw.decode("utf-8", errors="replace"))
-                    if event is not None:
-                        on_event(event)
-                continue  # keep draining before sleeping again
-            # This file is drained. Advance to the NEXT segment by ordinal rather
-            # than jumping to the newest, or a burst of rotations would skip the
-            # ones in between. Works even if `current` has since been pruned.
-            here = segment_number(current)
-            nxt = next((f for f in files if segment_number(f) > here), None)
-            if nxt is not None:
-                handle.close()
-                handle, current, buf = None, None, b""
-                from_path, offset = nxt, 0
-                continue
-            if _log_was_replaced(handle, current):
-                handle.close()
-                handle, current, buf = None, None, b""
-                from_path, offset = None, 0
-                continue
-            time.sleep(poll)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        if handle is not None:
-            handle.close()
-
-
 def _event_time(ts: str) -> str:
     """ISO '2026-08-31T12:04:35.221+00:00' -> '12:04:35'."""
     return ts[11:19] if len(ts) >= 19 else ts
@@ -1184,9 +960,9 @@ def _limit_text(value: int, unit: str) -> str:
     return f"{value} {unit}" if value else "unlimited"
 
 
-def _retention_summary(audit) -> str:
-    return (f"at most {_limit_text(audit.max_files, 'files')}, "
-            f"kept for {_limit_text(audit.max_age_days, 'days')}")
+def _retention_summary(audit: dict) -> str:
+    return (f"at most {_limit_text(audit['max_files'], 'files')}, "
+            f"kept for {_limit_text(audit['max_age_days'], 'days')}")
 
 
 @log_app.command("config")
@@ -1233,14 +1009,9 @@ def log_set(
     if max_files is None and max_age_days is None:
         console.print("[bold red]Error:[/bold red] Give at least one setting to change.")
         raise typer.Exit(code=1)
-    audit = _handle(
-        config_manager.set_audit_settings,
-        max_files=max_files,
-        max_age_days=max_age_days,
-    )
+    audit = _ask_daemon("log_set", max_files=max_files, max_age_days=max_age_days)
     console.print("[bold green]Updated the audit log's retention.[/bold green]")
     console.print(f"Keeping {_retention_summary(audit)}.")
-    _notify_daemon_reconcile()
 
 
 def _warn_if_name_is_ambiguous(kind: str, name: Optional[str], ids) -> None:
@@ -1267,9 +1038,6 @@ def _warn_if_name_is_ambiguous(kind: str, name: Optional[str], ids) -> None:
     )
 
 
-_STATUSES = ("allowed", "denied", "error")
-
-
 @log_app.callback(invoke_without_command=True)
 def audit_log(
     ctx: typer.Context,
@@ -1288,8 +1056,7 @@ def audit_log(
 
     Steerholm records every tool call an agent makes through it — which agent,
     which server, which tool, and whether policy allowed it, denied it, or the
-    server failed. This reads that record straight from disk, so it works with
-    the daemon stopped.
+    server failed. The daemon reads that record for you.
 
     Filters combine, and --agent takes a name or an agent id (`holm show agent`
     prints the id). A name can be reused by removing and re-adding an agent, so
@@ -1319,71 +1086,44 @@ def audit_log(
             )
             raise typer.Exit(code=1)
         return
-    if status is not None and status not in _STATUSES:
-        console.print(f"[bold red]Error:[/bold red] --status must be one of {', '.join(_STATUSES)}.")
-        raise typer.Exit(code=1)
-
-    def matches(e: dict) -> bool:
-        # --agent accepts either identifier; the stored status field is `decision`.
-        return ((agent is None or agent in (e.get("agent"), e.get("agent_id")))
-                and (server is None or server in (e.get("server"), e.get("server_id")))
-                and (status is None or e.get("decision") == status))
-
-    if not follow:
-        from collections import deque
-        # Keep only the last `limit` matching events (deque bounds memory, so a
-        # huge unrotated log isn't fully loaded); limit 0 -> unbounded (show all).
-        # One streaming pass: a bounded window for display, plus the set of ids
-        # seen for the ambiguity check. Materialising every match would cost the
-        # whole log in memory just to print a screenful.
-        matching = deque(maxlen=number or None)
-        agent_ids, server_ids = set(), set()
-        for e in _iter_event_log():
-            if not matches(e):
-                continue
-            matching.append(e)
-            if agent and e.get("agent") == agent and e.get("agent_id"):
-                agent_ids.add(e["agent_id"])
-            if server and e.get("server") == server and e.get("server_id"):
-                server_ids.add(e["server_id"])
-        if not matching:
-            console.print("[dim]No matching activity in the audit log.[/dim]")
-            return
-        _render_event_table(list(matching))
-        # Checked over the whole history, not just the shown window, or narrowing
-        # with -n would hide the very conflation this warns about.
-        _warn_if_name_is_ambiguous("agent", agent, agent_ids)
-        _warn_if_name_is_ambiguous("server", server, server_ids)
+    filters = {"number": number, "agent": agent, "server": server, "status": status}
+    if follow:
+        _follow_log(filters, agent, server)
         return
+    history = _ask_daemon("log", **filters)
+    if not history["events"]:
+        console.print("[dim]No matching activity in the audit log.[/dim]")
+        return
+    _render_event_table(history["events"])
+    # Checked over the whole history, not just the shown window, or narrowing
+    # with -n would hide the very conflation this warns about.
+    _warn_if_name_is_ambiguous("agent", agent, history["agent_ids"])
+    _warn_if_name_is_ambiguous("server", server, history["server_ids"])
 
-    # --follow: print scrollback, then tail the same file from exactly where the
-    # scrollback ended (one pass gives both, so nothing repeats or slips through).
-    from .config import DEFAULT_HOST, DEFAULT_PORT
-    history, offset, resume = _read_event_history(matches, number or None)  # 0 -> all
-    at_end = resume is None  # history could not measure the newest file
-    for e in history:
-        console.print(_event_line(e))
-    if not _daemon_up(DEFAULT_HOST, DEFAULT_PORT):
-        console.print("[yellow]Daemon is not running, so no new decisions will be "
-                      "recorded; start it with [bold]holm start[/bold].[/yellow]")
-    if agent or server:  # a full scan is pointless without a name to disambiguate
-        agent_ids, server_ids = set(), set()
-        for e in _iter_event_log():
-            if not matches(e):
-                continue
-            if agent and e.get("agent") == agent and e.get("agent_id"):
-                agent_ids.add(e["agent_id"])
-            if server and e.get("server") == server and e.get("server_id"):
-                server_ids.add(e["server_id"])
-        _warn_if_name_is_ambiguous("agent", agent, agent_ids)
-        _warn_if_name_is_ambiguous("server", server, server_ids)
-    console.print("[dim]Watching for new decisions… (Ctrl-C to stop)[/dim]")
 
-    def show(e: dict) -> None:
-        if matches(e):
+def _follow_log(filters: dict, agent: Optional[str], server: Optional[str]) -> None:
+    """Print the recent history, then each new decision as the daemon records it.
+    The daemon hands over from one to the other, so nothing repeats or slips
+    through between them."""
+    results = admin.stream("log_follow", **filters)
+    try:
+        history = next(results, None)
+        if history is None:
+            raise admin.AdminError("The daemon hung up without answering.")
+        for e in history["events"]:
             console.print(_event_line(e))
-
-    _tail_event_log(show, offset=offset, from_path=resume, at_end=at_end)
+        _warn_if_name_is_ambiguous("agent", agent, history["agent_ids"])
+        _warn_if_name_is_ambiguous("server", server, history["server_ids"])
+        console.print("[dim]Watching for new decisions… (Ctrl-C to stop)[/dim]")
+        for e in results:
+            console.print(_event_line(e))
+        console.print("[yellow]The daemon stopped, so this stopped following.[/yellow]")
+    except KeyboardInterrupt:
+        pass
+    except (admin.DaemonNotRunning, admin.AdminError) as e:
+        _daemon_failed(e)
+    finally:
+        results.close()
 
 
 if __name__ == "__main__":  # pragma: no cover

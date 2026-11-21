@@ -6,9 +6,13 @@ decided by the daemon from the connection, never from anything the caller says.
 
 The protocol is one JSON object per line. A request is
 `{"op": <name>, "args": {...}}`; the answer is `{"ok": true, "result": ...}` or
-`{"ok": false, "error": <message>}`.
+`{"ok": false, "error": <message>}`. A streaming request (`holm log --follow`)
+gets a line per result until the CLI hangs up, with a `"result": null` line
+every second so both ends notice when the other is gone.
 """
 import asyncio
+import contextlib
+import inspect
 import json
 import logging
 import os
@@ -214,8 +218,11 @@ class AdminServer:
                 return   # connected and never asked; don't hold the connection
             if not line:
                 return
-            writer.write(await self.answer(caller, line))
-            await writer.drain()
+            async for answer in self.answers(caller, line):
+                writer.write(answer)
+                await writer.drain()
+        except ConnectionError:
+            pass         # the CLI hung up, e.g. Ctrl-C on `holm log --follow`
         except Exception as e:
             logger.error("Admin connection failed: %s", e)
         finally:
@@ -223,22 +230,53 @@ class AdminServer:
 
     async def answer(self, caller: str, line: bytes) -> bytes:
         """The encoded answer to one request line from `caller`."""
-        return json.dumps(await self._answer(caller, line)).encode("utf-8") + b"\n"
+        return _encode(await self._single(caller, line))
 
-    async def _answer(self, caller: str, line: bytes) -> dict:
+    async def answers(self, caller: str, line: bytes):
+        """Every encoded answer to one request line: one, or a stream."""
+        op, handler, args, refusal = self._resolve(caller, line)
+        if refusal is not None:
+            yield _encode(refusal)
+            return
+        if not inspect.isasyncgenfunction(handler):
+            yield _encode(await self._call(op, handler, caller, args))
+            return
+        try:
+            async for result in handler(caller, args):
+                yield _encode({"ok": True, "result": result})
+        except ValueError as e:
+            yield _encode({"ok": False, "error": str(e)})
+        except Exception as e:
+            logger.exception("Admin request '%s' failed", op)
+            yield _encode({"ok": False, "error": f"The daemon could not complete the request: {e}"})
+
+    async def _single(self, caller: str, line: bytes) -> dict:
+        op, handler, args, refusal = self._resolve(caller, line)
+        if refusal is not None:
+            return refusal
+        return await self._call(op, handler, caller, args)
+
+    def _resolve(self, caller: str, line: bytes):
+        """(op, handler, args, None) for a request, or a refusal in last place."""
         if caller != self._own:
             logger.warning("Refused an admin request from %s.", caller)
-            return {"ok": False, "error": "This daemon belongs to another account."}
+            return None, None, None, {"ok": False, "error": "This daemon belongs to another account."}
         try:
             request = json.loads(line)
             op, args = request["op"], request.get("args") or {}
             if not isinstance(op, str) or not isinstance(args, dict):
                 raise TypeError
         except (ValueError, KeyError, TypeError, AttributeError):
-            return {"ok": False, "error": "Malformed request."}
+            return None, None, None, {"ok": False, "error": "Malformed request."}
         handler = self._handlers.get(op)
         if handler is None:
-            return {"ok": False, "error": f"Unknown request '{op}'. Is the CLI the same version as the daemon?"}
+            return op, None, None, {
+                "ok": False,
+                "error": f"Unknown request '{op}'. Is the CLI the same version as the daemon?",
+            }
+        return op, handler, args, None
+
+    async def _call(self, op: str, handler: Handler, caller: str, args: dict) -> dict:
         try:
             return {"ok": True, "result": await handler(caller, args)}
         except ValueError as e:
@@ -246,6 +284,10 @@ class AdminServer:
         except Exception as e:
             logger.exception("Admin request '%s' failed", op)
             return {"ok": False, "error": f"The daemon could not complete the request: {e}"}
+
+
+def _encode(answer: dict) -> bytes:
+    return json.dumps(answer).encode("utf-8") + b"\n"
 
 
 # ── CLI side ────────────────────────────────────────────────────────
@@ -256,16 +298,30 @@ def request(op: str, **args) -> Any:
     Raises DaemonNotRunning when nothing answers, AdminError when the daemon
     refuses or fails the request.
     """
-    payload = encode_request(op, args)
+    for raw in _answers(op, args):
+        return parse_answer(raw)
+    return parse_answer(b"")          # hung up without answering
+
+
+def stream(op: str, **args):
+    """Send a streaming request and yield each result until the daemon stops
+    sending. Closing the generator hangs up, which ends the stream."""
+    for raw in _answers(op, args):
+        result = parse_answer(raw)
+        if result is not None:        # null is the daemon's keep-alive
+            yield result
+
+
+def _answers(op: str, args: dict):
+    """Each answer line the daemon sends to one request."""
     try:
-        raw = _exchange_pipe(payload) if os.name == "nt" else _exchange_socket(payload)
+        with _open_channel() as (read, write):
+            write(encode_request(op, args))
+            yield from _lines(read)
     except TimeoutError:
         raise AdminError(f"The daemon did not answer within {REQUEST_TIMEOUT:.0f}s.")
-    except (DaemonNotRunning, AdminError):
-        raise
     except OSError as e:
         raise AdminError(f"The connection to the daemon failed: {e}")
-    return parse_answer(raw)
 
 
 def encode_request(op: str, args: dict) -> bytes:
@@ -282,14 +338,18 @@ def parse_answer(raw: bytes) -> Any:
     return answer.get("result")
 
 
-def _read_line(read) -> bytes:
-    data = b""
-    while not data.endswith(b"\n"):
+def _lines(read):
+    buf = b""
+    while True:
         chunk = read()
         if not chunk:
-            break
-        data += chunk
-    return data
+            if buf:
+                yield buf             # cut off mid-line: fails to parse, as it should
+            return
+        buf += chunk
+        while b"\n" in buf:
+            line, _, buf = buf.partition(b"\n")
+            yield line
 
 
 def _channel_answers() -> bool:
@@ -310,15 +370,29 @@ def _channel_answers() -> bool:
         return True
 
 
-def _exchange_socket(payload: bytes) -> bytes:
+@contextlib.contextmanager
+def _open_channel():
+    """(read, write) on a connection to this account's daemon."""
+    if os.name == "nt":
+        with _open_pipe() as pipe:
+            handle = msvcrt.get_osfhandle(pipe.fileno())
+            # Any account can create a pipe by this name; only talk to one run
+            # by this account, the way the daemon only answers this account.
+            if _pipe_peer_sid(handle, server=True) != own_identity():
+                raise AdminError(f"{PIPE_NAME} is not served by this account's daemon.")
+            mode = wintypes.DWORD(_PIPE_READMODE_BYTE)
+            _check(_kernel32.SetNamedPipeHandleState(handle, ctypes.byref(mode), None, None))
+            # No timeout on a pipe read, unlike the socket: a blocking read
+            # cannot be given one without overlapped I/O.
+            yield (lambda: pipe.read(65536)), pipe.write
+        return
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
         sock.settimeout(REQUEST_TIMEOUT)
         try:
             sock.connect(str(socket_path()))
         except (FileNotFoundError, ConnectionRefusedError):
             raise DaemonNotRunning()
-        sock.sendall(payload)
-        return _read_line(lambda: sock.recv(65536))
+        yield (lambda: sock.recv(65536)), sock.sendall
 
 
 def _open_pipe():
@@ -333,18 +407,3 @@ def _open_pipe():
         except OSError:
             if attempt == _PIPE_ATTEMPTS - 1 or not _wait_for_pipe():
                 raise
-
-
-def _exchange_pipe(payload: bytes) -> bytes:
-    # No timeout here, unlike the socket: a blocking read on a pipe cannot be
-    # given one without overlapped I/O.
-    with _open_pipe() as pipe:
-        handle = msvcrt.get_osfhandle(pipe.fileno())
-        # Any account can create a pipe by this name; only talk to one run by
-        # this account, the way the daemon only answers this account.
-        if _pipe_peer_sid(handle, server=True) != own_identity():
-            raise AdminError(f"{PIPE_NAME} is not served by this account's daemon.")
-        mode = wintypes.DWORD(_PIPE_READMODE_BYTE)
-        _check(_kernel32.SetNamedPipeHandleState(handle, ctypes.byref(mode), None, None))
-        pipe.write(payload)
-        return _read_line(lambda: pipe.read(65536))

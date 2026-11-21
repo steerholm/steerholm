@@ -276,6 +276,7 @@ def make_gateway(config_manager) -> SteerholmGateway:
     gateway._warned_no_hash = set()
     gateway._reconcile_lock = asyncio.Lock()
     gateway._background = set()
+    gateway._log_followers = set()
     gateway._register_handlers()
     return gateway
 

@@ -110,6 +110,48 @@ def log_files(directory) -> List:
         return []
 
 
+def parse_event_line(line: str) -> Optional[dict]:
+    """Parse one JSONL line into an event dict, or None if it is blank, torn
+    (crash mid-write), or valid JSON that isn't an object."""
+    line = line.strip()
+    if not line:
+        return None
+    try:
+        obj = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    return obj if isinstance(obj, dict) else None
+
+
+def read_events(directory, until=None):
+    """Yield each decision event (a dict) from the audit log in `directory`,
+    oldest first. Streams line by line and skips blank / torn / non-object
+    lines, so a corrupted log is read as far as it is readable.
+
+    `until` is an `EventLog.end()` taken earlier: reading stops there, so what
+    was appended after it is left out even while the log keeps growing.
+    """
+    for path in log_files(directory):
+        if until is not None and segment_number(path) > segment_number(until[0]):
+            return
+        limit = until[1] if until is not None and path == until[0] else None
+        try:
+            with open(path, "rb") as f:
+                read = 0
+                for raw in f:
+                    if limit is not None:
+                        read += len(raw)
+                        if read > limit:
+                            break
+                    # errors="replace" so a torn multibyte char (crash mid-write)
+                    # can't abort the read; that line then fails to parse.
+                    event = parse_event_line(raw.decode("utf-8", errors="replace"))
+                    if event is not None:
+                        yield event
+        except OSError:
+            continue  # segment pruned mid-read
+
+
 class EventLog:
     """Append-only JSONL audit log plus a bounded in-memory ring of recent events.
 
@@ -300,6 +342,10 @@ class EventLog:
                 old.unlink()
             except OSError as e:
                 logger.warning("Could not apply retention to %s: %s", old, e)
+
+    def end(self):
+        """Where the log ends right now: (newest segment, its size in bytes)."""
+        return self._current, self._size
 
     def record(self, event: DecisionEvent) -> None:
         self._ring.append(event)
