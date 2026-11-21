@@ -1,0 +1,7 @@
+ERROR    steerholm.admin:admin.py:250 Admin request 'broken' failed
+Traceback (most recent call last):
+  File "/Users/runner/work/steerholm/steerholm/steerholm/admin.py", line 245, in answers
+    async for result in handler(caller, args):
+  File "/Users/runner/work/steerholm/steerholm/tests/integration/test_admin_channel.py", line 305, in broken
+    raise RuntimeError("disk on fire")
+RuntimeError: disk on fire
