@@ -443,8 +443,9 @@ class ConfigManager:
         self.save_config()
         return audit
 
-    def remove_server(self, name: str) -> List[str]:
-        """Remove a server and every grant on it. Returns the agents affected.
+    def remove_server(self, name: str) -> Tuple[List[str], List[str]]:
+        """Remove a server and every grant on it. Returns the agents whose grants
+        were revoked, and the agents whose policy could not be read to check.
 
         Grants are cascaded for the same reason removing an agent deletes its
         policy: a name can be reused, so a grant that outlived its server would
@@ -462,13 +463,10 @@ class ConfigManager:
                 continue
             if policy and server_id in policy.permissions:
                 holders.append((agent_name, policy))
-        if unreadable:
-            raise ValueError(
-                f"Cannot remove server '{name}': the policies of "
-                f"{', '.join(repr(a) for a in unreadable)} cannot be read, so their "
-                "grants on it cannot be revoked. Fix or remove those files, then "
-                "try again."
-            )
+        # An unreadable policy is skipped, not a reason to refuse: grants point at
+        # the server's id, which is never reused, so any grant it holds on this
+        # server can apply to nothing once the server is gone.
+        #
         # Grants first, the server last: a failure part-way leaves the server in
         # place, and running the command again finishes the agents still left.
         for agent_name, policy in holders:
@@ -476,7 +474,7 @@ class ConfigManager:
             self.save_policy(agent_name, policy)
         del self.config.servers[name]
         self.save_config()
-        return [agent_name for agent_name, _ in holders]
+        return [agent_name for agent_name, _ in holders], unreadable
 
     def agents_with_grants(self, server_name: str) -> List[str]:
         """Agents holding any grant on a server, so a change can say who it affects."""

@@ -546,8 +546,9 @@ class SteerholmGateway:
 
     async def _admin_remove_server(self, caller: str, args: dict) -> dict:
         self._load_for_admin()
-        affected = self.config_manager.remove_server(args.get("name"))
-        return {"revoked": affected, "plan": self._apply_server_changes()}
+        revoked, unreadable = self.config_manager.remove_server(args.get("name"))
+        return {"revoked": revoked, "unreadable": unreadable,
+                "plan": self._apply_server_changes()}
 
     async def _admin_list_servers(self, caller: str, args: dict) -> list:
         self._load_for_admin()

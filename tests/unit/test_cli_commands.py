@@ -2492,3 +2492,15 @@ def test_grant_reports_an_unreadable_policy(cli):
     result = runner.invoke(app, ["grant", "coder", "git", "--tool", "git_diff"])
     assert result.exit_code == 1
     assert "cannot be read" in " ".join(result.output.split())
+
+
+def test_remove_server_reports_an_agent_whose_policy_it_could_not_read(cli):
+    cli.add_agent("bob")
+    cli.add_server("git", command="x")
+    cli.grant_permission("bob", "git")
+    cli.policy_path_for("bob").write_text("{ broken", encoding="utf-8")
+    result = runner.invoke(app, ["remove", "server", "git"])
+    out = " ".join(result.output.split())
+    assert result.exit_code == 0
+    assert "Could not read the policy for 'bob'" in out
+    assert "no longer apply to anything" in out

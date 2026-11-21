@@ -27,9 +27,10 @@ tagging it. At tag time, rename `[Unreleased]` to the version and date.
   writing a new policy over it that held only the new grant and dropped the
   rest. `holm revoke` refuses it too, instead of reporting nothing to revoke.
 - `holm remove server` revokes every agent's grants before it removes the
-  server, and refuses while an agent's policy cannot be read. A failure part-way
-  used to leave grants on a server that no longer existed, with no command able
-  to reach them; now the server stays, and running the command again finishes.
+  server. A failure part-way used to leave grants on a server that no longer
+  existed, with no command able to reach them; now the server stays, and running
+  the command again finishes. An agent whose policy cannot be read is named
+  rather than skipped silently.
 - `config.json` and policy files are written to a temporary file and renamed
   into place, so a full disk or a failing drive during a save no longer leaves
   them cut off.

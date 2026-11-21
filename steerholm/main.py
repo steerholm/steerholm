@@ -366,6 +366,11 @@ def remove_server(name: str):
             f"{'' if len(affected) == 1 else 's'}: "
             f"{', '.join(escape(a) for a in affected)}."
         )
+    for agent in removed["unreadable"]:
+        console.print(
+            f"[yellow]Could not read the policy for '{escape(agent)}' to revoke its grants "
+            f"on '{escape(name)}'; any it holds no longer apply to anything.[/yellow]"
+        )
     _print_plan(removed["plan"])
 
 

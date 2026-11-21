@@ -708,8 +708,9 @@ class TestGrantCascade:
         self._wire(config_manager)
         git_id = config_manager._server_id("git")
         db_id = config_manager._server_id("db")
-        affected = config_manager.remove_server("git")
+        affected, unreadable = config_manager.remove_server("git")
         assert affected == ["a", "b"]
+        assert unreadable == []
         for agent in ("a", "b"):
             policy = config_manager.load_policy(agent)
             assert git_id not in policy.permissions
@@ -729,7 +730,7 @@ class TestGrantCascade:
     def test_removing_a_server_nobody_uses_affects_nobody(self, config_manager):
         config_manager.add_server("git", command="x")
         config_manager.add_agent("a")
-        assert config_manager.remove_server("git") == []
+        assert config_manager.remove_server("git") == ([], [])
 
     def test_removing_an_agent_takes_its_grants(self, config_manager):
         self._wire(config_manager)
@@ -955,19 +956,24 @@ def test_revoke_refuses_an_unreadable_policy(config_manager):
         config_manager.revoke_permission("coder", "git")
 
 
-def test_remove_server_refuses_while_a_policy_cannot_be_read(config_manager):
+def test_remove_server_skips_and_reports_a_policy_it_cannot_read(config_manager):
     config_manager.add_agent("alice")
     config_manager.add_agent("bob")
     config_manager.add_server("git", command="x")
     config_manager.grant_permission("alice", "git")
     config_manager.grant_permission("bob", "git")
-    _break_policy(config_manager, "bob")
+    git_id = config_manager._server_id("git")
+    path = _break_policy(config_manager, "bob")
 
-    with pytest.raises(ValueError, match="'bob'"):
-        config_manager.remove_server("git")
-    # Nothing changed: the server stays, and alice still holds her grant.
-    assert config_manager.get_server("git") is not None
-    assert config_manager.agents_with_grants("git") == ["alice"]
+    revoked, unreadable = config_manager.remove_server("git")
+
+    assert (revoked, unreadable) == (["alice"], ["bob"])
+    assert config_manager.get_server("git") is None
+    assert git_id not in config_manager.load_policy("alice").permissions
+    assert path.read_text(encoding="utf-8") == "{ cut off by a full disk"   # left as found
+    # A server added under the same name gets a new id, so bob's leftover can't reach it.
+    config_manager.add_server("git", command="x")
+    assert config_manager._server_id("git") != git_id
 
 
 def test_remove_server_part_way_is_finished_by_running_it_again(config_manager, monkeypatch):
@@ -988,7 +994,8 @@ def test_remove_server_part_way_is_finished_by_running_it_again(config_manager, 
     assert config_manager.get_server("git") is not None      # still there to retry
 
     monkeypatch.setattr(config_manager, "save_policy", real_save)
-    assert set(config_manager.remove_server("git")) == {"bob", "carol"}
+    revoked, _ = config_manager.remove_server("git")
+    assert set(revoked) == {"bob", "carol"}
     assert config_manager.get_server("git") is None
 
 
