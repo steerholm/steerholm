@@ -2504,3 +2504,12 @@ def test_remove_server_reports_an_agent_whose_policy_it_could_not_read(cli):
     assert result.exit_code == 0
     assert "Could not read the policy for 'bob'" in out
     assert "no longer apply to anything" in out
+
+
+def test_grant_with_an_empty_tool_pattern_does_not_grant_every_tool(cli):
+    cli.add_agent("coder")
+    cli.add_server("git", command="x")
+    result = runner.invoke(app, ["grant", "coder", "git", "--tool", ""])
+    assert result.exit_code == 0
+    grants = cli.load_policy("coder").permissions[cli._server_id("git")]
+    assert [g.name for g in grants] == [""]

@@ -647,7 +647,8 @@ class SteerholmGateway:
     async def _admin_grant(self, caller: str, args: dict) -> None:
         self._load_for_admin()
         self.config_manager.grant_permission(
-            args.get("agent"), args.get("server"), tool=args.get("tool") or "*",
+            # Only an absent tool means every tool; an empty pattern matches none.
+            args.get("agent"), args.get("server"), tool=args.get("tool", "*"),
             arg_policies=list(args.get("args") or []),
         )
 
