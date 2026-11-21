@@ -812,7 +812,7 @@ def status():
 @add_app.command("agent")
 def add_agent(name: str):
     """Add an agent and generate its access key."""
-    access_key = _handle(config_manager.add_agent, name)
+    access_key = _ask_daemon("add_agent", name=name)["key"]
     console.print(f"[bold green]Added agent '{escape(name)}'.[/bold green]")
     console.print(f"[bold]Access key:[/bold] {access_key}")
     console.print("[yellow]Store it now — it is shown only once.[/yellow]")
@@ -822,7 +822,7 @@ def add_agent(name: str):
 @rotate_app.command("agent")
 def rotate_agent(name: str):
     """Generate a new access key for an agent, keeping its grants."""
-    access_key = _handle(config_manager.rotate_agent_key, name)
+    access_key = _ask_daemon("rotate_agent", name=name)["key"]
     console.print(f"[bold green]Rotated the access key for '{escape(name)}'.[/bold green]")
     console.print(f"[bold]New access key:[/bold] {access_key}")
     console.print("[yellow]The previous key no longer works. Update the agent's config.[/yellow]")
@@ -847,7 +847,7 @@ def list_agents():
 @remove_app.command("agent")
 def remove_agent(name: str):
     """Remove an agent, its access key, and its grants."""
-    _handle(config_manager.remove_agent, name)
+    _ask_daemon("remove_agent", name=name)
     console.print(f"[bold green]Removed agent '{escape(name)}'.[/bold green]")
 
 
@@ -903,12 +903,7 @@ def grant(
       holm grant my-agent filesystem --tool "read_*" --args "path=/home/user/**"
       holm grant my-agent db --tool "query" --args "sql=re:^SELECT.*" --args "db=production"
     """
-    if agent not in config_manager.config.agents:
-        console.print(f"[bold red]Error:[/bold red] Agent '{escape(agent)}' not found.")
-        raise typer.Exit(code=1)
-    # A grant points at the server's id, so the server has to exist first;
-    # grant_permission raises and _handle turns that into a clean error.
-    _handle(config_manager.grant_permission, agent, server, tool=tool, arg_policies=args)
+    _ask_daemon("grant", agent=agent, server=server, tool=tool, args=list(args or []))
     console.print(f"[bold green]Granted[/bold green] '{escape(agent)}' access to '{escape(server)}' tool '{escape(tool)}'.")
 
 
@@ -931,11 +926,7 @@ def revoke(
       holm revoke my-agent filesystem
       holm revoke my-agent filesystem --tool "read_*"
     """
-    if agent not in config_manager.config.agents:
-        console.print(f"[bold red]Error:[/bold red] Agent '{escape(agent)}' not found.")
-        raise typer.Exit(code=1)
-
-    removed = _handle(config_manager.revoke_permission, agent, server, tool=tool)
+    removed = _ask_daemon("revoke", agent=agent, server=server, tool=tool)["removed"]
     what = f"tool '{tool}' on '{server}'" if tool else f"all access to '{server}'"
     if removed:
         console.print(f"[bold green]Revoked[/bold green] {escape(agent)}'s {escape(what)}.")

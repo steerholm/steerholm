@@ -496,6 +496,11 @@ class SteerholmGateway:
             "add_server": self._admin_add_server,
             "modify_server": self._admin_modify_server,
             "remove_server": self._admin_remove_server,
+            "add_agent": self._admin_add_agent,
+            "rotate_agent": self._admin_rotate_agent,
+            "remove_agent": self._admin_remove_agent,
+            "grant": self._admin_grant,
+            "revoke": self._admin_revoke,
         }
 
     def _apply_server_changes(self) -> dict:
@@ -624,6 +629,32 @@ class SteerholmGateway:
             "max_age_days": audit.max_age_days,
             "segment_bytes": MAX_SEGMENT_BYTES,
         }
+
+    async def _admin_add_agent(self, caller: str, args: dict) -> dict:
+        self._load_for_admin()
+        # The key exists only in this answer; the daemon keeps its hash.
+        return {"key": self.config_manager.add_agent(args.get("name"))}
+
+    async def _admin_rotate_agent(self, caller: str, args: dict) -> dict:
+        self._load_for_admin()
+        return {"key": self.config_manager.rotate_agent_key(args.get("name"))}
+
+    async def _admin_remove_agent(self, caller: str, args: dict) -> None:
+        self._load_for_admin()
+        self.config_manager.remove_agent(args.get("name"))
+
+    async def _admin_grant(self, caller: str, args: dict) -> None:
+        self._load_for_admin()
+        self.config_manager.grant_permission(
+            args.get("agent"), args.get("server"), tool=args.get("tool") or "*",
+            arg_policies=list(args.get("args") or []),
+        )
+
+    async def _admin_revoke(self, caller: str, args: dict) -> dict:
+        self._load_for_admin()
+        removed = self.config_manager.revoke_permission(
+            args.get("agent"), args.get("server"), tool=args.get("tool"))
+        return {"removed": removed}
 
     def _load_for_admin(self) -> None:
         """Re-read the state for an admin request; a config that cannot be

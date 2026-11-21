@@ -13,15 +13,23 @@ tagging it. At tag time, rename `[Unreleased]` to the version and date.
 ### Changed
 
 - `holm list servers`, `show server`, `list agents`, `show agent`,
-  `log config`, and `add`, `modify` and `remove server` go to the running
-  daemon, over a local channel only your account can use, and the daemon
-  applies a server change as part of the request. With the daemon stopped they
-  say so and change nothing; before, `list servers` and `show server` showed
-  the configuration without live status, and a server change was written and
-  applied when the daemon next started.
+  `log config`, `add`, `modify` and `remove server`, `add`, `rotate` and
+  `remove agent`, `grant` and `revoke` go to the running daemon, over a local
+  channel only your account can use, and the daemon applies a server change as
+  part of the request. With the daemon stopped they say so and change nothing;
+  before, `list servers` and `show server` showed the configuration without
+  live status, and a change was written and applied when the daemon next
+  started.
 
 ### Fixed
 
+- `holm grant` refuses an agent whose policy file cannot be read, instead of
+  writing a new policy over it that held only the new grant and dropped the
+  rest. `holm revoke` refuses it too, instead of reporting nothing to revoke.
+- `holm remove server` revokes every agent's grants before it removes the
+  server, and refuses while an agent's policy cannot be read. A failure part-way
+  used to leave grants on a server that no longer existed, with no command able
+  to reach them; now the server stays, and running the command again finishes.
 - `config.json` and policy files are written to a temporary file and renamed
   into place, so a full disk or a failing drive during a save no longer leaves
   them cut off.

@@ -2473,3 +2473,22 @@ def test_modify_server_does_not_send_env_values(cli):
     assert result.exit_code == 0
     assert "+TOKEN" in result.output
     assert "s3cret" not in result.output and "n3w" not in result.output
+
+
+def test_grant_with_the_daemon_stopped_changes_nothing(cli, daemon_down):
+    cli.add_agent("coder")
+    cli.add_server("git", command="x")
+    result = runner.invoke(app, ["grant", "coder", "git"])
+    assert result.exit_code == 1
+    assert "daemon is not running" in result.output
+    assert cli.agents_with_grants("git") == []
+
+
+def test_grant_reports_an_unreadable_policy(cli):
+    cli.add_agent("coder")
+    cli.add_server("git", command="x")
+    cli.grant_permission("coder", "git", tool="git_log")
+    cli.policy_path_for("coder").write_text("{ broken", encoding="utf-8")
+    result = runner.invoke(app, ["grant", "coder", "git", "--tool", "git_diff"])
+    assert result.exit_code == 1
+    assert "cannot be read" in " ".join(result.output.split())

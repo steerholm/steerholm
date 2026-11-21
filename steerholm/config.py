@@ -452,19 +452,31 @@ class ConfigManager:
         """
         if name not in self.config.servers:
             raise ValueError(f"Server '{name}' not found.")
-        # Resolve the id before the server is gone; the grants are keyed on it.
         server_id = self._server_id(name)
+        holders, unreadable = [], []
+        for agent_name in list(self.config.agents):
+            try:
+                policy = self._policy_for_change(agent_name)
+            except ValueError:
+                unreadable.append(agent_name)
+                continue
+            if policy and server_id in policy.permissions:
+                holders.append((agent_name, policy))
+        if unreadable:
+            raise ValueError(
+                f"Cannot remove server '{name}': the policies of "
+                f"{', '.join(repr(a) for a in unreadable)} cannot be read, so their "
+                "grants on it cannot be revoked. Fix or remove those files, then "
+                "try again."
+            )
+        # Grants first, the server last: a failure part-way leaves the server in
+        # place, and running the command again finishes the agents still left.
+        for agent_name, policy in holders:
+            del policy.permissions[server_id]
+            self.save_policy(agent_name, policy)
         del self.config.servers[name]
         self.save_config()
-
-        affected = []
-        for agent_name in list(self.config.agents):
-            policy = self.load_policy(agent_name)
-            if policy and server_id in policy.permissions:
-                del policy.permissions[server_id]
-                self.save_policy(agent_name, policy)
-                affected.append(agent_name)
-        return affected
+        return [agent_name for agent_name, _ in holders]
 
     def agents_with_grants(self, server_name: str) -> List[str]:
         """Agents holding any grant on a server, so a change can say who it affects."""
@@ -626,9 +638,7 @@ class ConfigManager:
                 match_type = "glob"
             policies.append(ArgumentPolicy(arg_name=key, match_type=match_type, pattern=pattern))
 
-        policy = self.load_policy(agent_name)
-        if not policy:
-            policy = self.create_policy(agent_name)
+        policy = self._policy_for_change(agent_name) or self.create_policy(agent_name)
 
         if server_id not in policy.permissions:
             policy.permissions[server_id] = []
@@ -643,7 +653,7 @@ class ConfigManager:
         Returns True if anything was removed."""
         if agent_name not in self.config.agents:
             raise ValueError(f"Agent '{agent_name}' not found.")
-        policy = self.load_policy(agent_name)
+        policy = self._policy_for_change(agent_name)
         if not policy:
             return False
         server_id = self._server_id(server_name)
@@ -669,6 +679,27 @@ class ConfigManager:
             del policy.permissions[server_id]  # last grant for the server
         self.save_policy(agent_name, policy)
         return True
+
+    def _policy_for_change(self, agent_name: str) -> Optional[AgentPolicy]:
+        """The agent's policy, to change it; None when it has none yet.
+
+        Unlike `load_policy`, a file that exists but cannot be read is an error.
+        The gateway rightly reads it as "no grants" — that denies — but a change
+        must not: granting would write a new policy over it and drop every other
+        grant, and revoking would report nothing to revoke.
+        """
+        if self._agent_id(agent_name) is None:
+            return None
+        path = self.policy_path_for(agent_name)
+        if not path.exists():
+            return None
+        try:
+            return AgentPolicy(**json.loads(read_text(path)))
+        except Exception as e:
+            raise ValueError(
+                f"The policy for agent '{agent_name}' ({path}) cannot be read: {e}. "
+                "Fix or remove the file, then try again."
+            ) from e
 
     def load_policy(self, agent_name: str) -> Optional[AgentPolicy]:
         if self._agent_id(agent_name) is None:

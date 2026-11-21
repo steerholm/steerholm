@@ -922,3 +922,77 @@ def test_a_half_written_token_is_never_visible(config_manager):
     # new one, never part of one.
     _cfg.get_or_create_control_token()
     assert not list(_cfg.control_token_path().parent.glob("control-token.*.tmp"))
+
+
+# ─── changes refuse a policy they cannot read ──────────────────────
+
+
+def _break_policy(config_manager, agent):
+    path = config_manager.policy_path_for(agent)
+    path.write_text("{ cut off by a full disk", encoding="utf-8")
+    return path
+
+
+def test_grant_refuses_an_unreadable_policy_and_leaves_it_alone(config_manager):
+    config_manager.add_agent("coder")
+    config_manager.add_server("git", command="x")
+    config_manager.add_server("db", command="y")
+    config_manager.grant_permission("coder", "git", tool="git_log")
+    path = _break_policy(config_manager, "coder")
+
+    with pytest.raises(ValueError, match="policy for agent 'coder'.*cannot be read"):
+        config_manager.grant_permission("coder", "db", tool="query")
+    # Not replaced by a policy holding only the new grant.
+    assert path.read_text(encoding="utf-8") == "{ cut off by a full disk"
+
+
+def test_revoke_refuses_an_unreadable_policy(config_manager):
+    config_manager.add_agent("coder")
+    config_manager.add_server("git", command="x")
+    config_manager.grant_permission("coder", "git")
+    _break_policy(config_manager, "coder")
+    with pytest.raises(ValueError, match="cannot be read"):
+        config_manager.revoke_permission("coder", "git")
+
+
+def test_remove_server_refuses_while_a_policy_cannot_be_read(config_manager):
+    config_manager.add_agent("alice")
+    config_manager.add_agent("bob")
+    config_manager.add_server("git", command="x")
+    config_manager.grant_permission("alice", "git")
+    config_manager.grant_permission("bob", "git")
+    _break_policy(config_manager, "bob")
+
+    with pytest.raises(ValueError, match="'bob'"):
+        config_manager.remove_server("git")
+    # Nothing changed: the server stays, and alice still holds her grant.
+    assert config_manager.get_server("git") is not None
+    assert config_manager.agents_with_grants("git") == ["alice"]
+
+
+def test_remove_server_part_way_is_finished_by_running_it_again(config_manager, monkeypatch):
+    for agent in ("alice", "bob", "carol"):
+        config_manager.add_agent(agent)
+    config_manager.add_server("git", command="x")
+    for agent in ("alice", "bob", "carol"):
+        config_manager.grant_permission(agent, "git")
+
+    real_save = config_manager.save_policy
+    def fail_on_bob(agent, policy):
+        if agent == "bob":
+            raise OSError(28, "No space left on device")
+        real_save(agent, policy)
+    monkeypatch.setattr(config_manager, "save_policy", fail_on_bob)
+    with pytest.raises(OSError):
+        config_manager.remove_server("git")
+    assert config_manager.get_server("git") is not None      # still there to retry
+
+    monkeypatch.setattr(config_manager, "save_policy", real_save)
+    assert set(config_manager.remove_server("git")) == {"bob", "carol"}
+    assert config_manager.get_server("git") is None
+
+
+def test_an_agent_without_an_id_holds_no_policy_to_change(config_manager):
+    config_manager.add_agent("legacy")
+    config_manager.config.agents["legacy"].id = None
+    assert config_manager._policy_for_change("legacy") is None
