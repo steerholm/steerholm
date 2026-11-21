@@ -1,0 +1,2 @@
+WARNING  steerholm.migrations:m0001_id_keyed_grants.py:121 Setting orphan.json aside (no agent of that name in the config); it is now at C:\Users\runneradmin\AppData\Local\Temp\pytest-of-runneradmin\pytest-0\test_a_policy_with_no_agent_in0\s\.migrating-v1\policies\unmigrated\orphan.json.
+WARNING  steerholm.migrations:m0002_key_hash_in_config.py:78 No key hash for 'bob'. If the keyring is locked, unlock it and run `holm migrate` again; otherwise reissue with `holm rotate agent <name>` — until then those agents cannot authenticate.

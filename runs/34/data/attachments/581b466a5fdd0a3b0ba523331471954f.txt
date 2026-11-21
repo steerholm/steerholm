@@ -1,0 +1,2 @@
+WARNING  steerholm:gateway.py:696 Server 'broken' failed its health check; will restart: dead
+ERROR    steerholm:gateway.py:706 Failed to stop unhealthy server 'broken': cant stop
