@@ -392,7 +392,7 @@ class TestConfigPlatformDir:
         assert "appdata" in str(path).lower()
 
 
-# ─── coverage: config-dir override, control token, error paths ──────
+# ─── coverage: config-dir override, error paths ──────────────────────
 
 import keyring.errors as _kerr
 from unittest.mock import MagicMock as _MM

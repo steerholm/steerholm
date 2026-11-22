@@ -142,7 +142,7 @@ class SteerholmGateway:
         # the log per tool call — and once per hashless agent, not once per
         # attempt, is what an operator needs.
         self._warned_no_hash = set()
-        # Serializes lifecycle reconciliation (startup, control plane, supervisor).
+        # Serializes lifecycle reconciliation (startup, server changes, supervisor).
         self._reconcile_lock = asyncio.Lock()
         # Reconciles running behind the open port; kept so they are not garbage
         # collected mid-run, and so shutdown can cancel them.
@@ -401,7 +401,7 @@ class SteerholmGateway:
         """The daemon's single lifecycle primitive: make the running shared servers
         match the config — start newly added servers, stop removed ones,
         and restart servers whose spec changed or whose session died. Idempotent;
-        driven at startup, by the control plane on config changes, and periodically.
+        driven at startup, by server changes over the admin channel, and periodically.
         """
         async with self._reconcile_lock:
             # Reconcile is the daemon's "apply the config" primitive, so pick up
@@ -481,7 +481,7 @@ class SteerholmGateway:
         await self.reconcile_servers()
 
     def server_status(self) -> dict:
-        """Live per-server status for the control plane / CLI: state, uptime, error,
+        """Live per-server status for the CLI: state, uptime, error,
         and the cached tool list. Reads in-memory daemon state — no network calls."""
         now = time.monotonic()
         result = {}
@@ -790,7 +790,7 @@ class SteerholmGateway:
                 logger.warning(f"Server '{name}' failed its health check; will restart: {e}")
                 dead.append(name)
         # Stop under the reconcile lock so this never races a concurrent
-        # control-plane reconcile mutating the same shared-process table.
+        # reconcile (a server change) mutating the same shared-process table.
         if dead:
             async with self._reconcile_lock:
                 for name in dead:

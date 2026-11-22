@@ -80,9 +80,6 @@ def test_daemon_up_false_on_error(monkeypatch):
         assert m._daemon_up("127.0.0.1", 4767) is False
 
 
-# ─── _notify_daemon_reconcile ───────────────────────────────────────
-
-
 # ─── add / remove server ────────────────────────────────────────────
 
 
