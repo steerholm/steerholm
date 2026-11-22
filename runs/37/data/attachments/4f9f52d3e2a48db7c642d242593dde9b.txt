@@ -1,0 +1,3 @@
+ERROR    steerholm:gateway.py:871 Port 49191 is already in use. Is another Steerholm instance running?
+ERROR    steerholm:gateway.py:872 Check with: holm status
+ERROR    steerholm:gateway.py:873 Or use a different port: holm serve --port <port>
