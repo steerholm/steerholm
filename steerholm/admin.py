@@ -218,9 +218,12 @@ class AdminServer:
                 return   # connected and never asked; don't hold the connection
             if not line:
                 return
-            async for answer in self.answers(caller, line):
-                writer.write(answer)
-                await writer.drain()
+            # aclosing: when the CLI hangs up mid-stream, end the request's stream
+            # now, not whenever the generator happens to be collected.
+            async with contextlib.aclosing(self.answers(caller, line)) as answers:
+                async for answer in answers:
+                    writer.write(answer)
+                    await writer.drain()
         except ConnectionError:
             pass         # the CLI hung up, e.g. Ctrl-C on `holm log --follow`
         except Exception as e:
@@ -242,8 +245,9 @@ class AdminServer:
             yield _encode(await self._call(op, handler, caller, args))
             return
         try:
-            async for result in handler(caller, args):
-                yield _encode({"ok": True, "result": result})
+            async with contextlib.aclosing(handler(caller, args)) as results:
+                async for result in results:
+                    yield _encode({"ok": True, "result": result})
         except ValueError as e:
             yield _encode({"ok": False, "error": str(e)})
         except Exception as e:

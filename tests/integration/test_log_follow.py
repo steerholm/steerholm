@@ -123,3 +123,19 @@ async def test_log_set_applies_to_the_running_log(gw):
     answer = await gw._admin_log_set("uid:0", {"max_files": 3, "max_age_days": 30})
     assert answer == {"max_files": 3, "max_age_days": 30}
     assert (gw.event_log._max_files, gw.event_log._max_age_days) == (3, 30)
+
+
+@pytest.mark.asyncio
+async def test_the_history_comes_from_the_logs_own_directory(gw, tmp_path):
+    (tmp_path / "elsewhere").mkdir()
+    gw.event_log = gateway_mod.EventLog(dir=tmp_path / "elsewhere")
+    gw._record(_event("there"))
+    history = await gw._admin_log("uid:0", {})
+    assert [e["tool"] for e in history["events"]] == ["there"]
+
+
+def test_recording_with_nobody_following_skips_the_hand_off(gw, monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("encoded for no one")
+    monkeypatch.setattr(DecisionEvent, "model_dump", boom)
+    gw._record(_event("quiet"))                       # no error: nothing to hand off

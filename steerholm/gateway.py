@@ -385,6 +385,8 @@ class SteerholmGateway:
     def _record(self, event: DecisionEvent) -> None:
         """Record a decision, and hand it to everyone following the log."""
         self.event_log.record(event)
+        if not self._log_followers:
+            return
         payload = event.model_dump(mode="json")
         for queue in list(self._log_followers):
             try:
@@ -733,12 +735,12 @@ class SteerholmGateway:
         """The last `number` matching decisions (0 for all), and the ids seen
         behind a filtered name — removing and re-adding reuses a name for a
         different agent or server, which the CLI points out."""
-        from .config import CONFIG_DIR
         number = args.get("number", 50)
         agent, server = args.get("agent"), args.get("server")
         kept = deque(maxlen=number or None)
         agent_ids, server_ids = set(), set()
-        for e in read_events(CONFIG_DIR, until=until):
+        # The log's own directory, which `until` was measured in.
+        for e in read_events(self.event_log.dir, until=until):
             if not matches(e):
                 continue
             kept.append(e)
