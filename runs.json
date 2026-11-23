@@ -1,5 +1,16 @@
 [
   {
+    "run_number": 39,
+    "run_id": "45230175578",
+    "date": "2026-11-23T17:50:33Z",
+    "ref": "stage1/daemon-migrates",
+    "commit": "b328d56f5525bbbe8e69f530f7780b63d80d7734",
+    "trigger": "workflow_dispatch",
+    "passed": 2270,
+    "failed": 0,
+    "skipped": 36
+  },
+  {
     "run_number": 38,
     "run_id": "45221680334",
     "date": "2026-11-23T17:09:49Z",

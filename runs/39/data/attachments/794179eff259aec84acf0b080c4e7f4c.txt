@@ -1,0 +1,1 @@
+ERROR    steerholm:gateway.py:922 Could not open the admin channel at /tmp/holmho7b8nks/admin.sock: AF_UNIX path too long

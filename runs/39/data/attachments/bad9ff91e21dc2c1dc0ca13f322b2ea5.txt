@@ -1,0 +1,1 @@
+ERROR    steerholm:gateway.py:919 Another Steerholm daemon is already running for this account.

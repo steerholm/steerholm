@@ -1,0 +1,1 @@
+WARNING  steerholm.migrations:m0002_key_hash_in_config.py:77 No key hash for 'café'. Reissue their keys with `holm rotate agent <name>` — until then those agents cannot authenticate.

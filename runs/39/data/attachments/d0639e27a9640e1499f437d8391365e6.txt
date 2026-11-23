@@ -1,0 +1,1 @@
+ERROR    steerholm:gateway.py:379 Error calling tool 't' on 'srv': kaboom
