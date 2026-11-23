@@ -132,10 +132,17 @@ class ConfigError(UnusableStateError):
 
 
 # sysexits.h EX_CONFIG, the exit code for an UnusableStateError from anything a service
-# manager runs. Named in the systemd unit's RestartPreventExitStatus: only
-# `holm migrate` can fix a schema mismatch, so restarting just loops every
-# RestartSec. Plain failure here is what that used to do.
+# manager runs. Named in the systemd unit's RestartPreventExitStatus: stored data
+# that could not be upgraded or read is not fixed by restarting, so restarting
+# just loops every RestartSec. Plain failure here is what that used to do.
 EX_CONFIG = 78
+
+
+def daemon_log_hint() -> str:
+    """Where to read the daemon's own account of why it stopped."""
+    if sys.platform.startswith("linux"):
+        return "journalctl --user -u steerholm"
+    return str(CONFIG_DIR / "daemon.log")
 
 
 def _describe_load_failure(e: Exception) -> str:
@@ -158,7 +165,7 @@ class ConfigManager:
         self._ensure_dirs()
         self._stamp_if_new()
         # Recorded, not raised: the CLI builds a manager at import, so raising
-        # here would take down every command — including `holm migrate` and
+        # here would take down every command — including `holm status` and
         # `holm version`, the ones a user reaches for when the state is wrong.
         # It is raised when something reads `config` instead.
         self._load()
@@ -200,10 +207,11 @@ class ConfigManager:
     def verify_schema() -> None:
         """Refuse to run against state this build does not understand.
 
-        Verifies; never migrates. Deliberately not called from `__init__`: the
-        CLI builds a manager at import, so refusing there would take down `holm
-        migrate` — the one command that fixes it — along with everything else.
-        Callers invoke it once, before the config is used.
+        Verifies; never migrates — the daemon upgrades the data when it starts.
+        Deliberately not called from `__init__`: the CLI builds a manager at
+        import, so refusing there would take down `holm status` and `holm start`
+        along with everything else. Callers invoke it once, before the config is
+        used.
         """
         from . import migrations
 
@@ -222,12 +230,11 @@ class ConfigManager:
                 f"{CONFIG_DIR} is schema v{version}; this build of Steerholm "
                 f"understands v{migrations.CURRENT_VERSION}. Upgrade Steerholm."
             )
-        reinstall = ("irm https://steerholm.ai/install.ps1 | iex" if sys.platform == "win32"
-                     else "curl -fsSL https://steerholm.ai/install.sh | bash")
         raise SchemaError(
-            f"{CONFIG_DIR} is schema v{version}; this build of Steerholm expects "
-            f"v{migrations.CURRENT_VERSION}. Reinstall with the official "
-            f"installer, which migrates it:\n  {reinstall}"
+            f"{CONFIG_DIR} is schema v{version}, from an earlier version of "
+            f"Steerholm; this build uses v{migrations.CURRENT_VERSION}. The daemon "
+            "upgrades it when it starts: run `holm start`. If the daemon does not "
+            f"come up, its log says why: {daemon_log_hint()}."
         )
 
     def _ensure_dirs(self):

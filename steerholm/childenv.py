@@ -10,8 +10,8 @@ instead of the system's. Where the system's is newer they fail to load at all:
 It also passes on its own bookkeeping (`_PYI_ARCHIVE_FILE`,
 `_PYI_APPLICATION_HOME_DIR`, ...). A frozen program that finds those treats
 itself as a child of that same run and uses the PARENT's unpacked files instead
-of its own. That is wrong whenever the child is a different build — the new
-`holm migrate` the installer runs during an update loaded the old build's
+of its own. That is wrong whenever the child is a different build — a new
+`holm` started by the installer during an update loaded the old build's
 compiled libraries and crashed.
 """
 import os

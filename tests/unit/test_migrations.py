@@ -269,24 +269,22 @@ def test_a_command_refuses_against_unmigrated_state(config_manager):
     # The fixture's manager stamped the fresh dir; an upgrading install has a
     # config but no marker, which is what schema 0 looks like.
     MigrationStore(_cfg.CONFIG_DIR).version_file.unlink()
-    with pytest.raises(SchemaError, match=f"expects v{migrations.CURRENT_VERSION}"):
+    with pytest.raises(SchemaError, match="The daemon upgrades it when it starts"):
         ConfigManager.verify_schema()
 
 
-@pytest.mark.parametrize("platform, command", [
-    ("win32", "irm https://steerholm.ai/install.ps1 | iex"),
-    ("linux", "curl -fsSL https://steerholm.ai/install.sh | bash"),
-    ("darwin", "curl -fsSL https://steerholm.ai/install.sh | bash"),
+@pytest.mark.parametrize("platform, where", [
+    ("win32", "daemon.log"),
+    ("linux", "journalctl --user -u steerholm"),
+    ("darwin", "daemon.log"),
 ])
-def test_the_refusal_names_the_installer_for_this_platform(config_manager, monkeypatch,
-                                                            platform, command):
-    # Windows was told to run the bash installer.
+def test_the_refusal_says_where_the_daemon_log_is(config_manager, monkeypatch, platform, where):
     _v0_state(_cfg.CONFIG_DIR)
     MigrationStore(_cfg.CONFIG_DIR).version_file.unlink()
     monkeypatch.setattr("sys.platform", platform)
     with pytest.raises(SchemaError) as refused:
         ConfigManager.verify_schema()
-    assert command in str(refused.value)
+    assert where in str(refused.value)
 
 
 def test_a_command_refuses_against_state_from_a_newer_build(config_manager):
@@ -509,8 +507,8 @@ def test_only_one_migration_runs_at_a_time(state):
 @pytest.mark.skipif(os.name == "nt", reason="os.kill cannot ask this on Windows")
 def test_a_lock_left_by_a_dead_process_does_not_block_forever(state):
     # A SIGKILL or a power cut mid-migration leaves the file behind. Refusing on
-    # it would fail every later run — and both installers abort the whole
-    # install when `holm migrate` fails.
+    # it would fail every later run — and the daemon does not start while its
+    # data cannot be upgraded.
     done = subprocess.Popen([sys.executable, "-c", ""])
     done.wait()
     (state / ".migrating.lock").write_text(f"{done.pid}\n")
@@ -739,7 +737,7 @@ def test_a_policy_claiming_an_agent_that_is_gone_still_migrates(tmp_path):
 def test_a_reset_state_beside_an_old_backup_still_migrates(state):
     # A backup outlives the migration that made it. Refusing whenever one holds
     # a name the live directory lacks would fail every later run against a state
-    # the user reset on purpose — and both installers abort when migrate fails.
+    # the user reset on purpose — and the daemon does not start while it fails.
     migrations.run(state)
     shutil.rmtree(state)
 
@@ -1419,3 +1417,37 @@ class TestKeyHashesLeaveTheKeyring:
         entries = {"bob": "$2b$12$carried"}
         self._run_m0002(state, entries)
         assert entries == {"bob": "$2b$12$carried"}
+
+
+# ─── the daemon upgrades the data when it starts ────────────────────
+
+
+def test_the_daemon_upgrades_data_that_is_behind(config_manager, caplog):
+    from steerholm.gateway import upgrade_state
+
+    _v0_state(_cfg.CONFIG_DIR)
+    MigrationStore(_cfg.CONFIG_DIR).version_file.unlink()
+    caplog.set_level("INFO", logger="steerholm")
+
+    upgrade_state()
+
+    ConfigManager.verify_schema()                       # current now
+    log = " ".join(caplog.text.split())
+    assert f"to schema v{migrations.CURRENT_VERSION}" in log
+    assert "as it was before is at" in log              # where the backup went
+
+
+def test_the_daemon_leaves_current_data_alone(config_manager, caplog):
+    from steerholm.gateway import upgrade_state
+
+    caplog.set_level("INFO", logger="steerholm")
+    upgrade_state()
+    assert "Upgraded" not in caplog.text
+
+
+def test_data_the_daemon_cannot_upgrade_stops_it_with_the_reason(config_manager):
+    from steerholm.gateway import upgrade_state
+
+    MigrationStore(_cfg.CONFIG_DIR).version = migrations.CURRENT_VERSION + 1
+    with pytest.raises(SchemaError, match="Could not upgrade the stored data.*no reverse migrations"):
+        upgrade_state()

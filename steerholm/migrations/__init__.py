@@ -164,8 +164,7 @@ def _exclusive(root: Path):
         if _owner_is_gone(lock):
             # The owning process died — a SIGKILL, or the power going out
             # mid-migration. Without this the leftover file refuses every future
-            # run, which means every future install: both installers abort when
-            # `holm migrate` fails.
+            # run, which means the daemon never starts again.
             logger.warning("Clearing a lock left by a process that is gone: %s", lock)
             lock.unlink(missing_ok=True)
             try:
@@ -283,7 +282,7 @@ def _refuse_if_stranded(root: Path, steps) -> None:
         # it is a directory the user cleared, or one this run just created. A
         # backup outlives the migration that made it, so refusing here would
         # fail every later run against a state that was reset on purpose, and
-        # both installers abort the whole install when `holm migrate` fails.
+        # the daemon does not start while its data cannot be upgraded.
         # There is also nothing to lose: migrating an empty state writes
         # nothing the backup holds.
         return

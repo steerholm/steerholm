@@ -25,7 +25,7 @@ sys.stderr = _log
 import asyncio
 import logging
 
-from steerholm.gateway import SteerholmGateway
+from steerholm.gateway import run_daemon
 from steerholm.config import DEFAULT_HOST, DEFAULT_PORT
 
 logging.basicConfig(
@@ -39,11 +39,10 @@ if __name__ == "__main__":
 
     logging.info("Starting Steerholm daemon on http://%s:%s/mcp", DEFAULT_HOST, DEFAULT_PORT)
     try:
-        asyncio.run(SteerholmGateway().serve(DEFAULT_HOST, DEFAULT_PORT))
+        asyncio.run(run_daemon(DEFAULT_HOST, DEFAULT_PORT))
     except UnusableStateError as e:
-        # Expected and diagnosable, not a crash. Retrying cannot fix it — only
-        # `holm migrate` can — so exit with a code the unit is told not to
-        # restart on. Plain failure here would loop every RestartSec forever,
-        # which is what this used to do.
+        # Expected and diagnosable, not a crash: stored data that could not be
+        # upgraded or read. Restarting cannot fix it, so exit with the code the
+        # service is told not to restart on, instead of looping.
         logging.error("%s", e)
         raise SystemExit(EX_CONFIG)

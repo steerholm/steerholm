@@ -91,9 +91,9 @@ point at. Add the server first.
 ## Upgrading from an older Steerholm
 
 Policies written before this format were keyed by name — `policies/<agent
-name>.json`, with server names as the permission keys. The installer migrates
-them: it stops the daemon, replaces the binary, brings the state up to the
-current schema, and starts the daemon again.
+name>.json`, with server names as the permission keys. The daemon migrates them
+when the new version first starts: it brings the state up to the current schema
+before it serves anything.
 
 The state directory records the schema it is in, at `migrations/version`.
 Steerholm refuses to run against a schema it does not understand rather than
@@ -121,7 +121,7 @@ a bug report.
   It is not a way to go back. There are no reverse migrations, and copying the
   directory back over your config does not produce a working state: the schema
   marker would still read the new version over old data, every agent would
-  resolve to no grants, and `holm migrate` would report the state as already
+  resolve to no grants, and the daemon would treat the state as already
   current.
 
   Nor would a complete revert be coherent. The audit log is not part of the

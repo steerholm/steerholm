@@ -126,6 +126,37 @@ def _event_filter(args: dict):
     return matches
 
 
+def upgrade_state() -> None:
+    """Bring the stored data up to this build's schema, before anything reads it.
+
+    The daemon does this, not the installer, so every way a new version
+    arrives — the installer, `holm update`, a package manager — upgrades the
+    data the same way: when the new daemon first starts. A failure leaves the
+    data as it was and stops the daemon with the reason in its log.
+    """
+    from . import migrations
+    from .config import CONFIG_DIR, SchemaError
+
+    try:
+        applied = migrations.run(CONFIG_DIR)
+    except migrations.MigrationError as e:
+        raise SchemaError(f"Could not upgrade the stored data in {CONFIG_DIR}: {e}") from e
+    if applied:
+        logger.info(f"Upgraded {CONFIG_DIR} to schema v{migrations.CURRENT_VERSION} "
+                    f"({applied} step{'s' if applied != 1 else ''}).")
+        kept = migrations.backup_path(CONFIG_DIR)
+        if kept.exists():
+            logger.info(f"The data as it was before is at {kept}, to compare if anything "
+                        "looks wrong. It holds a copy of your config, secrets included, "
+                        "and the next upgrade replaces it.")
+
+
+async def run_daemon(host: str, port: int) -> None:
+    """Upgrade the stored data, then serve. What `holm serve` and holmd run."""
+    upgrade_state()
+    await SteerholmGateway().serve(host, port)
+
+
 class SteerholmGateway:
     def __init__(self):
         self.config_manager = ConfigManager()

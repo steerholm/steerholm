@@ -8,8 +8,8 @@ set -euo pipefail
 # below — see end_old_updater.
 OLD_UPDATER_ARCHIVE="${_PYI_ARCHIVE_FILE:-}"
 #
-# PyInstaller's bookkeeping: with it, the NEW `holm migrate` below takes itself
-# for a child of the old `holm update` and loads the old build's unpacked
+# PyInstaller's bookkeeping: with it, a NEW `holm` started from here would take
+# itself for a child of the old `holm update` and load the old build's unpacked
 # libraries instead of its own.
 unset _PYI_ARCHIVE_FILE _PYI_APPLICATION_HOME_DIR _PYI_PARENT_PROCESS_LEVEL \
       _PYI_LINUX_PROCESS_NAME _PYI_SPLASH_IPC
@@ -170,6 +170,13 @@ confirm_daemon_started() {
         i=$((i + 1))
     done
     warn "Daemon did not answer on 127.0.0.1:4767 within 10s."
+    # It upgrades the stored data before it opens its port, and says in its log
+    # if that failed. Show the end of it rather than make the user go looking.
+    if [ "$OS" = "Linux" ] && command -v journalctl >/dev/null 2>&1; then
+        journalctl --user -u "$SERVICE_NAME" -n 10 --no-pager 2>/dev/null || true
+    elif [ -f "${HOME}/.steerholm/daemon.log" ]; then
+        tail -n 10 "${HOME}/.steerholm/daemon.log" 2>/dev/null || true
+    fi
     warn "Check it with: holm status"
 }
 
@@ -282,23 +289,6 @@ fi
 
 HOLM_BIN="${INSTALL_DIR}/holm"
 info "Installed holm at ${HOLM_BIN}"
-
-# ── Migrate the on-disk state ─────────────────────────────────────
-
-# Run by the NEWLY installed binary, not the one that started this script: the
-# process running `holm update` is the old version and cannot contain the new
-# schema steps. The daemon is stopped (step 3) and not started until step 5, so
-# nothing is reading or writing the state while this runs.
-if ! "$HOLM_BIN" migrate; then
-    # Set BEFORE reporting: `error` exits, so anything after it never runs. The
-    # EXIT trap would otherwise restart the daemon, and against an un-migrated
-    # state that daemon refuses to serve — a restart loop instead of one clear
-    # message.
-    DAEMON_STOPPED=0
-    warn "The new binary is installed but the state was not migrated, so the"
-    warn "daemon will refuse to start against it. It has been left stopped."
-    error "Could not migrate the Steerholm state. Fix the cause above, then re-run this installer."
-fi
 
 # ── 5. Register service ───────────────────────────────────────────
 

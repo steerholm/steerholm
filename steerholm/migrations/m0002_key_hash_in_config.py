@@ -72,11 +72,9 @@ def migrate(store) -> None:
         logger.info("Carried the key hash for %d agent(s) out of the keyring.",
                     len(carried))
     if skipped:
-        # Not an error: the entries are untouched, so unlocking the keyring and
-        # running again picks them up. Only if that never happens does the key
-        # have to be reissued.
+        # Not an error: the entries are left as they were. The step does not run
+        # again once the schema moves past it, so reissuing the key is the fix.
         logger.warning(
-            "No key hash for %s. If the keyring is locked, unlock it and run "
-            "`holm migrate` again; otherwise reissue with `holm rotate agent "
+            "No key hash for %s. Reissue their keys with `holm rotate agent "
             "<name>` — until then those agents cannot authenticate.",
             ", ".join(repr(n) for n in skipped))

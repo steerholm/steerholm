@@ -60,29 +60,28 @@ The Bearer token is missing, malformed, or not a valid access key.
   keyring could not be read at the time, the agent has no hash to check against
   and the daemon log says so (`journalctl --user -u steerholm` on Linux,
   `daemon.log` in the config directory on macOS and Windows). Issue a fresh key
-  with `holm rotate agent <name>` and update the tool with it — the upgrade has already run, so it will not
-  look in the keyring again.
+  with `holm rotate agent <name>` and update the tool with it — the upgrade has
+  already run, so it will not look in the keyring again.
 
-## Steerholm refuses to run: "is schema vN; this build of Steerholm expects vM"
+## Steerholm refuses to run: "is schema vN, from an earlier version of Steerholm"
 
-The stored data was written by a different version than the one installed.
-Reinstalling runs the upgrade for you:
+The stored data was written by an earlier version. The daemon upgrades it when
+it starts, so this means the daemon has not started since the update, or the
+upgrade failed. Start it:
 
-<CodeGroup>
-
-```bash Linux / macOS
-curl -fsSL https://steerholm.ai/install.sh | bash
+```bash
+holm start
 ```
 
-```powershell Windows
-irm https://steerholm.ai/install.ps1 | iex
-```
+If it does not come up, its log says why — `journalctl --user -u steerholm` on
+Linux, `daemon.log` in the config directory on macOS and Windows. A failed
+upgrade leaves your data as it was.
 
-</CodeGroup>
+If the message says the data is from a **newer** version instead, a newer
+Steerholm wrote it: update Steerholm rather than going back to an older one.
 
 Steerholm refuses rather than guessing, because reading an older layout with a
-newer build would look like every agent having no grants at all. Your data is
-untouched; nothing is migrated until it can be done completely.
+newer build would look like every agent having no grants at all.
 
 ## "config.json cannot be loaded"
 
@@ -95,9 +94,9 @@ The file exists but Steerholm cannot read it. The message says why:
 
 Steerholm refuses to carry on rather than start from an empty configuration in
 its place. Nothing is written to the file while it is in this state, so fixing
-it restores everything as it was. `holm version`, `holm status`, `holm stop`,
-`holm update` and `holm migrate` still run; commands that read or change the
-configuration do not.
+it restores everything as it was. `holm version`, `holm status`, `holm stop`
+and `holm update` still run; commands that read or change the configuration do
+not.
 A running daemon denies every request and leaves its servers running until the
 file loads again.
 

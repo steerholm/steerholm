@@ -19,9 +19,14 @@ tagging it. At tag time, rename `[Unreleased]` to the version and date.
   the files directly and a change applied when the daemon next started.
 - `holm log --follow` gets each decision from the daemon as it is recorded,
   instead of watching the log files.
+- The daemon upgrades the stored data when a new version first starts, instead
+  of the installer doing it, so an update arriving any other way upgrades it the
+  same way. If the upgrade fails, the daemon stops with the reason in its log,
+  and the installer shows the end of that log.
 
 ### Removed
 
+- `holm migrate`, which the installers used to run. The daemon does it.
 - The `control-token` file and the daemon's HTTP control route. The CLI reaches
   the daemon over the local channel instead; the daemon deletes a token left by
   an earlier version when it starts.

@@ -41,34 +41,24 @@ def _root(
     """Register a best-effort 'update available' hint after interactive commands."""
     if ctx.resilient_parsing:  # shell completion
         return
-    # Recovery paths are exempt: they are how a version mismatch gets fixed, so
-    # they must run against exactly the state every other command refuses.
-    # `update` matters as much as `migrate` — an update interrupted between the
-    # binary swap and the migration leaves a new binary on unmigrated state, and
-    # re-running `holm update` is the obvious thing to try.
-    # Exempt: recovery paths (`migrate`, `update`), and the service-manager
-    # commands that read no versioned state. `install.sh`'s failure message tells
-    # the user to run `holm stop`, so gating it would break the path out;
-    # `status` is how you diagnose a daemon that will not come up.
+    # Exempt: the commands that read no stored data — `update`, `version`, and
+    # `stop` and `status`, which is how you diagnose a daemon that will not come
+    # up — and `serve`, the daemon, which upgrades the data before it checks it.
     #
-    # `start` is NOT exempt. `systemctl start` returns as soon as a Type=simple
-    # unit forks, so against a behind schema it reported "Daemon started." and
-    # exited 0 while `holm serve` was already exiting. The installer never calls
-    # it — it starts the service directly, after migrating.
-    if ctx.invoked_subcommand not in (
-        "migrate", "update", "version", "stop", "status",
-    ):
+    # `start` is let through only when the data is behind, because the daemon it
+    # starts upgrades it. Against data it cannot fix (newer than this build, or
+    # an unreadable config.json) it is refused: `systemctl start` returns as
+    # soon as a Type=simple unit forks, so it would report "Daemon started."
+    # while the daemon was already exiting.
+    command = ctx.invoked_subcommand
+    if command not in ("update", "version", "stop", "status", "serve") \
+            and not (command == "start" and _state_is_behind()):
         try:
             config_manager.verify_schema()
             config_manager.verify_loaded()
         except UnusableStateError as e:
             err_console.print(f"[bold red]Error:[/bold red] {escape(str(e))}")
-            # `serve` is what the service manager runs — the systemd unit is
-            # `ExecStart=holm serve`, Restart=on-failure. Exiting 1 there loops
-            # every RestartSec forever; EX_CONFIG is the code the unit is told
-            # not to restart on. Every other command is a person at a terminal.
-            raise typer.Exit(
-                code=EX_CONFIG if ctx.invoked_subcommand == "serve" else 1)
+            raise typer.Exit(code=1)
     if ctx.invoked_subcommand in (None, "update", "version", "serve"):
         return
     ctx.call_on_close(_maybe_notify_update)
@@ -215,23 +205,6 @@ def update(
     # reinstall), so only short-circuit "up to date" when no tag was named.
     if not info.update_available and not force and tag is None:
         console.print(f"[green]Steerholm is already up to date:[/green] {__version__}")
-        # The binary can be current while the state is not. An interrupted
-        # migration leaves exactly that, and returning here would strand the
-        # user: every other command refuses and points at the installer, while
-        # this one reports all is well. The running binary is the new one, so it
-        # has the steps — unlike the installer, which runs the OLD binary.
-        if _state_is_behind():
-            from .config import DEFAULT_HOST, DEFAULT_PORT
-
-            console.print("Its stored data is still behind; finishing that now.")
-            if _port_in_use(DEFAULT_HOST, DEFAULT_PORT):
-                console.print(
-                    "[bold red]Error:[/bold red] something is listening on "
-                    f"{DEFAULT_HOST}:{DEFAULT_PORT}. If that is the Steerholm "
-                    "daemon, stop it with 'holm stop', then run this again."
-                )
-                raise typer.Exit(code=1)
-            _migrate_now()
         return
 
     if not yes:
@@ -508,7 +481,7 @@ def serve(
     port: int = typer.Option(None, help="Port to bind (default: 4767)"),
 ):
     """Start the Steerholm daemon in the foreground."""
-    from .gateway import SteerholmGateway
+    from .gateway import run_daemon
     from .config import DEFAULT_HOST, DEFAULT_PORT
     import sys
     import logging
@@ -518,16 +491,15 @@ def serve(
     serve_host = host or DEFAULT_HOST
     serve_port = port or DEFAULT_PORT
 
-    gateway = SteerholmGateway()
     sys.stderr.write(f"Starting Steerholm daemon (http://{serve_host}:{serve_port}/mcp)...\n")
     try:
-        asyncio.run(gateway.serve(serve_host, serve_port))
+        asyncio.run(run_daemon(serve_host, serve_port))
     except UnusableStateError as e:
-        # Diagnosable, not a crash. The systemd unit and the Windows logon task
-        # both restart on failure, so a traceback here would loop every few
-        # seconds instead of reporting once.
+        # Diagnosable, not a crash: stored data that could not be upgraded or
+        # read. The systemd unit runs this, and EX_CONFIG is the code it is
+        # told not to restart on, so this reports once instead of looping.
         err_console.print(f"[bold red]Error:[/bold red] {escape(str(e))}")
-        raise typer.Exit(code=1)
+        raise typer.Exit(code=EX_CONFIG)
 
 
 # Windows runs the daemon as a per-user logon Scheduled Task (the mirror of the
@@ -550,39 +522,6 @@ def _daemon_up(host: str, port: int, timeout: float = 1.0) -> bool:
         return data.get("service") == "steerholm"
     except Exception:
         return False
-
-
-def _port_in_use(host: str, port: int) -> bool:
-    """Whether anything at all holds host:port.
-
-    `_daemon_up` answers a different question and answers it optimistically: a
-    daemon busy spawning stdio servers reads as absent. That is the right trade
-    for `status` and `stop`; it is the wrong one for `migrate`, where guessing
-    "down" means moving config.json out from under a live daemon.
-
-    Asked by binding the port, not connecting to it. A connect only answers
-    clearly where a closed port is refused at once: Windows retries for about
-    two seconds first, which read as "occupied" and stopped every Windows
-    install at migrate. A bind is answered by the OS without waiting, and a
-    daemon too busy to answer still holds the port.
-    """
-    import socket
-    import sys
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        if sys.platform == "win32":
-            # Otherwise Windows lets a specific address bind beside a listener
-            # on the wildcard address, and the port reads as free.
-            probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
-        else:
-            # Connections from a daemon just stopped linger in TIME_WAIT; they
-            # do not hold the port, and without this they would read as if
-            # they did. A listener still refuses the bind.
-            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            probe.bind((host, port))
-        except OSError:
-            return True
-    return False
 
 
 @app.command()
@@ -623,32 +562,6 @@ def start():
     console.print("[bold green]Daemon started.[/bold green]")
 
 
-@app.command(hidden=True)
-def migrate():
-    """Bring the on-disk state up to this build's schema.
-
-    Hidden: the installer runs this as a post-install step, and a user should
-    never need to think about it. Documented for contributors, who install from
-    source and so never go through the installer.
-    """
-    from . import migrations
-    from .config import CONFIG_DIR, DEFAULT_HOST, DEFAULT_PORT
-
-    # The swap moves config.json aside and back; a daemon reloading in that
-    # window reads an absent config, denies every agent, and tears down every
-    # running server on the next reconcile. The installer stops the daemon for
-    # exactly this reason — a direct run has to check for itself.
-    if _port_in_use(DEFAULT_HOST, DEFAULT_PORT):
-        console.print(
-            f"[bold red]Error:[/bold red] something is listening on "
-            f"{DEFAULT_HOST}:{DEFAULT_PORT}. If that is the Steerholm daemon, "
-            "stop it with 'holm stop', then migrate."
-        )
-        raise typer.Exit(code=1)
-
-    _migrate_now()
-
-
 def _state_is_behind() -> bool:
     """Whether the on-disk state is older than this build understands."""
     from . import migrations
@@ -658,40 +571,7 @@ def _state_is_behind() -> bool:
         return migrations.resolve_version(
             migrations.MigrationStore(CONFIG_DIR)) < migrations.CURRENT_VERSION
     except migrations.store.StateError:
-        return True     # unreadable; migrate will say why
-
-
-def _migrate_now() -> None:
-    """Bring the state up to date, reporting what happened. Exits on failure."""
-    from . import migrations
-    from .config import CONFIG_DIR
-
-    try:
-        applied = migrations.run(CONFIG_DIR)
-    except migrations.MigrationError as e:
-        console.print(f"[bold red]Error:[/bold red] {escape(str(e))}")
-        raise typer.Exit(code=1)
-
-    if applied:
-        console.print(
-            f"[bold green]Migrated[/bold green] {escape(str(CONFIG_DIR))} "
-            f"to schema v{migrations.CURRENT_VERSION} "
-            f"({applied} step{'s' if applied != 1 else ''})."
-        )
-        # Say where the originals went, and what they are for. Otherwise the
-        # only mention of the backup is a docs page, and the installer is what
-        # usually runs this.
-        kept = migrations.backup_path(CONFIG_DIR)
-        if kept.exists():
-            console.print(
-                f"The state as it was before is at {escape(str(kept))}, so you "
-                "can compare if anything looks wrong. It holds a copy of your "
-                "config, secrets included, and the next migration replaces it."
-            )
-    else:
-        console.print(
-            f"[green]Already at schema v{migrations.CURRENT_VERSION}.[/green]"
-        )
+        return True     # unreadable; the daemon's upgrade will say why
 
 
 @app.command()

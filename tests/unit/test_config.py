@@ -462,7 +462,7 @@ class TestAConfigThatWillNotLoad:
 
     def test_construction_does_not_raise(self, config_manager):
         # The CLI builds a manager at import. Raising here would take down every
-        # command, including `holm migrate` and `holm version`.
+        # command, including `holm status` and `holm version`.
         self._break("{ not valid json")
         manager = _cfg.ConfigManager()
         with pytest.raises(_cfg.ConfigError):

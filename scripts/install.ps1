@@ -1,8 +1,8 @@
 $ErrorActionPreference = "Stop"
 
 # Run by `holm update` from 0.1.0 or 0.1.1, this script inherits PyInstaller's
-# bookkeeping from that frozen binary. With it, the NEW `holm migrate` below
-# takes itself for a child of the old `holm update` and loads the old build's
+# bookkeeping from that frozen binary. With it, a NEW `holm` started from here
+# would take itself for a child of the old `holm update` and load the old build's
 # unpacked libraries instead of its own. Later releases start it without.
 # Which file that updater reads its modules from is kept first — see
 # Stop-OldUpdater.
@@ -194,37 +194,6 @@ try {
     $daemonSource = Join-Path $sourceDir "holmd.exe"
     if (Test-Path $daemonSource) { Install-Binary $daemonSource $installDir "holmd.exe" }
 
-    # ── Migrate the on-disk state ──────────────────────────────────────
-
-    # Run by the NEWLY installed binary, not the one that started this script: the
-    # process running `holm update` is the old version and cannot contain the new
-    # schema steps. The daemon was stopped above and is not registered again until
-    # later, so nothing is reading or writing the state while this runs.
-    $holmExe = Join-Path $installDir "holm.exe"
-    # PowerShell 7.4+ turns $PSNativeCommandUseErrorActionPreference on by default,
-    # which combines with the $ErrorActionPreference="Stop" at the top of this file
-    # to make a non-zero exit from a native command throw. That would abort the
-    # script here and print a PowerShell error record instead of the message below.
-    # On Windows PowerShell 5.1 the variable does not exist and $LASTEXITCODE alone
-    # is already correct, so this is a no-op there.
-    $prevNative = $null
-    if (Test-Path Variable:PSNativeCommandUseErrorActionPreference) {
-        $prevNative = $PSNativeCommandUseErrorActionPreference
-        $PSNativeCommandUseErrorActionPreference = $false
-    }
-    & $holmExe migrate
-    $migrateExit = $LASTEXITCODE
-    if ($null -ne $prevNative) { $PSNativeCommandUseErrorActionPreference = $prevNative }
-
-    if ($migrateExit -ne 0) {
-        Write-Host "[x] Could not migrate the Steerholm state." -ForegroundColor Red
-        Write-Host "    The new binary is installed but the state was not migrated," -ForegroundColor Red
-        Write-Host "    so the daemon will refuse to start against it. Fix the cause" -ForegroundColor Red
-        Write-Host "    above, then re-run this installer." -ForegroundColor Red
-        if ($tmpDir -and (Test-Path $tmpDir)) { Remove-Item $tmpDir -Recurse -Force }
-        Exit-Installer 1
-    }
-
     # Sweep leftover *.old images from prior self-updates (the current update's
     # holm.exe.old is still locked by the running updater and is cleared next run).
     Remove-Item (Join-Path $installDir "*.old") -Force -ErrorAction SilentlyContinue
@@ -288,6 +257,10 @@ try {
             Info "Registered logon task; daemon running on 127.0.0.1:4767"
         } else {
             Warn "Registered logon task, but the daemon is not listening on 127.0.0.1:4767 yet."
+            # It upgrades the stored data before it opens its port, and says in
+            # its log if that failed. Show the end of it.
+            $daemonLog = Join-Path $env:APPDATA "steerholm\daemon.log"
+            if (Test-Path $daemonLog) { Get-Content $daemonLog -Tail 10 }
             # The task runs only in a signed-in Windows session; an SSH session is not
             # one, so `holm start` from it cannot start the task either.
             Warn "It runs only while you are signed in to Windows (at the console or over Remote Desktop),"

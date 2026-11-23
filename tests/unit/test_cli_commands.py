@@ -1,5 +1,4 @@
 """Coverage for the CLI commands and helpers in steerholm.main."""
-import inspect
 import json
 import sys
 from unittest.mock import MagicMock, patch
@@ -640,14 +639,16 @@ def test_status_unsupported(monkeypatch):
 # ─── serve ──────────────────────────────────────────────────────────
 
 
-def test_serve_constructs_and_runs(monkeypatch):
-    gw = MagicMock()
-    monkeypatch.setattr("steerholm.gateway.SteerholmGateway", lambda: gw)
+def test_serve_runs_the_daemon_on_the_port_given(monkeypatch):
     ran = {}
-    monkeypatch.setattr("asyncio.run", lambda coro: ran.setdefault("called", True))
+
+    async def run_daemon(host, port):
+        ran.update(host=host, port=port)
+
+    monkeypatch.setattr("steerholm.gateway.run_daemon", run_daemon)
     result = runner.invoke(app, ["serve", "--port", "5001"])
     assert result.exit_code == 0
-    assert ran.get("called")
+    assert ran == {"host": "127.0.0.1", "port": 5001}
 
 
 # ─── remaining branches ─────────────────────────────────────────────
@@ -1229,33 +1230,6 @@ def test_remove_server_silent_when_no_grants(cli, monkeypatch):
     assert "Also revoked" not in result.output
 
 
-def test_migrate_is_hidden_but_runnable(cli):
-    # Hidden because a user should never need to think about it; the installer
-    # runs it. Contributors installing from source are told about it in the docs.
-    assert "migrate" not in runner.invoke(app, ["--help"]).output
-    result = runner.invoke(app, ["migrate"])
-    assert result.exit_code == 0
-    assert "already at schema" in " ".join(result.output.lower().split())
-
-
-def test_migrate_reports_the_steps_it_applied(cli):
-    import json
-    import steerholm.config as _c
-    from steerholm.migrations import MigrationStore
-
-    _c.CONFIG_FILE.write_text(json.dumps({
-        "servers": {"git": {"name": "git", "command": "echo"}}, "agents": {}}))
-    MigrationStore(_c.CONFIG_DIR).version_file.unlink()
-
-    result = runner.invoke(app, ["migrate"])
-
-    assert result.exit_code == 0
-    assert "migrated" in " ".join(result.output.lower().split())
-    from steerholm import migrations
-    steps = migrations.CURRENT_VERSION
-    assert f"{steps} step" in " ".join(result.output.split())
-
-
 def test_a_command_refuses_against_unmigrated_state(cli):
     import json
     import steerholm.config as _c
@@ -1268,78 +1242,6 @@ def test_a_command_refuses_against_unmigrated_state(cli):
 
     assert result.exit_code == 1
     assert "schema" in " ".join(result.output.split())
-
-
-def test_migrate_reports_a_failure_rather_than_tracebacking(cli, monkeypatch):
-    from steerholm import migrations
-
-    monkeypatch.setattr(migrations, "run",
-                        lambda root: (_ for _ in ()).throw(
-                            migrations.MigrationError("disk full")))
-
-    result = runner.invoke(app, ["migrate"])
-
-    assert result.exit_code == 1
-    assert "disk full" in result.output
-
-
-def test_migrate_refuses_while_the_daemon_is_running(cli, monkeypatch):
-    # The swap moves config.json aside and back; a daemon reloading in that
-    # window reads an absent config and tears down every running server.
-    monkeypatch.setattr(m, "_port_in_use", lambda *a, **k: True)
-    result = runner.invoke(app, ["migrate"])
-    assert result.exit_code == 1
-    assert "holm stop" in result.output
-
-
-class TestPortInUse:
-    """Real sockets: the point is what each OS answers, not what we assume."""
-
-    def test_a_listener_holds_the_port_even_when_it_never_answers(self):
-        # `_daemon_up` reads a daemon too busy to answer as absent. Migrating on
-        # that guess moves config.json out from under a live daemon.
-        import socket
-        with socket.socket() as listener:
-            listener.bind(("127.0.0.1", 0))
-            listener.listen()        # never accepts
-            assert m._port_in_use("127.0.0.1", listener.getsockname()[1])
-
-    def test_a_closed_port_is_free_at_once(self):
-        # Asked by connecting, Windows took ~2s to refuse and the check gave up
-        # first, stopping every Windows install at migrate.
-        import socket
-        import time
-        with socket.socket() as s:
-            s.bind(("127.0.0.1", 0))
-            port = s.getsockname()[1]
-        started = time.monotonic()
-        assert not m._port_in_use("127.0.0.1", port)
-        assert time.monotonic() - started < 0.5
-
-    def test_connections_left_by_a_stopped_daemon_do_not_hold_it(self):
-        # The installer stops the daemon and migrates straight after; the
-        # closed connections sit in TIME_WAIT on the server side.
-        import socket
-        with socket.socket() as listener:
-            if sys.platform != "win32":
-                # As the daemon's: uvicorn listens through asyncio, which sets
-                # this on POSIX. Linux only lets a bind past TIME_WAIT when the
-                # socket that left it had it too.
-                listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            listener.bind(("127.0.0.1", 0))
-            listener.listen()
-            port = listener.getsockname()[1]
-            client = socket.create_connection(("127.0.0.1", port))
-            served, _ = listener.accept()
-            served.close()           # server closes first: TIME_WAIT is on its side
-            client.close()
-        assert not m._port_in_use("127.0.0.1", port)
-
-
-def test_migrate_proceeds_when_nothing_holds_the_port(cli):
-    # conftest points DEFAULT_PORT at 0, which always binds.
-    result = runner.invoke(app, ["migrate"])
-    assert result.exit_code == 0
 
 
 def test_service_commands_are_not_schema_gated(cli):
@@ -1355,56 +1257,6 @@ def test_service_commands_are_not_schema_gated(cli):
     for command in ("stop", "status"):
         result = runner.invoke(app, [command])
         assert "schema" not in " ".join(result.output.split()).lower(), command
-
-
-class TestUpdateFinishesAnInterruptedMigration:
-    """The binary can be current while the state is not."""
-
-    def _already_current(self):
-        from steerholm.updater import ReleaseInfo
-        return ReleaseInfo(tag="v9.9.9", asset=None, update_available=False)
-
-    def test_it_migrates_instead_of_reporting_all_is_well(self, cli, monkeypatch):
-        # Otherwise an interrupted migration strands the user: every other
-        # command refuses and points at the installer, while `update` — the
-        # command they would reach for — says there is nothing to do.
-        import json
-        import steerholm.config as _c
-        from steerholm.migrations import MigrationStore
-
-        MigrationStore(_c.CONFIG_DIR).version_file.unlink()
-        _c.CONFIG_FILE.write_text(json.dumps({"servers": {}, "agents": {}}))
-        monkeypatch.setattr(m, "update_binary", lambda **k: self._already_current())
-        monkeypatch.setattr(m, "_port_in_use", lambda *a, **k: False)
-
-        result = runner.invoke(app, ["update"])
-
-        assert result.exit_code == 0
-        assert "still behind" in result.output
-        from steerholm import migrations
-        assert MigrationStore(_c.CONFIG_DIR).version == migrations.CURRENT_VERSION
-
-    def test_it_refuses_while_something_holds_the_port(self, cli, monkeypatch):
-        import json
-        import steerholm.config as _c
-        from steerholm.migrations import MigrationStore
-
-        MigrationStore(_c.CONFIG_DIR).version_file.unlink()
-        _c.CONFIG_FILE.write_text(json.dumps({"servers": {}, "agents": {}}))
-        monkeypatch.setattr(m, "update_binary", lambda **k: self._already_current())
-        monkeypatch.setattr(m, "_port_in_use", lambda *a, **k: True)
-
-        result = runner.invoke(app, ["update"])
-
-        assert result.exit_code == 1
-        assert "holm stop" in result.output
-
-    def test_a_current_state_is_left_alone(self, cli, monkeypatch):
-        monkeypatch.setattr(m, "update_binary", lambda **k: self._already_current())
-        result = runner.invoke(app, ["update"])
-        assert result.exit_code == 0
-        assert "still behind" not in result.output
-
 
 
 def _serve_must_not_start(monkeypatch):
@@ -1430,14 +1282,34 @@ class TestSchemaGateExitCodes:
 
     def test_serve_exits_with_the_code_the_unit_will_not_restart_on(self, cli, monkeypatch):
         # ExecStart=holm serve, Restart=on-failure, RestartSec=5. Exiting 1 here
-        # loops every five seconds forever; only `holm migrate` can fix it.
+        # loops every five seconds forever; data the daemon cannot upgrade —
+        # here, from a newer build — is not fixed by restarting.
+        import steerholm.config as _c
+        from steerholm import migrations
         from steerholm.config import EX_CONFIG
 
-        self._behind()
+        migrations.MigrationStore(_c.CONFIG_DIR).version = migrations.CURRENT_VERSION + 1
         _serve_must_not_start(monkeypatch)
         result = runner.invoke(app, ["serve"])
 
         assert result.exit_code == EX_CONFIG == 78
+        assert "Could not upgrade the stored data" in " ".join(result.output.split())
+
+    def test_serve_upgrades_data_that_is_behind_then_serves(self, cli, monkeypatch):
+        import steerholm.config as _c
+        from steerholm import migrations
+
+        self._behind()
+        served = []
+
+        async def serve(gateway, host, port):
+            served.append(migrations.resolve_version(migrations.MigrationStore(_c.CONFIG_DIR)))
+
+        monkeypatch.setattr("steerholm.gateway.SteerholmGateway.serve", serve)
+        result = runner.invoke(app, ["serve"])
+
+        assert result.exit_code == 0, result.output
+        assert served == [migrations.CURRENT_VERSION]   # upgraded before it served
 
     def test_an_ordinary_command_still_exits_one(self, cli):
         self._behind()
@@ -1445,23 +1317,39 @@ class TestSchemaGateExitCodes:
         assert result.exit_code == 1
 
 
-def test_start_is_schema_gated_so_it_cannot_claim_success(cli):
-    # `systemctl start` returns as soon as a Type=simple unit forks, so this
-    # printed "Daemon started." and exited 0 while `holm serve` was already
-    # exiting EX_CONFIG. The installer never calls it — it starts the service
-    # directly, after migrating — so gating it breaks no recovery path.
+def test_start_is_let_through_when_the_data_is_behind(cli, monkeypatch):
+    # The daemon it starts upgrades the data, so refusing would leave no way on.
     import json
+    import subprocess
     import steerholm.config as _c
     from steerholm.migrations import MigrationStore
 
     MigrationStore(_c.CONFIG_DIR).version_file.unlink()
     _c.CONFIG_FILE.write_text(json.dumps({"servers": {}, "agents": {}}))
+    started = []
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: started.append(a[0]) or
+                        subprocess.CompletedProcess(a[0], 0, "", ""))
+    monkeypatch.setattr(m, "_daemon_up", lambda *a, **k: True)
 
+    result = runner.invoke(app, ["start"])
+
+    assert "schema v0" not in result.output
+    assert started                                   # the service manager was asked
+
+
+def test_start_is_refused_against_data_it_cannot_fix(cli):
+    # `systemctl start` returns as soon as a Type=simple unit forks, so against
+    # data from a newer build it would print "Daemon started." while the daemon
+    # was already exiting.
+    import steerholm.config as _c
+    from steerholm import migrations
+
+    migrations.MigrationStore(_c.CONFIG_DIR).version = migrations.CURRENT_VERSION + 1
     result = runner.invoke(app, ["start"])
 
     assert result.exit_code == 1
     assert "Daemon started" not in result.output
-    assert "schema v0" in result.output
+    assert "Upgrade Steerholm" in result.output
 
 
 class TestServiceUnitMatchesTheCode:
@@ -1497,28 +1385,12 @@ class TestServiceUnitMatchesTheCode:
         assert launched.endswith(" serve") or launched.endswith("holmd"), (
             f"ExecStart runs {launched!r}, which no test covers for EX_CONFIG")
 
-    def test_the_command_the_unit_runs_is_schema_gated(self):
-        # If `serve` were exempt it would start against a schema it cannot read
-        # and fail later, in the daemon log, instead of at once.
-        import re
-
-        import steerholm.main as main
-        text = self._unit().read_text()
-        launched = re.search(r"^ExecStart=(.+)$", text, re.M).group(1).strip()
-        if not launched.endswith(" serve"):
-            pytest.skip("this unit does not go through the CLI")
-        source = inspect.getsource(main._root)
-        exemptions = re.search(r"invoked_subcommand not in \(([^)]*)\)", source, re.S).group(1)
-        assert '"serve"' not in exemptions
-
-
 class TestInstallersInvokeRealCommands:
     """The installers name CLI subcommands as strings in two other languages.
 
-    Nothing links them to the Python. `migrate` is hidden, so it does not even
-    appear in `--help` — if it were renamed or dropped, both installers would
-    fail at the point where they have already swapped the binary and stopped the
-    daemon, which is the worst moment to find out.
+    Nothing links them to the Python, so a command they call that was renamed or
+    dropped would fail mid-install, after the binary was swapped and the daemon
+    stopped — the worst moment to find out.
     """
 
     def _scripts(self):
@@ -1538,7 +1410,6 @@ class TestInstallersInvokeRealCommands:
         # [^\S\n] not \s: the latter spans the newline and grabs the first word
         # of the following line.
         called = set(re.findall(r'(?:\$HOLM_BIN|\$\{INSTALL_DIR\}/holm)"?[^\S\n]+([a-z-]+)', sh))
-        assert called, "no CLI invocations found — has the installer changed shape?"
         missing = called - self._names()
         assert not missing, f"install.sh calls commands that do not exist: {missing}"
 
@@ -1548,15 +1419,8 @@ class TestInstallersInvokeRealCommands:
         ps1 = self._scripts()[1].read_text()
         called = set(re.findall(r'&[^\S\n]+\$\w*[Ee]xe[^\S\n]+([a-z-]+)', ps1))
         called |= set(re.findall(r'-Argument\s+"([a-z-]+)"', ps1))
-        assert called, "no CLI invocations found — has the installer changed shape?"
         missing = called - self._names()
         assert not missing, f"install.ps1 calls commands that do not exist: {missing}"
-
-    def test_migrate_is_hidden_but_present(self):
-        # Hidden on purpose — the installer runs it and a user should not need
-        # to think about it — which is exactly why --help cannot vouch for it.
-        assert "migrate" in self._names()
-
 
 @pytest.mark.skipif(sys.platform == "win32", reason="install.sh is the Unix installer")
 class TestInstallerUndoesAnOldBinarysLibraryPath:
@@ -1594,7 +1458,7 @@ class TestInstallerUndoesAnOldBinarysLibraryPath:
         assert self._run_preamble({"LD_LIBRARY_PATH": "/opt/lib"}) == "/opt/lib|unset|0"
 
     def test_drops_pyinstallers_bookkeeping(self):
-        # With it, the new `holm migrate` the installer runs reuses the old
+        # With it, a new `holm` started from the installer reuses the old
         # build's unpacked libraries and crashes.
         out = self._run_preamble({"_PYI_APPLICATION_HOME_DIR": "/tmp/_MEIabc",
                                   "_PYI_ARCHIVE_FILE": "/home/u/.local/bin/holm",
@@ -1609,7 +1473,7 @@ class TestInstallerEndsAnOldUpdater:
     the installer replaces, so its next import after the swap died with
     zlib.error. The installer ends it once the new binary is in place."""
 
-    def _run(self, tmp_path, *, inherited_archive=None, migrate_exit=0):
+    def _run(self, tmp_path, *, inherited_archive=None, fail_after_swap=False):
         import os
         import shutil
         import subprocess
@@ -1627,10 +1491,10 @@ class TestInstallerEndsAnOldUpdater:
         for name, code in {"systemctl": 0, "launchctl": 0, "curl": 7}.items():
             (stubs / name).write_text(f"#!/bin/sh\nexit {code}\n")
             (stubs / name).chmod(0o755)
-        # The new binary: only `holm migrate` is run.
+        # The new binary: the installer itself never runs it.
         new = tmp_path / "pkg" / "holm"
         new.parent.mkdir()
-        new.write_text(f"#!/bin/sh\nexit {migrate_exit}\n")
+        new.write_text("#!/bin/sh\nexit 0\n")
         new.chmod(0o755)
         archive = tmp_path / "new.tar.gz"
         with tarfile.open(archive, "w:gz") as tar:
@@ -1642,7 +1506,14 @@ class TestInstallerEndsAnOldUpdater:
 
         env = {k: v for k, v in os.environ.items() if not k.startswith("_PYI_")}
         env.update(HOME=str(home), PATH=f"{stubs}:{env['PATH']}",
-                   STEERHOLM_LOCAL_ARCHIVE=str(archive), STEERHOLM_NO_SERVICE="1")
+                   STEERHOLM_LOCAL_ARCHIVE=str(archive))
+        if fail_after_swap:
+            # Registering the service needs these directories; a file in the way
+            # makes the install fail after the binary was swapped.
+            (home / ".config").write_text("in the way")
+            (home / "Library").write_text("in the way")
+        else:
+            env["STEERHOLM_NO_SERVICE"] = "1"
         if inherited_archive is not None:
             env["_PYI_ARCHIVE_FILE"] = str(inherited_archive(bindir))
         # Stands in for the updater: waits for the installer, then carries on.
@@ -1662,7 +1533,7 @@ class TestInstallerEndsAnOldUpdater:
     def test_ends_it_too_when_the_install_fails_after_the_swap(self, tmp_path):
         # Its error report would be an import from the replaced file as well.
         import signal
-        parent, _ = self._run(tmp_path, inherited_archive=lambda b: b / "holm", migrate_exit=1)
+        parent, _ = self._run(tmp_path, inherited_archive=lambda b: b / "holm", fail_after_swap=True)
         assert parent.returncode == -signal.SIGTERM
         assert "UPDATER-CARRIED-ON" not in parent.stdout
         assert "Updated Steerholm to" not in parent.stdout
