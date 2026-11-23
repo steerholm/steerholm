@@ -1,0 +1,1 @@
+ERROR    steerholm:gateway.py:888 Another Steerholm daemon is already running for this account.

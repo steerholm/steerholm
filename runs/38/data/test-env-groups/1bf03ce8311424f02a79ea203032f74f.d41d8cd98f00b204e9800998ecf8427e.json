@@ -1,0 +1,1 @@
+{"id":"1bf03ce8311424f02a79ea203032f74f.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands#test_grant_with_an_empty_tool_pattern_does_not_grant_every_tool","name":"test_grant_with_an_empty_tool_pattern_does_not_grant_every_tool","status":"passed","testResultsByEnv":{"default":"98ad70b904c008ea889b8982c349412b"}}

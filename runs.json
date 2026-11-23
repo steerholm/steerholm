@@ -1,5 +1,16 @@
 [
   {
+    "run_number": 38,
+    "run_id": "45221680334",
+    "date": "2026-11-23T17:09:49Z",
+    "ref": "stage1/log-group",
+    "commit": "f26d24325b3c9d42af3a6a6f3e36d378db3e429a",
+    "trigger": "workflow_dispatch",
+    "passed": 2294,
+    "failed": 0,
+    "skipped": 36
+  },
+  {
     "run_number": 37,
     "run_id": "45032119867",
     "date": "2026-11-22T14:24:34Z",
