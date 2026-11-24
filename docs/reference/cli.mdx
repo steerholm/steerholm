@@ -416,9 +416,9 @@ holm version
 
 Update Steerholm in place from a GitHub release (the latest by default). It
 downloads the release's install script, verifies it against the published
-checksums, and runs it — which installs the new binary, brings your stored data up
-to the new version's format, and restarts the daemon. Pre-releases are never
-installed unless you name one with `--tag`.
+checksums, and runs it — which installs the new binary and restarts the daemon,
+which brings your stored data up to the new version's format as it starts.
+Pre-releases are never installed unless you name one with `--tag`.
 
 ```bash
 holm update               # install the latest release

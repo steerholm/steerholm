@@ -57,8 +57,9 @@ holm update
 ```
 
 It downloads the new release's installer, verifies it, and runs it: the daemon is
-stopped, the binary replaced, your stored data brought up to the new version's
-format, and the daemon started again. Servers, agents, keys and grants carry over.
+stopped, the binary replaced, and the daemon started again — and when it starts,
+the new daemon brings your stored data up to the new version's format. Servers,
+agents, keys and grants carry over.
 
 Use `holm update --check` to see whether a newer version is available without installing, and `holm version` to print the installed version. See the [CLI reference](/reference/cli) for all options.
 

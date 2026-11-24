@@ -1451,3 +1451,32 @@ def test_data_the_daemon_cannot_upgrade_stops_it_with_the_reason(config_manager)
     MigrationStore(_cfg.CONFIG_DIR).version = migrations.CURRENT_VERSION + 1
     with pytest.raises(SchemaError, match="Could not upgrade the stored data.*no reverse migrations"):
         upgrade_state()
+
+
+@pytest.mark.asyncio
+async def test_the_daemon_does_not_upgrade_under_one_holding_the_port(config_manager):
+    # Perhaps an older daemon, which would then read data it does not understand.
+    import socket
+    from steerholm.gateway import run_daemon
+
+    _v0_state(_cfg.CONFIG_DIR)
+    MigrationStore(_cfg.CONFIG_DIR).version_file.unlink()
+    with socket.socket() as held:
+        held.bind(("127.0.0.1", 0))
+        held.listen()
+        with pytest.raises(SystemExit):
+            await run_daemon("127.0.0.1", held.getsockname()[1])
+    assert not MigrationStore(_cfg.CONFIG_DIR).version_file.exists()     # untouched
+
+
+@pytest.mark.asyncio
+async def test_the_daemon_does_not_upgrade_under_one_holding_the_channel(config_manager, monkeypatch):
+    from steerholm import admin
+    from steerholm.gateway import run_daemon
+
+    _v0_state(_cfg.CONFIG_DIR)
+    MigrationStore(_cfg.CONFIG_DIR).version_file.unlink()
+    monkeypatch.setattr(admin, "_channel_answers", lambda: True)
+    with pytest.raises(SystemExit):
+        await run_daemon("127.0.0.1", 0)
+    assert not MigrationStore(_cfg.CONFIG_DIR).version_file.exists()     # untouched

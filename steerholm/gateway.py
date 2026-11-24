@@ -22,7 +22,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from . import __version__
-from .admin import AdminServer, ChannelInUse, channel_name
+from .admin import AdminServer, ChannelInUse, channel_name, refuse_if_taken
 from .config import ConfigError, ConfigManager
 from .errors import AUTHORIZATION_DENIED_CODE, authorization_denied, server_unavailable
 from .events import DecisionEvent, EventLog, now_iso, read_events, summarize_args
@@ -153,8 +153,38 @@ def upgrade_state() -> None:
 
 async def run_daemon(host: str, port: int) -> None:
     """Upgrade the stored data, then serve. What `holm serve` and holmd run."""
+    # Before touching the data: another daemon may be serving it — perhaps an
+    # older version, which would then read data it does not understand. serve()
+    # checks again when it takes the port and the channel.
+    _refuse_if_port_taken(host, port)
+    try:
+        refuse_if_taken()
+    except ChannelInUse as e:
+        logger.error(str(e))
+        raise SystemExit(1)
     upgrade_state()
     await SteerholmGateway().serve(host, port)
+
+
+def _refuse_if_port_taken(host: str, port: int) -> None:
+    """Exit if something already holds host:port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        # SO_REUSEADDR lets the daemon rebind over a predecessor's TIME_WAIT
+        # sockets after a restart (e.g. `holm update`) — without it this bind
+        # fails EADDRINUSE for ~60s after the old daemon served traffic, even
+        # though nothing is listening. Unix only: on Windows SO_REUSEADDR has
+        # port-hijack semantics (uvicorn's own bind sets it the same way).
+        if os.name != "nt":
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, port))
+        except OSError as e:
+            if e.errno in (98, 48, 10048):
+                logger.error(f"Port {port} is already in use. Is another Steerholm instance running?")
+                logger.error("Check with: holm status")
+                logger.error("Or use a different port: holm serve --port <port>")
+                raise SystemExit(1)
+            raise
 
 
 class SteerholmGateway:
@@ -887,23 +917,7 @@ class SteerholmGateway:
         except OSError as e:
             logger.warning(f"Could not remove the old control token: {e}")
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            # SO_REUSEADDR lets the daemon rebind over a predecessor's TIME_WAIT
-            # sockets after a restart (e.g. `holm update`) — without it this bind
-            # fails EADDRINUSE for ~60s after the old daemon served traffic, even
-            # though nothing is listening. Unix only: on Windows SO_REUSEADDR has
-            # port-hijack semantics (uvicorn's own bind sets it the same way).
-            if os.name != "nt":
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            try:
-                sock.bind((host, port))
-            except OSError as e:
-                if e.errno in (98, 48, 10048):
-                    logger.error(f"Port {port} is already in use. Is another Steerholm instance running?")
-                    logger.error("Check with: holm status")
-                    logger.error("Or use a different port: holm serve --port <port>")
-                    raise SystemExit(1)
-                raise
+        _refuse_if_port_taken(host, port)
 
         app = self.create_asgi_app(host, port)
 

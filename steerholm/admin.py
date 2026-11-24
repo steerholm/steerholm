@@ -175,14 +175,7 @@ class AdminServer:
     async def start(self) -> None:
         """Open the channel. Raises ChannelInUse when another daemon serves it:
         a second daemon on another port must not take the CLI's channel over."""
-        if _channel_answers():
-            # The pipe name is machine-wide; the socket lives in this account's
-            # state directory.
-            where = "on this machine" if os.name == "nt" else "for this account"
-            raise ChannelInUse(
-                f"Another Steerholm daemon is already running {where}. "
-                "Check with holm status."
-            )
+        refuse_if_taken()
         if os.name == "nt":
             loop = asyncio.get_running_loop()
 
@@ -354,6 +347,18 @@ def _lines(read):
         while b"\n" in buf:
             line, _, buf = buf.partition(b"\n")
             yield line
+
+
+def refuse_if_taken() -> None:
+    """Raise ChannelInUse if another daemon already serves the admin channel."""
+    if _channel_answers():
+        # The pipe name is machine-wide; the socket lives in this account's
+        # state directory.
+        where = "on this machine" if os.name == "nt" else "for this account"
+        raise ChannelInUse(
+            f"Another Steerholm daemon is already running {where}. "
+            "Check with holm status."
+        )
 
 
 def _channel_answers() -> bool:
