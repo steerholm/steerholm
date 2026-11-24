@@ -969,3 +969,30 @@ def test_an_agent_without_an_id_holds_no_policy_to_change(config_manager):
     config_manager.add_agent("legacy")
     config_manager.config.agents["legacy"].id = None
     assert config_manager._policy_for_change("legacy") is None
+
+
+# ─── the loaded configuration changes only once it is saved ─────────
+
+
+def test_a_change_that_fails_to_save_leaves_the_loaded_config_as_it_was(config_manager, monkeypatch):
+    import steerholm.config as config_mod
+
+    def full_disk(path, text, mode=0o600):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(config_mod, "write_atomic", full_disk)
+    for change in (lambda: config_manager.add_server("git", command="x"),
+                   lambda: config_manager.add_agent("coder"),
+                   lambda: config_manager.set_audit_settings(max_files=9)):
+        with pytest.raises(OSError):
+            change()
+    assert config_manager.config.servers == {}
+    assert config_manager.config.agents == {}
+    assert config_manager.config.audit.max_files != 9
+
+
+def test_a_retention_change_with_one_bad_value_changes_nothing(config_manager):
+    before = config_manager.config.audit.model_copy()
+    with pytest.raises(ValueError, match="age cannot be negative"):
+        config_manager.set_audit_settings(max_files=9, max_age_days=-1)
+    assert config_manager.config.audit == before

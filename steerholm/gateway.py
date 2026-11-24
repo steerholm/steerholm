@@ -23,7 +23,7 @@ from starlette.routing import Route
 
 from . import __version__
 from .admin import AdminServer, ChannelInUse, channel_name, refuse_if_taken
-from .config import ConfigError, ConfigManager
+from .config import ConfigManager
 from .errors import AUTHORIZATION_DENIED_CODE, authorization_denied, server_unavailable
 from .events import DecisionEvent, EventLog, now_iso, read_events, summarize_args
 from .models import AgentPolicy
@@ -287,11 +287,7 @@ class SteerholmGateway:
         token = self._extract_bearer_token(authorization)
         if not token:
             return None
-        self.config_manager.reload()
-        try:
-            return self._resolve_agent_from_token(token)
-        except ConfigError:
-            return None  # no config, no agents: deny (reload() logged why)
+        return self._resolve_agent_from_token(token)
 
     def _load_agent_policy(self, agent_name: str) -> AgentPolicy:
         policy = self.config_manager.load_policy(agent_name)
@@ -611,7 +607,6 @@ class SteerholmGateway:
         return plan
 
     async def _admin_add_server(self, caller: str, args: dict) -> dict:
-        self._load_for_admin()
         self.config_manager.add_server(
             args.get("name"), command=args.get("command"), url=args.get("url"),
             env=args.get("env") or {},
@@ -619,7 +614,6 @@ class SteerholmGateway:
         return self._apply_server_changes()
 
     async def _admin_modify_server(self, caller: str, args: dict) -> dict:
-        self._load_for_admin()
         name = args.get("name")
         before = self.config_manager.get_server(name)
         if before is None:
@@ -644,13 +638,11 @@ class SteerholmGateway:
         }
 
     async def _admin_remove_server(self, caller: str, args: dict) -> dict:
-        self._load_for_admin()
         revoked, unreadable = self.config_manager.remove_server(args.get("name"))
         return {"revoked": revoked, "unreadable": unreadable,
                 "plan": self._apply_server_changes()}
 
     async def _admin_list_servers(self, caller: str, args: dict) -> list:
-        self._load_for_admin()
         status = self.server_status()
         return [
             {
@@ -661,7 +653,6 @@ class SteerholmGateway:
         ]
 
     async def _admin_show_server(self, caller: str, args: dict) -> dict:
-        self._load_for_admin()
         name = args.get("name")
         server = self.config_manager.get_server(name)
         if server is None:
@@ -684,14 +675,12 @@ class SteerholmGateway:
         }
 
     async def _admin_list_agents(self, caller: str, args: dict) -> list:
-        self._load_for_admin()
         return [
             {"name": name, "key_prefix": agent.key_prefix}
             for name, agent in self.config_manager.config.agents.items()
         ]
 
     async def _admin_show_agent(self, caller: str, args: dict) -> dict:
-        self._load_for_admin()
         name = args.get("name")
         agent = self.config_manager.get_agent(name)
         if agent is None:
@@ -721,7 +710,6 @@ class SteerholmGateway:
     async def _admin_log_config(self, caller: str, args: dict) -> dict:
         from .config import CONFIG_DIR
         from .events import MAX_SEGMENT_BYTES, SEGMENT_PREFIX, SEGMENT_SUFFIX
-        self._load_for_admin()
         audit = self.config_manager.config.audit
         return {
             "files": str(CONFIG_DIR / f"{SEGMENT_PREFIX}*{SEGMENT_SUFFIX}"),
@@ -731,20 +719,16 @@ class SteerholmGateway:
         }
 
     async def _admin_add_agent(self, caller: str, args: dict) -> dict:
-        self._load_for_admin()
         # The key exists only in this answer; the daemon keeps its hash.
         return {"key": self.config_manager.add_agent(args.get("name"))}
 
     async def _admin_rotate_agent(self, caller: str, args: dict) -> dict:
-        self._load_for_admin()
         return {"key": self.config_manager.rotate_agent_key(args.get("name"))}
 
     async def _admin_remove_agent(self, caller: str, args: dict) -> None:
-        self._load_for_admin()
         self.config_manager.remove_agent(args.get("name"))
 
     async def _admin_grant(self, caller: str, args: dict) -> None:
-        self._load_for_admin()
         self.config_manager.grant_permission(
             # Only an absent tool means every tool; an empty pattern matches none.
             args.get("agent"), args.get("server"), tool=args.get("tool", "*"),
@@ -752,7 +736,6 @@ class SteerholmGateway:
         )
 
     async def _admin_revoke(self, caller: str, args: dict) -> dict:
-        self._load_for_admin()
         removed = self.config_manager.revoke_permission(
             args.get("agent"), args.get("server"), tool=args.get("tool"))
         return {"removed": removed}
@@ -786,7 +769,6 @@ class SteerholmGateway:
             self._log_followers.discard(queue)
 
     async def _admin_log_set(self, caller: str, args: dict) -> dict:
-        self._load_for_admin()
         audit = self.config_manager.set_audit_settings(
             max_files=args.get("max_files"), max_age_days=args.get("max_age_days"))
         self.event_log.configure(**self.config_manager.audit_kwargs())
@@ -812,15 +794,6 @@ class SteerholmGateway:
         return {"events": list(kept), "agent_ids": sorted(agent_ids),
                 "server_ids": sorted(server_ids)}
 
-    def _load_for_admin(self) -> None:
-        """Re-read the state for an admin request; a config that cannot be
-        loaded is the caller's answer, not a daemon failure."""
-        self.config_manager.reload()
-        try:
-            self.config_manager.verify_loaded()
-        except ConfigError as e:
-            raise ValueError(str(e)) from e
-
     async def _reconcile_loop(self, interval: float = 30.0):
         """Supervisor backstop: periodically restart servers whose session died,
         retry failed starts, and correct any drift — all without a daemon restart."""
@@ -828,10 +801,7 @@ class SteerholmGateway:
             await asyncio.sleep(interval)
             try:
                 await self._restart_unhealthy_servers()
-                self.config_manager.reload()
                 await self.reconcile_servers()
-            except ConfigError:
-                pass  # leave servers and retention as they are; reload() logged why
             except Exception as e:
                 logger.error(f"Periodic reconcile failed: {e}")
 
@@ -907,6 +877,8 @@ class SteerholmGateway:
         # Refuse rather than serve state this build may misread: an unmigrated
         # config reads as every agent having no grants.
         self.config_manager.verify_schema()
+        # Loaded once, here. Every change goes through this daemon, which keeps
+        # the configuration in memory and writes it; nothing else does.
         self.config_manager.reload()
         self.config_manager.verify_loaded()
         # Earlier versions left a credential here for the CLI; the admin channel

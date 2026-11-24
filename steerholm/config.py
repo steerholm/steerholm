@@ -3,6 +3,7 @@ import re
 import sys
 import json
 import logging
+from contextlib import contextmanager
 import secrets
 import string
 from pathlib import Path
@@ -285,16 +286,24 @@ class ConfigManager:
             raise self._load_error
 
     def save_config(self):
-        # Before the open, not left to `self.config` below: "w" empties the file
-        # first, and this must never write over one it could not read.
-        self.verify_loaded()
+        """Write the loaded configuration as it is."""
         write_atomic(CONFIG_FILE, self.config.model_dump_json(indent=2))
+
+    @contextmanager
+    def _change(self):
+        """Change a copy of the configuration; it replaces the loaded one only
+        once it is saved. The daemon holds the configuration in memory and is
+        the only writer, so a save that fails — a full disk — must leave its
+        copy as it was, not carry a change the file never got."""
+        draft = self.config.model_copy(deep=True)
+        yield draft
+        write_atomic(CONFIG_FILE, draft.model_dump_json(indent=2))
+        self._config = draft
 
     def reload(self):
         before = self._load_error
         self._load()
-        # The daemon reloads on every authentication, so report the transitions
-        # only — a line per tool call would bury the one that matters.
+        # Report the transitions only, not every failed load.
         if self._load_error is not None and str(self._load_error) != str(before):
             logger.error("%s Denying every request until it loads.", self._load_error)
         elif before is not None and self._load_error is None:
@@ -326,8 +335,8 @@ class ConfigManager:
             server = Server(name=name, id=_new_server_id(), url=url,
                             server_type=ServerType.http)
 
-        self.config.servers[name] = server
-        self.save_config()
+        with self._change() as config:
+            config.servers[name] = server
         return server
 
     def modify_server(self, name: str, command: str = None, url: str = None,
@@ -372,8 +381,8 @@ class ConfigManager:
                             url=existing.url, env=merged,
                             server_type=existing.server_type)
 
-        self.config.servers[name] = server
-        self.save_config()
+        with self._change() as config:
+            config.servers[name] = server
         return server
 
     # --- Audit log retention ---
@@ -389,17 +398,16 @@ class ConfigManager:
     def set_audit_settings(self, max_files: int = None,
                            max_age_days: int = None) -> AuditSettings:
         """Update audit-log retention. Only the values given are changed."""
-        audit = self.config.audit
-        if max_files is not None:
-            if max_files < 0:
-                raise ValueError("Maximum files cannot be negative (0 = no limit).")
-            audit.max_files = max_files
-        if max_age_days is not None:
-            if max_age_days < 0:
-                raise ValueError("Maximum age cannot be negative (0 = no limit).")
-            audit.max_age_days = max_age_days
-        self.save_config()
-        return audit
+        if max_files is not None and max_files < 0:
+            raise ValueError("Maximum files cannot be negative (0 = no limit).")
+        if max_age_days is not None and max_age_days < 0:
+            raise ValueError("Maximum age cannot be negative (0 = no limit).")
+        with self._change() as config:
+            if max_files is not None:
+                config.audit.max_files = max_files
+            if max_age_days is not None:
+                config.audit.max_age_days = max_age_days
+        return self.config.audit
 
     def remove_server(self, name: str) -> Tuple[List[str], List[str]]:
         """Remove a server and every grant on it. Returns the agents whose grants
@@ -430,8 +438,8 @@ class ConfigManager:
         for agent_name, policy in holders:
             del policy.permissions[server_id]
             self.save_policy(agent_name, policy)
-        del self.config.servers[name]
-        self.save_config()
+        with self._change() as config:
+            del config.servers[name]
         return [agent_name for agent_name, _ in holders], unreadable
 
     def agents_with_grants(self, server_name: str) -> List[str]:
@@ -471,11 +479,11 @@ class ConfigManager:
         if name in self.config.agents:
             raise ValueError(f"Agent '{name}' already exists.")
         access_key, key_hash = self._generate_access_key()
-        self.config.agents[name] = Agent(
-            name=name, id=_new_agent_id(), key_prefix=access_key[:15] + "...",
-            key_hash=key_hash,
-        )
-        self.save_config()
+        with self._change() as config:
+            config.agents[name] = Agent(
+                name=name, id=_new_agent_id(), key_prefix=access_key[:15] + "...",
+                key_hash=key_hash,
+            )
         return access_key
 
     def rotate_agent_key(self, name: str) -> str:
@@ -486,11 +494,11 @@ class ConfigManager:
         access_key, key_hash = self._generate_access_key()
         # Rotation is a new credential for the same principal — keep the id (and a
         # legacy agent's absent id stays absent; it's minted only at creation).
-        self.config.agents[name] = Agent(
-            name=name, id=self.config.agents[name].id,
-            key_prefix=access_key[:15] + "...", key_hash=key_hash,
-        )
-        self.save_config()
+        with self._change() as config:
+            config.agents[name] = Agent(
+                name=name, id=config.agents[name].id,
+                key_prefix=access_key[:15] + "...", key_hash=key_hash,
+            )
         return access_key
 
     def get_agent(self, name: str) -> Optional[Agent]:
@@ -518,8 +526,8 @@ class ConfigManager:
         else:
             stale.append(POLICIES_DIR / f"{name}.json")
 
-        del self.config.agents[name]
-        self.save_config()
+        with self._change() as config:
+            del config.agents[name]
         for policy_path in stale:
             if policy_path.exists():
                 try:

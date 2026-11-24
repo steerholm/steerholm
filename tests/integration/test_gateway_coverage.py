@@ -104,59 +104,6 @@ async def test_reconcile_reports_failed_stop(config_manager):
     assert result["failed"] == ["ghost"]
 
 
-@pytest.mark.asyncio
-async def test_periodic_reconcile_leaves_everything_alone_while_the_config_will_not_load(
-        config_manager, monkeypatch, caplog):
-    # Acting on an empty config would stop every running server and apply
-    # default audit retention, deleting history the user chose to keep.
-    import json
-    import steerholm.config as cfg
-    import steerholm.gateway as gw
-    config_manager.add_server("srv", command="echo")
-    config_manager.set_audit_settings(max_files=50)
-    gateway = make_gateway(config_manager)
-    gateway.event_log.configure(max_files=50)
-    gateway._restart_unhealthy_servers = AsyncMock()
-    gateway.daemon.shared_processes["srv"] = make_mock_process("srv", ["t"])
-    gateway.daemon.stop_shared_server = AsyncMock()
-    for i in range(1, 21):
-        (gateway.event_log.dir / f"events-{i:06d}.jsonl").write_text("{}\n")
-
-    data = json.loads(cfg.CONFIG_FILE.read_text())
-    data["serverz"] = {}
-    cfg.CONFIG_FILE.write_text(json.dumps(data))
-
-    calls = {"n": 0}
-
-    async def fake_sleep(_):
-        calls["n"] += 1
-        if calls["n"] > 3:
-            raise asyncio.CancelledError()
-
-    monkeypatch.setattr(gw.asyncio, "sleep", fake_sleep)
-    with caplog.at_level("ERROR"), pytest.raises(asyncio.CancelledError):
-        await gateway._reconcile_loop(interval=0)
-
-    gateway.daemon.stop_shared_server.assert_not_awaited()
-    assert "srv" in gateway.daemon.shared_processes
-    assert len(list(gateway.event_log.dir.glob("events-*.jsonl"))) == 20
-    assert "Periodic reconcile failed" not in caplog.text   # reload() reported it, once
-    assert caplog.text.count("cannot be loaded") == 1
-
-
-def test_authentication_is_denied_while_the_config_will_not_load(config_manager):
-    import json
-    import steerholm.config as cfg
-    token = config_manager.add_agent("a")
-    gateway = make_gateway(config_manager)
-    assert gateway._authenticate_authorization_header(f"Bearer {token}") == "a"
-
-    data = json.loads(cfg.CONFIG_FILE.read_text())
-    data["agentz"] = {}
-    cfg.CONFIG_FILE.write_text(json.dumps(data))
-    assert gateway._authenticate_authorization_header(f"Bearer {token}") is None
-
-
 # ─── supervisor / liveness ──────────────────────────────────────────
 
 
@@ -567,16 +514,6 @@ async def test_serve_refuses_when_another_daemon_has_the_admin_channel(config_ma
 
 
 @pytest.mark.asyncio
-async def test_an_admin_read_reports_an_unloadable_config(config_manager):
-    import steerholm.config as config_mod
-
-    gateway = make_gateway(config_manager)
-    config_mod.CONFIG_FILE.write_text("{ not json", encoding="utf-8")
-    with pytest.raises(ValueError, match="cannot be loaded"):
-        await gateway.admin_handlers()["list_agents"]("uid:0", {})
-
-
-@pytest.mark.asyncio
 async def test_serve_exits_cleanly_when_the_admin_channel_cannot_open(config_manager, monkeypatch, caplog):
     from steerholm import admin
 
@@ -607,3 +544,14 @@ async def test_serve_removes_the_old_control_token(config_manager, monkeypatch):
     with pytest.raises(SystemExit):
         await gateway.serve("127.0.0.1", 0)
     assert not stale.exists()
+
+
+def test_the_daemon_keeps_the_config_it_loaded(config_manager):
+    # Every change goes through the daemon, so it does not re-read the file on
+    # each request: an edit behind its back takes effect only on restart.
+    import steerholm.config as config_mod
+
+    key = config_manager.add_agent("coder")
+    gateway = make_gateway(config_manager)
+    config_mod.CONFIG_FILE.write_text('{"servers": {}, "agents": {}}', encoding="utf-8")
+    assert gateway._authenticate_authorization_header(f"Bearer {key}") == "coder"

@@ -96,12 +96,12 @@ Steerholm refuses to carry on rather than start from an empty configuration in
 its place. Nothing is written to the file while it is in this state, so fixing
 it restores everything as it was. `holm version`, `holm status`, `holm stop`
 and `holm update` still run; commands that read or change the configuration do
-not.
-A running daemon denies every request and leaves its servers running until the
-file loads again.
+not, and the daemon does not start.
 
-Fix the file, or move it aside to start fresh. Prefer the CLI over editing it
-directly.
+Fix the file, or move it aside to start fresh, then start the daemon with
+`holm start`. Prefer the CLI over editing the file directly: the daemon reads it
+only when it starts, so an edit made while it runs takes effect at the next
+restart.
 
 ## The daemon isn't running
 

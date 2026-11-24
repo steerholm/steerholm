@@ -23,6 +23,10 @@ tagging it. At tag time, rename `[Unreleased]` to the version and date.
   of the installer doing it, so an update arriving any other way upgrades it the
   same way. If the upgrade fails, the daemon stops with the reason in its log,
   and the installer shows the end of that log.
+- The daemon reads `config.json` once, when it starts, and keeps it in memory;
+  every change goes through it. A change that fails to save — a full disk —
+  leaves the daemon's configuration as it was. Editing the file by hand while
+  the daemon runs now takes effect at the next restart.
 
 ### Removed
 
