@@ -1,0 +1,1 @@
+ERROR    steerholm.admin:admin.py:223 Admin connection failed: no creds

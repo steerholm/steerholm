@@ -1,0 +1,1 @@
+{"id":"486c0723d09731248b48c30d53012700.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands.TestSchemaGateExitCodes#test_serve_upgrades_data_that_is_behind_then_serves","name":"test_serve_upgrades_data_that_is_behind_then_serves","status":"passed","testResultsByEnv":{"default":"3ff4bc898c77c286dae224f88d21e875"}}
