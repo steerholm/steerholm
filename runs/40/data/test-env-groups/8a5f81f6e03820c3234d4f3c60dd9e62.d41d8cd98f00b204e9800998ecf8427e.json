@@ -1,0 +1,1 @@
+{"id":"8a5f81f6e03820c3234d4f3c60dd9e62.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.integration.test_gateway_coverage#test_serve_exits_cleanly_when_the_admin_channel_cannot_open","name":"test_serve_exits_cleanly_when_the_admin_channel_cannot_open","status":"passed","testResultsByEnv":{"default":"57ac0a507f2630bbac9edac6a72089e7"}}

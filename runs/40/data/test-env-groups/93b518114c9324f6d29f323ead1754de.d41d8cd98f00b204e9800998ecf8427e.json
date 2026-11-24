@@ -1,0 +1,1 @@
+{"id":"93b518114c9324f6d29f323ead1754de.d41d8cd98f00b204e9800998ecf8427e","fullName":"tests.unit.test_cli_commands#test_notify_update_falls_back_to_cache_on_fetch_error","name":"test_notify_update_falls_back_to_cache_on_fetch_error","status":"passed","testResultsByEnv":{"default":"be5d5312a0f5c569e62ed10c2c45f86c"}}

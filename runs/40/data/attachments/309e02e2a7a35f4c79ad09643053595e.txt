@@ -1,0 +1,1 @@
+ERROR    steerholm:gateway.py:163 Another Steerholm daemon is already running on this machine. Check with holm status.
