@@ -1,5 +1,16 @@
 [
   {
+    "run_number": 42,
+    "run_id": "45606936328",
+    "date": "2026-11-25T11:58:27Z",
+    "ref": "stage1/config-in-memory",
+    "commit": "fc0205edd9a4c5d914e3d7247d0d5e31dff0bbdc",
+    "trigger": "workflow_dispatch",
+    "passed": 2276,
+    "failed": 0,
+    "skipped": 36
+  },
+  {
     "run_number": 41,
     "run_id": "45452078698",
     "date": "2026-11-24T18:05:46Z",

@@ -1,0 +1,1 @@
+{"id":"fc62fe495a989d028403f93d934d3d28.75a24d1d9335c986278b62d0f034f6e2","fullName":"tests.unit.test_migrations#test_the_refusal_says_where_the_daemon_log_is","name":"test_the_refusal_says_where_the_daemon_log_is[linux-journalctl --user -u steerholm]","status":"passed","testResultsByEnv":{"default":"e6d649a796c50308f5447379801b31be"}}
