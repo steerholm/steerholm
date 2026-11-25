@@ -30,8 +30,8 @@ class TestResolveAgentFromToken:
         # agent is in the config but has no verifier. It must deny, and say why
         # — the CLI shows such an agent as perfectly normal.
         token = config_manager.add_agent("agent")
-        config_manager.config.agents["agent"].key_hash = None
-        config_manager.save_config()
+        with config_manager._change() as config:
+            config.agents["agent"].key_hash = None
         gateway = make_gateway(config_manager)
 
         assert gateway._resolve_agent_from_token(token) is None

@@ -45,8 +45,8 @@ def test_auth_cache_is_invalidated_when_the_stored_hash_goes(config_manager):
     gateway = make_gateway(config_manager)
     assert gateway._resolve_agent_from_token(token) == "a"  # populate cache
 
-    config_manager.config.agents["a"].key_hash = None
-    config_manager.save_config()
+    with config_manager._change() as config:
+        config.agents["a"].key_hash = None
     assert gateway._resolve_agent_from_token(token) is None  # invalidated, then miss
 
 
@@ -397,8 +397,8 @@ def test_a_hashless_agent_is_reported_once_not_per_attempt(config_manager, caplo
     # The check sits in the authentication path, so warning on every attempt
     # would put a line in the daemon log per tool call.
     config_manager.add_agent("hashless")
-    config_manager.config.agents["hashless"].key_hash = None
-    config_manager.save_config()
+    with config_manager._change() as config:
+        config.agents["hashless"].key_hash = None
     gateway = make_gateway(config_manager)
 
     with caplog.at_level("WARNING"):

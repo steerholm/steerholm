@@ -439,7 +439,7 @@ class TestAConfigThatWillNotLoad:
         config_manager.reload()
 
         with pytest.raises(_cfg.ConfigError):
-            config_manager.save_config()
+            config_manager.add_server("other", command="x")
         assert _cfg.CONFIG_FILE.read_bytes() == before
 
     def test_valid_json_that_is_not_an_object_is_refused(self, config_manager):
@@ -793,8 +793,8 @@ def test_a_grant_whose_server_vanished_can_still_be_revoked(config_manager):
     config_manager.add_agent("alice")
     config_manager.grant_permission("alice", "git", tool="*")
     server_id = config_manager._server_id("git")
-    del config_manager.config.servers["git"]      # cascade did not run
-    config_manager.save_config()
+    with config_manager._change() as config:
+        del config.servers["git"]                # cascade did not run
 
     assert config_manager.revoke_permission("alice", server_id) is True
     assert config_manager.load_policy("alice").permissions == {}

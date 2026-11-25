@@ -285,10 +285,6 @@ class ConfigManager:
         if self._load_error is not None:
             raise self._load_error
 
-    def save_config(self):
-        """Write the loaded configuration as it is."""
-        write_atomic(CONFIG_FILE, self.config.model_dump_json(indent=2))
-
     @contextmanager
     def _change(self):
         """Change a copy of the configuration; it replaces the loaded one only
