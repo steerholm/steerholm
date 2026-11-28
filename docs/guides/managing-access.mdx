@@ -43,6 +43,10 @@ holm revoke my-agent git
   `--tool "git_diff"`.
 </Note>
 
+If an agent's policy file cannot be read, `grant` and `revoke` refuse and name the
+file, rather than write over the grants it holds. Fix or remove it, then try
+again.
+
 ## See what an agent can reach
 
 `show agent` lists an agent's access-key prefix and every grant it holds

@@ -125,7 +125,7 @@ sequenceDiagram
     The plane's action face: agents connect here over Streamable HTTP with a Bearer token to act. Requires authentication and has no admin commands.
   </Card>
   <Card title="holm — how you control it" icon="terminal" color="#10b981">
-    The plane's control face: add servers and agents, set their policies, and run the daemon — this is where you control what every agent can do.
+    The plane's control face: add servers and agents, set their policies, and run the daemon — this is where you control what every agent can do. It reaches the running daemon over a local channel tied to your account (a Unix socket, or a named pipe on Windows), never over HTTP.
   </Card>
 </CardGroup>
 

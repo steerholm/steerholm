@@ -7,7 +7,8 @@ Everything your agents do with your resources happens on the plane, so Steerholm
 sees every tool call. It records one decision per call: which agent asked, which
 resource (by its MCP server) and tool, and whether policy allowed it, denied it, or the server failed.
 
-Read it with [`holm log`](/reference/cli#holm-log).
+Read it with [`holm log`](/reference/cli#holm-log), which asks the running daemon;
+`holm log --follow` shows each decision as the daemon records it.
 
 ## Where it lives
 

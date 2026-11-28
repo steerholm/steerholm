@@ -28,7 +28,7 @@ curl -fsSL https://steerholm.ai/install.sh | bash
 irm https://steerholm.ai/install.ps1 | iex
 ```
 
-This downloads the binary, registers a per-user background daemon that runs as you, and starts it. No admin rights, no Python or package manager required.
+This downloads the binary, registers a per-user background daemon that runs as you, and starts it. No admin rights, no Python or package manager required. Every `holm` command below goes through that daemon (`holm status` shows it is running).
 
 Or download binaries directly from [GitHub Releases](https://github.com/steerholm/steerholm/releases).
 

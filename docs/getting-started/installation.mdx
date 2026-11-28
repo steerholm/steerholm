@@ -59,7 +59,8 @@ holm update
 It downloads the new release's installer, verifies it, and runs it: the daemon is
 stopped, the binary replaced, and the daemon started again — and when it starts,
 the new daemon brings your stored data up to the new version's format. Servers,
-agents, keys and grants carry over.
+agents, keys and grants carry over. If the daemon does not come up, the installer
+prints the end of its log; a failed upgrade leaves your data as it was.
 
 Use `holm update --check` to see whether a newer version is available without installing, and `holm version` to print the installed version. See the [CLI reference](/reference/cli) for all options.
 
@@ -112,3 +113,7 @@ pytest
 # Run the daemon locally
 holm serve
 ```
+
+The other `holm` commands talk to this daemon, so leave it running in another
+terminal. Stop the installed daemon first (`holm stop`): a second daemon for the
+same account refuses to start.

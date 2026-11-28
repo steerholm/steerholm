@@ -15,6 +15,11 @@ the resources are `server` and `agent`. Alongside them: [`log`](#audit-log) read
 what your agents did, daemon lifecycle is `start` / `stop` / `status` / `serve`,
 and `version` / `update` round out the surface.
 
+Every command that reads or changes servers, agents, grants or the log asks the
+running daemon, over a local channel only your account can use. With the daemon
+stopped they print `The daemon is not running. Start it with holm start.` and
+change nothing.
+
 ## Servers
 
 Servers are the MCP servers you want agents to reach through Steerholm. Adding a
@@ -110,7 +115,9 @@ holm remove server git
 Grants go with the server, the same way removing an agent takes its policy. A
 name can be reused, so a grant that outlived its server would silently apply to
 whatever is added under that name next. The command reports which agents lost
-grants.
+grants. If an agent's policy file cannot be read, that agent is skipped and named
+in a warning; any grant it holds on the server applies to nothing once the server
+is gone.
 
 <Note>
   To change a server's command, URL, or environment **without** losing its
@@ -120,8 +127,8 @@ grants.
 
 ### holm list servers
 
-Show all servers with their transport type and live status (state, uptime, and
-tool count when the daemon is running).
+Show all servers with their transport type and live status: state, uptime, and
+tool count.
 
 ```bash
 holm list servers
@@ -254,6 +261,9 @@ The server must already be added — a grant records the agent's and server's
 why a grant survives `holm rotate` and `holm modify server` but not
 `holm remove`.
 
+`grant` and `revoke` refuse an agent whose policy file cannot be read, and name
+the file. Fix or remove it, then try again.
+
 ### holm revoke
 
 Remove an agent's access to a server. With `--tool` it removes only that tool
@@ -343,7 +353,7 @@ holm log set --max-age-days 0     # no age limit (the file count still applies)
 | `--max-files` | `5` | How many log files to keep (`0` = no limit) |
 | `--max-age-days` | `0` | Delete log files older than this (`0` = no limit) |
 
-Changes take effect on a running daemon without a restart. Segment size is fixed
+The daemon applies the change at once, without a restart. Segment size is fixed
 at 10 MB and is not configurable — changing it would leave existing files at the
 old size.
 
@@ -363,10 +373,15 @@ launchd agent, or a Windows logon Scheduled Task).
 holm start
 ```
 
+If the stored data is from an earlier version, the daemon upgrades it as it
+starts. If it does not come up, its log says why: `journalctl --user -u
+steerholm` on Linux, `daemon.log` in the config directory on macOS and Windows.
+
 ### holm stop
 
 Stop the daemon and the MCP servers it started. All active agent sessions are
-disconnected.
+disconnected, and until you start it again, commands that read or change servers,
+agents, grants or the log refuse.
 
 ```bash
 holm stop
@@ -383,7 +398,11 @@ holm status
 ### holm serve
 
 Run the daemon in the foreground instead of as a service. Useful for debugging —
-logs go to stderr.
+logs go to stderr. Like the service, it upgrades the stored data before it reads
+it. It refuses to start while another Steerholm daemon holds the port or the
+admin channel (`Another Steerholm daemon is already running for this account`;
+on Windows, `on this machine`), and exits with code 78 if the stored data cannot
+be upgraded or loaded.
 
 ```bash
 holm serve

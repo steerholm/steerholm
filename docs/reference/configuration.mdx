@@ -50,23 +50,37 @@ format — see
 [Upgrading](/reference/policy-format#upgrading-from-an-older-steerholm).
 
 Set `STEERHOLM_CONFIG_DIR` to override the config directory (both the CLI and
-the daemon read it) — useful for isolated setups or testing:
+the daemon read it) — useful for isolated setups or testing. The CLI talks to the
+daemon serving that directory, so start one there first:
 
 ```bash
-STEERHOLM_CONFIG_DIR=/tmp/steerholm-test holm list servers
+STEERHOLM_CONFIG_DIR=/tmp/steerholm-test holm serve --port 4768
+STEERHOLM_CONFIG_DIR=/tmp/steerholm-test holm list servers   # in another terminal
 ```
+
+On Windows the CLI reaches the daemon over one machine-wide pipe, so only one
+daemon can run at a time there.
 
 ## File permissions
 
 The config directory and files are created **owner-only** — `0700` on
 `~/.steerholm` and its `policies/` directory, and `0600` on `config.json`, each
-policy file, and each [audit log](/reference/audit-log) file — so `--env`
-secrets, agent policies, grants, and recorded activity aren't readable by
+policy file, each [audit log](/reference/audit-log) file and `admin.sock` — so
+`--env` secrets, agent policies, grants, and recorded activity aren't readable by
 other users on the machine. Steerholm re-applies these permissions on startup, so
 an existing install is tightened automatically after an upgrade. On Windows,
 per-user `AppData` already provides this isolation via ACLs.
 
+State files are written whole — to a temporary file, flushed to disk, then
+renamed into place — and as UTF-8, so a crash or a full disk never leaves one
+half-written.
+
 ## config.json
+
+The daemon reads `config.json` once, when it starts, and makes every change to it
+itself — change it with `holm`. An edit by hand while the daemon runs takes
+effect only at the next restart, and the next `holm` change writes over it. If
+the file cannot be loaded, the daemon refuses to start.
 
 ```json
 {
@@ -151,8 +165,8 @@ isolates one of them.
 | `max_age_days` | `number` | Delete log files older than this (`0` = no limit) |
 
 <Note>
-  Set these with `holm log set --max-files N --max-age-days N`; a running daemon
-  picks them up without a restart. Segment size is fixed at 10 MB.
+  Set these with `holm log set --max-files N --max-age-days N`; the daemon
+  applies them at once, without a restart. Segment size is fixed at 10 MB.
 </Note>
 
 ## Defaults

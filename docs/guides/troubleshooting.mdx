@@ -3,8 +3,8 @@ title: Troubleshooting
 description: Fixes for the common first-run and day-to-day issues.
 ---
 
-Most problems fall into one of a few buckets. Start with the two commands that
-tell you the most:
+Most problems fall into one of a few buckets. Start with the commands that tell
+you the most:
 
 ```bash
 holm status                 # is the daemon running?
@@ -26,10 +26,9 @@ This is the most common first-run issue. Work through it in order:
   <Step title="Check the server is running">
     Run `holm show server <name>`. **starting** means it is still coming up —
     give it a moment, longer the first time an `npx` or `uvx` server downloads
-    its package. If the status is **stopped** or the daemon is down, start it
-    with `holm start` (or `holm status` to check). Adding a server tells a
-    running daemon to start it automatically, so if it isn't running, the
-    daemon is probably down.
+    its package. If it is **stopped**, or the command says the daemon is not
+    running, start the daemon with `holm start`. Once it is running, it starts
+    every server it has.
   </Step>
   <Step title="Check the server didn't fail to start">
     If `holm show server <name>` reports **failed**, it prints the error —
@@ -77,8 +76,9 @@ If it does not come up, its log says why — `journalctl --user -u steerholm` on
 Linux, `daemon.log` in the config directory on macOS and Windows. A failed
 upgrade leaves your data as it was.
 
-If the message says the data is from a **newer** version instead, a newer
-Steerholm wrote it: update Steerholm rather than going back to an older one.
+If the message says instead that this build understands an older schema and to
+**upgrade Steerholm**, a newer version wrote the data: update Steerholm rather
+than going back to an older one.
 
 Steerholm refuses rather than guessing, because reading an older layout with a
 newer build would look like every agent having no grants at all.
@@ -89,8 +89,9 @@ The file exists but Steerholm cannot read it. The message says why:
 
 - **`<key>: Extra inputs are not permitted`** — a key Steerholm does not
   recognise, usually a typo from editing the file by hand.
-- **A JSON error** such as *Unterminated string* — the file was cut off, most
-  often by a full disk while it was being written.
+- **A JSON error** such as *Unterminated string* — the file is not valid JSON.
+  Steerholm always writes it whole, so this comes from an edit by hand or by
+  another tool.
 
 Steerholm refuses to carry on rather than start from an empty configuration in
 its place. Nothing is written to the file while it is in this state, so fixing
@@ -99,16 +100,23 @@ and `holm update` still run; commands that read or change the configuration do
 not, and the daemon does not start.
 
 Fix the file, or move it aside to start fresh, then start the daemon with
-`holm start`. Prefer the CLI over editing the file directly: the daemon reads it
+`holm start`. Prefer the CLI over editing the file directly. The daemon reads it
 only when it starts, so an edit made while it runs takes effect at the next
-restart.
+restart — and the next change you make with `holm` writes over it. Stop the
+daemon before editing by hand.
 
 ## The daemon isn't running
+
+Commands that read or change servers, agents, grants or the log go through the
+daemon, so with it stopped they say `The daemon is not running.` Check and start
+it:
 
 ```bash
 holm status
 holm start
 ```
+
+If it does not stay up, its log says why (see the sections above).
 
 The daemon runs as a per-user service that starts at login. To debug it, run it
 in the foreground with `holm serve` (logs go to stderr).
@@ -127,6 +135,11 @@ On a machine you only reach **over SSH**:
 If `holm serve` reports the port is taken, another Steerholm instance (or some
 other process) is on `127.0.0.1:4767`. Stop the other one, or bind a different
 port with `holm serve --port <port>` (and point the agent at the new port).
+
+If it says `Another Steerholm daemon is already running for this account` (`on
+this machine` on Windows), the daemon is already up: use it, or `holm stop` it
+first. A different `--port` does not help, because the CLI reaches the daemon
+over a channel of its own, not the port.
 
 ## "Server 'X' not found" when granting
 

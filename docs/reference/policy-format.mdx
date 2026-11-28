@@ -79,7 +79,7 @@ A grant links two ids, so it lives and dies with both ends:
 
 - Removing an agent deletes its policy file.
 - Removing a server revokes every grant on it; `holm remove server` names the
-  agents it affected.
+  agents it affected, and warns about any whose policy file it could not read.
 - `holm modify server` changes a server in place and keeps its id, so grants
   survive the edit.
 - `holm rotate` issues a new access key but keeps the agent's id, so grants
@@ -93,7 +93,10 @@ point at. Add the server first.
 Policies written before this format were keyed by name — `policies/<agent
 name>.json`, with server names as the permission keys. The daemon migrates them
 when the new version first starts: it brings the state up to the current schema
-before it serves anything.
+before it serves anything. Until it has, `holm` commands refuse with *is schema
+vN, from an earlier version of Steerholm* — run `holm start`. A failed upgrade
+leaves the data as it was, and the daemon's log says why (see
+[Troubleshooting](/guides/troubleshooting)).
 
 The state directory records the schema it is in, at `migrations/version`.
 Steerholm refuses to run against a schema it does not understand rather than
