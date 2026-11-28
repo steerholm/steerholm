@@ -1,0 +1,5 @@
+INFO     steerholm.migrations:__init__.py:240 Applied schema migration 1.
+WARNING  steerholm.migrations:m0002_key_hash_in_config.py:77 No key hash for 'bob'. Reissue their keys with `holm rotate agent <name>` — until then those agents cannot authenticate.
+INFO     steerholm.migrations:__init__.py:240 Applied schema migration 2.
+INFO     steerholm:gateway.py:145 Upgraded /tmp/pytest-of-runner/pytest-0/test_the_daemon_upgrades_data_0/.steerholm to schema v2 (2 steps).
+INFO     steerholm:gateway.py:149 The data as it was before is at /tmp/pytest-of-runner/pytest-0/test_the_daemon_upgrades_data_0/.steerholm/.pre-migration, to compare if anything looks wrong. It holds a copy of your config, secrets included, and the next upgrade replaces it.

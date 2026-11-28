@@ -1,5 +1,16 @@
 [
   {
+    "run_number": 43,
+    "run_id": "46140080840",
+    "date": "2026-11-28T11:34:40Z",
+    "ref": "stage1/docs-pass",
+    "commit": "e840abeaaf5b20b9aef468128f3b0841f785895f",
+    "trigger": "workflow_dispatch",
+    "passed": 2276,
+    "failed": 0,
+    "skipped": 36
+  },
+  {
     "run_number": 42,
     "run_id": "45606936328",
     "date": "2026-11-25T11:58:27Z",
